@@ -3,6 +3,7 @@ mod macros;
 mod messages;
 mod open_ai;
 
+use std::fs;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
@@ -60,6 +61,13 @@ async fn main() -> Result<(), reqwest::Error> {
     // println!("Mode: {:?}", args.mode);
     // println!("Temperature: {}", args.temperature);
 
+    let home_dir = dirs::home_dir().expect("Home dir not found.");
+    let coding_assistant_data_dir = home_dir.join(".config/coding-assistant");
+
+    if let Some(p) = coding_assistant_data_dir.parent() {
+        fs::create_dir_all(p).expect("Directory not created.");
+    };
+
     let context: Result<String, Error> = {
         if atty::is(atty::Stream::Stdin) {
             Err(Error::Input)
@@ -94,7 +102,10 @@ async fn main() -> Result<(), reqwest::Error> {
 
         let mut rl = DefaultEditor::new().expect("Editor not initialized.");
         // #[cfg(feature = "with-file-history")]
-        if rl.load_history("data/history.txt").is_err() {
+        if rl
+            .load_history(coding_assistant_data_dir.join("history.txt").as_path())
+            .is_err()
+        {
             println!("No previous history.");
         }
 
@@ -141,7 +152,7 @@ async fn main() -> Result<(), reqwest::Error> {
         }
 
         // #[cfg(feature = "with-file-history")]
-        let _ = rl.save_history("data/history.txt");
+        let _ = rl.save_history(coding_assistant_data_dir.join("history.txt").as_path());
 
         let start = SystemTime::now();
         let since_the_epoch = start
@@ -151,7 +162,12 @@ async fn main() -> Result<(), reqwest::Error> {
         let in_ms =
             since_the_epoch.as_secs() * 1000 + since_the_epoch.subsec_nanos() as u64 / 1_000_000;
 
-        let output_path = format!("data/{}.json", in_ms);
+        let output_file = format!("{}.json", in_ms);
+        let output_path = coding_assistant_data_dir.join("history").join(output_file);
+
+        if let Some(p) = output_path.parent() {
+            fs::create_dir_all(p).expect("Directory not created.")
+        };
 
         // Save the JSON structure into the other file.
         std::fs::write(output_path, serde_json::to_string_pretty(&history).unwrap()).unwrap();
