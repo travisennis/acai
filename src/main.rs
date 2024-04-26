@@ -1,6 +1,7 @@
 mod clients;
 mod macros;
 mod messages;
+mod models;
 mod open_ai;
 
 use std::fs;
@@ -8,6 +9,7 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
 use clap::{Parser, ValueEnum};
+use models::Model;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use termimad::MadSkin;
@@ -15,7 +17,6 @@ use termimad::MadSkin;
 use crate::clients::LLMClient;
 use crate::messages::Message;
 use crate::messages::Role;
-use crate::open_ai::Model;
 use crate::open_ai::OpenAIApi;
 
 #[derive(Debug, Copy, Clone)]
