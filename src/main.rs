@@ -1,26 +1,24 @@
 mod clients;
 mod macros;
 mod messages;
-mod models;
-mod open_ai;
 
+use std::error::Error;
 use std::fs;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
 use clap::{Parser, ValueEnum};
-use models::Model;
+use clients::LLMClient;
+use clients::Model;
+use clients::Provider;
+use messages::Message;
+use messages::Role;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use termimad::MadSkin;
 
-use crate::clients::LLMClient;
-use crate::messages::Message;
-use crate::messages::Role;
-use crate::open_ai::OpenAIApi;
-
 #[derive(Debug, Copy, Clone)]
-enum Error {
+enum CAError {
     Input,
 }
 
@@ -46,7 +44,7 @@ struct Args {
     mode: Mode,
 
     /// Sets the temperature value
-    #[arg(short, long, default_value_t = 0.0)]
+    #[arg(short, long, default_value_t = 0.2)]
     temperature: f32,
 
     /// Sets the stdin prompt
@@ -54,7 +52,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), reqwest::Error> {
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args = Args::parse();
 
     // println!("Model: {}", args.model);
@@ -69,36 +67,33 @@ async fn main() -> Result<(), reqwest::Error> {
         fs::create_dir_all(p).expect("Directory not created.");
     };
 
-    let context: Result<String, Error> = {
+    let context: Result<String, CAError> = {
         if atty::is(atty::Stream::Stdin) {
-            Err(Error::Input)
+            Err(CAError::Input)
         } else {
             Ok(std::io::read_to_string(std::io::stdin()).unwrap())
         }
     };
 
-    let model = match args.model.as_str() {
-        "gpt-4-turbo" => Model::GPT4Turbo,
-        "gpt-3-turbo" => Model::GPT3Turbo,
-        _ => Model::GPT4Turbo,
-    };
-
-    let open_ai_client = OpenAIApi {
-        model,
-        temperature: args.temperature,
+    let provider_model = match args.model.as_str() {
+        "gpt-4-turbo" => (Provider::OpenAI, Model::GPT4Turbo),
+        "gpt-3-turbo" => (Provider::OpenAI, Model::GPT3Turbo),
+        "opus" => (Provider::Anthropic, Model::ClaudeOpus),
+        "sonnet" => (Provider::Anthropic, Model::ClaudeSonnet),
+        "haiku" => (Provider::Anthropic, Model::ClaudeHaiku),
+        _ => (Provider::OpenAI, Model::GPT4Turbo),
     };
 
     if args.mode == Mode::Chat {
-        let mut history: Vec<Message> = vec![Message {
-            role: Role::System,
-            content: String::from("You are a helpful coding assistant. Provide answers in markdown format unless instructed otherwise."),
-        }];
+        let mut client = LLMClient::new(provider_model.0, provider_model.1, "You are a helpful coding assistant. Provide answers in markdown format unless instructed otherwise.");
+
+        let mut messages: Vec<Message> = vec![];
 
         if let Ok(context) = context {
-            history.push(Message {
+            messages.push(Message {
                 role: Role::User,
                 content: context,
-            })
+            });
         }
 
         let mut rl = DefaultEditor::new().expect("Editor not initialized.");
@@ -107,7 +102,7 @@ async fn main() -> Result<(), reqwest::Error> {
             .load_history(coding_assistant_data_dir.join("history.txt").as_path())
             .is_err()
         {
-            println!("No previous history.");
+            eprintln!("No previous history.");
         }
 
         let skin = MadSkin::default();
@@ -124,29 +119,24 @@ async fn main() -> Result<(), reqwest::Error> {
                         content: line,
                     };
 
-                    history.push(user_msg);
+                    messages.push(user_msg);
 
-                    let response = open_ai_client.send_message(&history).await?;
+                    let response = client.send_message(&mut messages).await?;
 
                     // println!("Response> {:?}", response);
 
-                    if let Some(choice) = response.choices.first() {
-                        let msg = choice.get_message();
-                        // println!("> {:?}", msg.content);
+                    if let Some(msg) = response {
                         println!("\n");
                         skin.print_text(&msg.content);
                         println!("\n");
-                        history.push(msg);
+                        messages.push(msg);
                     }
                 }
-                Err(ReadlineError::Interrupted) => {
-                    break;
-                }
-                Err(ReadlineError::Eof) => {
+                Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
                     break;
                 }
                 Err(err) => {
-                    println!("Error: {:?}", err);
+                    println!("Error: {err:?}");
                     break;
                 }
             }
@@ -160,36 +150,37 @@ async fn main() -> Result<(), reqwest::Error> {
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards");
 
-        let in_ms =
-            since_the_epoch.as_secs() * 1000 + since_the_epoch.subsec_nanos() as u64 / 1_000_000;
+        let in_ms = since_the_epoch.as_secs() * 1000
+            + u64::from(since_the_epoch.subsec_nanos()) / 1_000_000;
 
-        let output_file = format!("{}.json", in_ms);
+        let output_file = format!("{in_ms}.json");
         let output_path = coding_assistant_data_dir.join("history").join(output_file);
 
         if let Some(p) = output_path.parent() {
-            fs::create_dir_all(p).expect("Directory not created.")
+            fs::create_dir_all(p).expect("Directory not created.");
         };
 
         // Save the JSON structure into the other file.
-        std::fs::write(output_path, serde_json::to_string_pretty(&history).unwrap()).unwrap();
+        std::fs::write(
+            output_path,
+            serde_json::to_string_pretty(&messages).unwrap(),
+        )
+        .unwrap();
     } else {
-        let mut messages: Vec<Message> = vec![Message {
-            role: Role::System,
-            content: String::from(
-                "You are a helpful coding assistant. Provide the answer and only the answer. The answer should be in plain text without Markdown formatting.",
-            ),
-        }];
+        let mut client = LLMClient::new(provider_model.0, provider_model.1, "You are a helpful coding assistant. Provide the answer and only the answer. The answer should be in plain text without Markdown formatting.");
+
+        let mut messages: Vec<Message> = vec![];
 
         if let Ok(context) = context {
             messages.push(Message {
                 role: Role::User,
                 content: context,
-            })
-        }
+            });
+        };
 
-        let prompt: Result<String, Error> = {
+        let prompt: Result<String, CAError> = {
             if args.std_prompt.is_empty() {
-                Err(Error::Input)
+                Err(CAError::Input)
             } else {
                 Ok(args.std_prompt.join(" "))
             }
@@ -199,12 +190,14 @@ async fn main() -> Result<(), reqwest::Error> {
             messages.push(Message {
                 role: Role::User,
                 content: prompt,
-            })
+            });
+        };
+
+        let response = client.send_message(&mut messages).await?;
+
+        if let Some(msg) = response {
+            println!("{}", msg.content);
         }
-
-        let response = open_ai_client.send_message(&messages).await?;
-
-        println!("{}", response.choices[0].message.content);
     }
     Ok(())
 }
