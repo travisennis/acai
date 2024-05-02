@@ -3,16 +3,16 @@ use std::{env, error::Error};
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::{
     macros::impl_enum_string_serialization,
     messages::{Message, Role},
 };
 
-// Define a trait named `Response`.
+/// Define a trait named `Response`.
 pub trait Response {
-    // Define a method `get_message` that returns an optional `Message`.
+    /// Define a method `get_message` that returns an optional `Message`.
     fn get_message(&self) -> Option<Message>;
 }
 
@@ -147,6 +147,7 @@ impl LLMClient {
             Provider::OpenAI => json!({
                 "model": self.model,
                 "temperature": self.temperature,
+                "max_tokens": 1024,
                 "messages": self.messages
             }),
         };
@@ -169,17 +170,22 @@ impl LLMClient {
 
         let response = req.send().await?;
 
-        let message = match &self.provider {
-            Provider::Anthropic => {
-                let anth_response = response.json::<AnthropicResponse>().await?;
-                anth_response.get_message()
-            }
-            Provider::OpenAI => {
-                let ai_response = response.json::<OpenAIResponse>().await?;
-                ai_response.get_message()
-            }
-        };
-
-        Ok(message)
+        if response.status().is_success() {
+            let message = match &self.provider {
+                Provider::Anthropic => {
+                    let anth_response = response.json::<AnthropicResponse>().await?;
+                    anth_response.get_message()
+                }
+                Provider::OpenAI => {
+                    let ai_response = response.json::<OpenAIResponse>().await?;
+                    ai_response.get_message()
+                }
+            };
+            Ok(message)
+        } else {
+            let resp_json = response.json::<Value>().await?;
+            let resp_formatted = serde_json::to_string_pretty(&resp_json).unwrap();
+            Err(format!("{}\n\n{resp_formatted}", self.model))?
+        }
     }
 }
