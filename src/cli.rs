@@ -21,6 +21,7 @@ pub enum CodingAssistantCmd {
     Pipe(pipe::Cmd),
 }
 
+#[allow(clippy::match_same_arms)]
 pub fn get_provider_model(model: &str) -> (Provider, Model) {
     match model {
         "gpt-4-turbo" => (Provider::OpenAI, Model::GPT4Turbo),
