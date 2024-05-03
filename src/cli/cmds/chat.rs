@@ -1,8 +1,4 @@
-use std::{
-    error::Error,
-    fs,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::error::Error;
 
 use anyhow::Result;
 use clap::Args;
@@ -12,6 +8,7 @@ use termimad::MadSkin;
 use crate::{
     cli::get_provider_model,
     clients::LLMClient,
+    config::save_messages,
     errors::CAError,
     messages::{Message, Role},
 };
@@ -29,13 +26,6 @@ pub struct Cmd {
 
 impl Cmd {
     pub async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let home_dir = dirs::home_dir().expect("Home dir not found.");
-        let coding_assistant_data_dir = home_dir.join(".config/coding-assistant");
-
-        if let Some(p) = coding_assistant_data_dir.parent() {
-            fs::create_dir_all(p).expect("Directory not created.");
-        };
-
         let context: Result<String, CAError> = {
             if atty::is(atty::Stream::Stdin) {
                 Err(CAError::Input)
@@ -60,13 +50,6 @@ impl Cmd {
         }
 
         let mut rl = DefaultEditor::new().expect("Editor not initialized.");
-        // #[cfg(feature = "with-file-history")]
-        if rl
-            .load_history(coding_assistant_data_dir.join("history.txt").as_path())
-            .is_err()
-        {
-            eprintln!("No previous history.");
-        }
 
         let skin = MadSkin::default();
 
@@ -86,8 +69,6 @@ impl Cmd {
 
                     let response = client.send_message(&mut messages).await?;
 
-                    // println!("Response> {:?}", response);
-
                     if let Some(msg) = response {
                         println!("\n");
                         skin.print_text(&msg.content);
@@ -105,30 +86,8 @@ impl Cmd {
             }
         }
 
-        // #[cfg(feature = "with-file-history")]
-        let _ = rl.save_history(coding_assistant_data_dir.join("history.txt").as_path());
+        save_messages(&messages);
 
-        let start = SystemTime::now();
-        let since_the_epoch = start
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards");
-
-        let in_ms = since_the_epoch.as_secs() * 1000
-            + u64::from(since_the_epoch.subsec_nanos()) / 1_000_000;
-
-        let output_file = format!("{in_ms}.json");
-        let output_path = coding_assistant_data_dir.join("history").join(output_file);
-
-        if let Some(p) = output_path.parent() {
-            fs::create_dir_all(p).expect("Directory not created.");
-        };
-
-        // Save the JSON structure into the other file.
-        std::fs::write(
-            output_path,
-            serde_json::to_string_pretty(&messages).unwrap(),
-        )
-        .unwrap();
         Ok(())
     }
 }
