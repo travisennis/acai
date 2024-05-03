@@ -33,7 +33,10 @@ impl Cmd {
             if atty::is(atty::Stream::Stdin) {
                 Err(CAError::Input)
             } else {
-                Ok(std::io::read_to_string(std::io::stdin()).unwrap())
+                match std::io::read_to_string(std::io::stdin()) {
+                    Ok(result) => Ok(result),
+                    Err(_error) => Err(CAError::Input),
+                }
             }
         };
 
@@ -61,8 +64,8 @@ impl Cmd {
             println!("{}", msg.content);
         } else {
             eprintln!("{response:?}");
-            panic!("Did not receive a valid response.");
         }
+
         Ok(())
     }
 }

@@ -23,7 +23,7 @@ enum Task {
     Optimize,
     Fix,
     Complete,
-    TODO,
+    Todo,
     Document,
 }
 
@@ -51,7 +51,7 @@ impl Cmd {
             Some(Task::Optimize) => OPTIMIZE_PROMPT,
             Some(Task::Fix) => FIX_PROMPT,
             Some(Task::Complete) => COMPLETE_PROMPT,
-            Some(Task::TODO) => TODO_PROMPT,
+            Some(Task::Todo) => TODO_PROMPT,
             Some(Task::Document) => DOCUMENT_PROMPT,
             _ => DEFAULT_PROMPT,
         };
@@ -66,7 +66,10 @@ impl Cmd {
             if atty::is(atty::Stream::Stdin) {
                 Err(CAError::Input)
             } else {
-                Ok(std::io::read_to_string(std::io::stdin()).unwrap())
+                match std::io::read_to_string(std::io::stdin()) {
+                    Ok(result) => Ok(result),
+                    Err(_error) => Err(CAError::Input),
+                }
             }
         };
 
@@ -98,8 +101,8 @@ impl Cmd {
             println!("{}", msg.content);
         } else {
             eprintln!("{response:?}");
-            panic!("Did not receive a valid response.");
         }
+
         Ok(())
     }
 }
