@@ -210,7 +210,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "coding_assistant"
+name = "coding-assistant"
 version = "0.1.0"
 dependencies = [
  "anyhow",
