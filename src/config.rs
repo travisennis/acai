@@ -32,11 +32,14 @@ pub fn save_messages<T: Serialize>(messages: &[T]) {
     };
 
     // Save the JSON structure into the other file.
-    std::fs::write(
-        output_path,
-        serde_json::to_string_pretty(&messages).unwrap(),
-    )
-    .unwrap();
+    match serde_json::to_string_pretty(&messages) {
+        Ok(json_string) => {
+            if let Err(e) = std::fs::write(output_path, json_string) {
+                eprintln!("Failed to write to file: {e}");
+            }
+        }
+        Err(e) => eprintln!("Failed to serialize messages: {e}"),
+    }
 }
 
 fn get_data_dir() -> std::path::PathBuf {

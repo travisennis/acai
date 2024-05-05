@@ -110,7 +110,7 @@ impl LLMClient {
             Provider::Anthropic => env::var("CLAUDE_API_KEY"),
             Provider::OpenAI => env::var("OPENAI_API_KEY"),
         }
-        .unwrap_or_else(|_error| panic!("Error: Environemnt variable not set."));
+        .unwrap_or_else(|_error| panic!("Error: Environment variable not set."));
 
         let msgs: Vec<Message> = match provider {
             Provider::Anthropic => vec![],
@@ -183,9 +183,15 @@ impl LLMClient {
             };
             Ok(message)
         } else {
-            let resp_json = response.json::<Value>().await?;
-            let resp_formatted = serde_json::to_string_pretty(&resp_json).unwrap();
-            Err(format!("{}\n\n{resp_formatted}", self.model))?
+            match response.json::<Value>().await {
+                Ok(resp_json) => match serde_json::to_string_pretty(&resp_json) {
+                    Ok(resp_formatted) => {
+                        Err(format!("{}\n\n{}", self.model, resp_formatted).into())
+                    }
+                    Err(e) => Err(format!("Failed to format response JSON: {e}").into()),
+                },
+                Err(e) => Err(format!("Failed to parse response JSON: {e}").into()),
+            }
         }
     }
 }
