@@ -1,2 +1,2 @@
 clippy-strict:
-    cargo clippy -- -Dclippy::pedantic -Dclippy::perf
+    cargo clippy -- -Dclippy::all -Dclippy::pedantic -Dclippy::perf -Dclippy::style
