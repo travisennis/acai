@@ -16,7 +16,7 @@ const COMPLETE_PROMPT: &str = "Your task is to complete the provided code snippe
 const DOCUMENT_PROMPT: &str =
     "Your task is to document the provided code using the best practices for documenting code for this language.";
 const TODO_PROMPT: &str = "Your task is to add todo comments to the provided code snippet. The todo comments are to be added to parts of the code that can be improved or fixed. The todo comment should explain what needs to be done and give a short explanation of why.";
-const DEFAULT_PROMPT: &str = "You are a helpful coding assistant and senior software engineer. Provide the answer and only the answer. The answer should be in plain text without Markdown formatting.";
+const DEFAULT_PROMPT: &str = "You are a helpful coding assistant and senior software engineer. Provide the answer and only the answer to the user's request. The answer should be in plain text without Markdown formatting. Only return the code.";
 
 #[derive(Debug, ValueEnum, Clone, PartialEq)]
 enum Task {
@@ -73,13 +73,6 @@ impl Cmd {
             }
         };
 
-        if let Ok(context) = context {
-            messages.push(Message {
-                role: Role::User,
-                content: context,
-            });
-        };
-
         let prompt: Result<String, CAError> = {
             if self.std_prompt.is_empty() {
                 Err(CAError::Input)
@@ -88,7 +81,26 @@ impl Cmd {
             }
         };
 
-        if let Ok(prompt) = prompt {
+        let user_prompt: Result<String, CAError> = {
+            if let Ok(prompt) = prompt {
+                if let Ok(context) = context {
+                    Ok(format!(
+                        "{prompt}\n\
+                        ```\n\
+                        {context}\n\
+                        ```"
+                    ))
+                } else {
+                    Ok(prompt)
+                }
+            } else if let Ok(context) = context {
+                Ok(context)
+            } else {
+                Err(CAError::Input)
+            }
+        };
+
+        if let Ok(prompt) = user_prompt {
             messages.push(Message {
                 role: Role::User,
                 content: prompt,

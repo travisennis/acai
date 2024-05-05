@@ -29,6 +29,12 @@ impl Cmd {
     pub async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let system_prompt = "You are a helpful coding assistant. Provide the answer and only the answer in the format requested.";
 
+        let provider_model = get_provider_model(&self.model);
+
+        let mut client = LLMClient::new(provider_model.0, provider_model.1, system_prompt);
+
+        let mut messages: Vec<Message> = vec![];
+
         let context: Result<String, CAError> = {
             if atty::is(atty::Stream::Stdin) {
                 Err(CAError::Input)
@@ -40,22 +46,24 @@ impl Cmd {
             }
         };
 
-        let provider_model = get_provider_model(&self.model);
+        let prompt = self.prompt.to_string();
 
-        let mut client = LLMClient::new(provider_model.0, provider_model.1, system_prompt);
-
-        let mut messages: Vec<Message> = vec![];
-
-        if let Ok(context) = context {
-            messages.push(Message {
-                role: Role::User,
-                content: context,
-            });
+        let user_prompt = {
+            if let Ok(context) = context {
+                format!(
+                    "{prompt}\n\
+                    ```\n\
+                    {context}\n\
+                    ```"
+                )
+            } else {
+                prompt
+            }
         };
 
         messages.push(Message {
             role: Role::User,
-            content: self.prompt.to_string(),
+            content: user_prompt,
         });
 
         let response = client.send_message(&mut messages).await?;
