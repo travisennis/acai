@@ -8,7 +8,7 @@ use termimad::MadSkin;
 use crate::{
     cli::get_provider_model,
     clients::LLMClient,
-    config::save_messages,
+    config::DataDir,
     errors::CAError,
     messages::{Message, Role},
 };
@@ -89,7 +89,7 @@ impl Cmd {
             }
         }
 
-        save_messages(&messages);
+        DataDir::new().save_messages(&client.get_message_history());
 
         Ok(())
     }

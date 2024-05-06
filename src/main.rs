@@ -10,13 +10,13 @@ use std::error::Error;
 use clap::Parser;
 use cli::CodingAssistant;
 use cli::CodingAssistantCmd;
-use config::create_data_dir;
+use config::DataDir;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args = CodingAssistant::parse();
 
-    create_data_dir();
+    DataDir::create();
 
     match args.cmd {
         CodingAssistantCmd::Chat(chat_cmd) => chat_cmd.run().await?,

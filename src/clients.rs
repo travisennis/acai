@@ -194,4 +194,19 @@ impl LLMClient {
             }
         }
     }
+
+    pub fn get_message_history(&self) -> Vec<Message> {
+        let mut msgs = self.messages.clone();
+        match self.provider {
+            Provider::Anthropic => {
+                let mut result = vec![Message {
+                    role: Role::System,
+                    content: self.system.to_string(),
+                }];
+                result.append(&mut msgs);
+                result
+            }
+            Provider::OpenAI => msgs,
+        }
+    }
 }
