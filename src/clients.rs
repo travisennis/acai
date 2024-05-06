@@ -100,6 +100,8 @@ pub struct LLMClient {
     model: Model,
     token: String,
     temperature: f32,
+    top_p: f32,
+    max_tokens: u32,
     system: String,
     messages: Vec<Message>,
 }
@@ -124,7 +126,9 @@ impl LLMClient {
             provider,
             model,
             token,
-            temperature: 0.2,
+            temperature: 0.0,
+            max_tokens: 1024,
+            top_p: 1.0,
             system: system_prompt.to_string(),
             messages: msgs,
         }
@@ -140,14 +144,16 @@ impl LLMClient {
             Provider::Anthropic => json!({
                 "model": self.model,
                 "temperature": self.temperature,
-                "max_tokens": 1024,
+                "max_tokens": self.max_tokens,
+                "top_p": self.top_p,
                 "system": self.system,
                 "messages": self.messages
             }),
             Provider::OpenAI => json!({
                 "model": self.model,
                 "temperature": self.temperature,
-                "max_tokens": 1024,
+                "top_p": self.top_p,
+                "max_tokens": self.max_tokens,
                 "messages": self.messages
             }),
         };
