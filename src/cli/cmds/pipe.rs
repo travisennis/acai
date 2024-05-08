@@ -38,8 +38,16 @@ pub struct Cmd {
     task: Option<Task>,
 
     /// Sets the temperature value
-    #[arg(short, long, default_value_t = 0.2)]
+    #[arg(long, default_value_t = 0.0)]
     temperature: f32,
+
+    /// Sets the max_tokens value
+    #[arg(long, default_value_t = 1024)]
+    max_tokens: u32,
+
+    /// Sets the top_p value
+    #[arg(long, default_value_t = 1.0)]
+    top_p: f32,
 
     /// Sets the stdin prompt
     std_prompt: Vec<String>,
