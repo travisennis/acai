@@ -6,7 +6,7 @@ use clap::Args;
 use crate::{
     cli::{CmdConfig, CmdRunner},
     clients::LLMClient,
-    messages::{Message, Role},
+    models::{Message, Role},
 };
 
 #[derive(Clone, Args)]

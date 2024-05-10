@@ -2,7 +2,7 @@ mod cli;
 mod clients;
 mod config;
 mod errors;
-mod messages;
+mod models;
 
 use std::error::Error;
 

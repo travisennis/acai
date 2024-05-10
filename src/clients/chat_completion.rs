@@ -5,7 +5,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::messages::{Message, Role};
+use crate::models::{Message, Role};
 
 /// Define a trait named `Response`.
 pub trait Response {

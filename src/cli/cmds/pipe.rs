@@ -7,7 +7,7 @@ use crate::{
     cli::{CmdConfig, CmdRunner},
     clients::LLMClient,
     errors::CAError,
-    messages::{Message, Role},
+    models::{Message, Role},
 };
 
 const OPTIMIZE_PROMPT: &str = "Your task is to analyze the provided code snippet and suggest improvements to optimize its performance. Identify areas where the code can be made more efficient, faster, or less resource-intensive. The optimized code should maintain the same functionality as the original code while demonstrating improved efficiency. Only return the code.";

@@ -9,7 +9,7 @@ use crate::{
     cli::{CmdConfig, CmdRunner},
     clients::LLMClient,
     config::DataDir,
-    messages::{Message, Role},
+    models::{Message, Role},
 };
 
 #[derive(Clone, Args)]
