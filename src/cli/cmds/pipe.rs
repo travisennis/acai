@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::{Args, ValueEnum};
 
 use crate::{
-    cli::get_provider_model,
+    cli::{CmdConfig, CmdRunner},
     clients::LLMClient,
     errors::CAError,
     messages::{Message, Role},
@@ -29,32 +29,16 @@ enum Task {
 
 #[derive(Clone, Args)]
 pub struct Cmd {
-    /// Sets the model to use
-    #[arg(long, default_value_t = String::from("gpt-4-turbo"))]
-    model: String,
-
     /// Sets the task
     #[arg(long, value_enum)]
     task: Option<Task>,
 
-    /// Sets the temperature value
-    #[arg(long, default_value_t = 0.0)]
-    temperature: f32,
-
-    /// Sets the max_tokens value
-    #[arg(long, default_value_t = 1024)]
-    max_tokens: u32,
-
-    /// Sets the top_p value
-    #[arg(long, default_value_t = 1.0)]
-    top_p: f32,
-
     /// Sets the stdin prompt
-    std_prompt: Vec<String>,
+    prompt: Vec<String>,
 }
 
-impl Cmd {
-    pub async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+impl CmdRunner for Cmd {
+    async fn run(&self, cfg: CmdConfig) -> Result<(), Box<dyn Error + Send + Sync>> {
         let system_prompt = match self.task {
             Some(Task::Optimize) => OPTIMIZE_PROMPT,
             Some(Task::Fix) => FIX_PROMPT,
@@ -64,34 +48,28 @@ impl Cmd {
             _ => DEFAULT_PROMPT,
         };
 
-        let provider_model = get_provider_model(&self.model);
-
-        let mut client = LLMClient::new(provider_model.0, provider_model.1, system_prompt);
+        let mut client = LLMClient::new(
+            cfg.provider,
+            cfg.model,
+            cfg.temperature,
+            cfg.top_p,
+            cfg.max_tokens,
+            system_prompt,
+        );
 
         let mut messages: Vec<Message> = vec![];
 
-        let context: Result<String, CAError> = {
-            if atty::is(atty::Stream::Stdin) {
+        let std_prompt: Result<String, CAError> = {
+            if self.prompt.is_empty() {
                 Err(CAError::Input)
             } else {
-                match std::io::read_to_string(std::io::stdin()) {
-                    Ok(result) => Ok(result),
-                    Err(_error) => Err(CAError::Input),
-                }
-            }
-        };
-
-        let prompt: Result<String, CAError> = {
-            if self.std_prompt.is_empty() {
-                Err(CAError::Input)
-            } else {
-                Ok(self.std_prompt.join(" "))
+                Ok(self.prompt.join(" "))
             }
         };
 
         let user_prompt: Result<String, CAError> = {
-            if let Ok(prompt) = prompt {
-                if let Ok(context) = context {
+            if let Ok(prompt) = std_prompt {
+                if let Some(context) = cfg.context {
                     Ok(format!(
                         "{prompt}\n\
                         ```\n\
@@ -101,7 +79,7 @@ impl Cmd {
                 } else {
                     Ok(prompt)
                 }
-            } else if let Ok(context) = context {
+            } else if let Some(context) = cfg.context {
                 Ok(context)
             } else {
                 Err(CAError::Input)

@@ -5,10 +5,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::{
-    macros::impl_enum_string_serialization,
-    messages::{Message, Role},
-};
+use crate::messages::{Message, Role};
 
 /// Define a trait named `Response`.
 pub trait Response {
@@ -65,23 +62,40 @@ pub enum Provider {
     OpenAI,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum Model {
+    #[serde(rename = "gpt-4-turbo-preview")]
     GPT4Turbo,
+    #[serde(rename = "gpt-3-turbo")]
     GPT3Turbo,
+    #[serde(rename = "claude-3-opus-20240229")]
     ClaudeOpus,
+    #[serde(rename = "claude-3-sonnet-20240229")]
     ClaudeSonnet,
+    #[serde(rename = "claude-3-haiku-20240307")]
     ClaudeHaiku,
 }
 
-impl_enum_string_serialization!(
-    Model,
-    GPT4Turbo => "gpt-4-turbo-preview",
-    GPT3Turbo => "gpt-3-turbo",
-    ClaudeOpus => "claude-3-opus-20240229",
-    ClaudeSonnet => "claude-3-sonnet-20240229",
-    ClaudeHaiku => "claude-3-haiku-20240307"
-);
+// impl Into<String> for Model {
+//     fn into(self) -> String {
+//         match self {
+//             Model::GPT4Turbo => "gpt-4-turbo-preview".to_string(),
+//             Model::GPT3Turbo => "gpt-3-turbo".to_string(),
+//             Model::ClaudeOpus => "claude-3-opus-20240229".to_string(),
+//             Model::ClaudeSonnet => "claude-3-sonnet-20240229".to_string(),
+//             Model::ClaudeHaiku => "claude-3-haiku-20240307".to_string(),
+//         }
+//     }
+// }
+
+// impl_enum_string_serialization!(
+//     Model,
+//     GPT4Turbo => "gpt-4-turbo-preview",
+//     GPT3Turbo => "gpt-3-turbo",
+//     ClaudeOpus => "claude-3-opus-20240229",
+//     ClaudeSonnet => "claude-3-sonnet-20240229",
+//     ClaudeHaiku => "claude-3-haiku-20240307"
+// );
 
 impl fmt::Display for Model {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -107,7 +121,14 @@ pub struct LLMClient {
 }
 
 impl LLMClient {
-    pub fn new(provider: Provider, model: Model, system_prompt: &str) -> Self {
+    pub fn new(
+        provider: Provider,
+        model: Model,
+        temperature: f32,
+        top_p: f32,
+        max_tokens: u32,
+        system_prompt: &str,
+    ) -> Self {
         let token = match provider {
             Provider::Anthropic => env::var("CLAUDE_API_KEY"),
             Provider::OpenAI => env::var("OPENAI_API_KEY"),
@@ -126,9 +147,9 @@ impl LLMClient {
             provider,
             model,
             token,
-            temperature: 0.0,
-            max_tokens: 1024,
-            top_p: 1.0,
+            temperature,
+            max_tokens,
+            top_p,
             system: system_prompt.to_string(),
             messages: msgs,
         }
