@@ -6,6 +6,7 @@ use clap::{Args, ValueEnum};
 use crate::{
     cli::{CmdConfig, CmdRunner},
     clients::ChatCompletionClient,
+    config::DataDir,
     errors::CAError,
     models::{Message, Role},
 };
@@ -61,8 +62,6 @@ impl CmdRunner for Cmd {
             system_prompt,
         );
 
-        let mut messages: Vec<Message> = vec![];
-
         let std_prompt: Result<String, CAError> = {
             if self.prompt.is_empty() {
                 Err(CAError::Input)
@@ -75,13 +74,12 @@ impl CmdRunner for Cmd {
             if let Ok(prompt) = std_prompt {
                 if let Some(context) = cfg.context {
                     Ok(format!(
-                        r###"
-                        {prompt}
-
+                        "\n \
+                        {prompt}\n\n \
+                        ```\n \
+                        {context}\n \
                         ```
-                        {context}
-                        ```
-                        "###
+                        "
                     ))
                 } else {
                     Ok(prompt)
@@ -93,19 +91,20 @@ impl CmdRunner for Cmd {
             }
         };
 
-        if let Ok(prompt) = user_prompt {
-            messages.push(Message {
+        if user_prompt.is_ok() {
+            let msg = Message {
                 role: Role::User,
-                content: prompt,
-            });
-        };
+                content: user_prompt.unwrap(),
+            };
 
-        let response = client.send_message(&mut messages).await?;
+            let response = client.send_message(msg).await?;
 
-        if let Some(msg) = response {
-            println!("{}", msg.content);
-        } else {
-            eprintln!("{response:?}");
+            if let Some(msg) = response {
+                println!("{}", msg.content);
+            } else {
+                eprintln!("{response:?}");
+            }
+            DataDir::new().save_messages(&client.get_message_history());
         }
 
         Ok(())

@@ -6,6 +6,7 @@ use clap::Args;
 use crate::{
     cli::{CmdConfig, CmdRunner},
     clients::ChatCompletionClient,
+    config::DataDir,
     models::{Message, Role},
 };
 
@@ -29,8 +30,6 @@ impl CmdRunner for Cmd {
             system_prompt,
         );
 
-        let mut messages: Vec<Message> = vec![];
-
         let prompt = self.prompt.to_string();
 
         let user_prompt = {
@@ -46,18 +45,20 @@ impl CmdRunner for Cmd {
             }
         };
 
-        messages.push(Message {
+        let msg = Message {
             role: Role::User,
             content: user_prompt,
-        });
+        };
 
-        let response = client.send_message(&mut messages).await?;
+        let response = client.send_message(msg).await?;
 
         if let Some(msg) = response {
             println!("{}", msg.content);
         } else {
             eprintln!("{response:?}");
         }
+
+        DataDir::new().save_messages(&client.get_message_history());
 
         Ok(())
     }

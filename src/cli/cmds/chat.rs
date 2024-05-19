@@ -28,15 +28,6 @@ impl CmdRunner for Cmd {
             system_prompt,
         );
 
-        let mut messages: Vec<Message> = vec![];
-
-        if let Some(context) = cfg.context {
-            messages.push(Message {
-                role: Role::User,
-                content: context,
-            });
-        }
-
         let mut rl = DefaultEditor::new().expect("Editor not initialized.");
 
         let skin = MadSkin::default();
@@ -53,15 +44,12 @@ impl CmdRunner for Cmd {
                         content: line,
                     };
 
-                    messages.push(user_msg);
-
-                    let response = client.send_message(&mut messages).await?;
+                    let response = client.send_message(user_msg).await?;
 
                     if let Some(msg) = response {
                         println!("\n");
                         skin.print_text(&msg.content);
                         println!("\n");
-                        messages.push(msg);
                     }
                 }
                 Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
