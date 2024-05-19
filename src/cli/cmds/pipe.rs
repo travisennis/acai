@@ -21,7 +21,7 @@ const DOCUMENT_PROMPT: &str = "Your task is to document the provided code using 
 
 const TODO_PROMPT: &str = "Your task is to add todo comments to the provided code snippet. The todo comments are to be added to parts of the code that can be improved or fixed. The todo comment should explain what needs to be done and give a short explanation of why.";
 
-const DEFAULT_PROMPT: &str = "You are a helpful coding assistant and senior software engineer. Provide the answer and only the answer to the user's request. The answer should be in plain text without Markdown formatting. Only return the revised code.";
+const DEFAULT_PROMPT: &str = "You are a helpful coding assistant and senior software engineer. Provide the answer and only the answer to the user's request. The user's request will be in a TODO comment within the code snippet.  The answer should be in plain text without Markdown formatting. Only return the revised code and remove the TODO comment.";
 
 #[derive(Debug, ValueEnum, Clone, PartialEq)]
 enum Task {
