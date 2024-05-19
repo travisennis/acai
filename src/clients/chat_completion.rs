@@ -64,6 +64,8 @@ pub enum Provider {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum Model {
+    #[serde(rename = "gpt-4o")]
+    GPT4o,
     #[serde(rename = "gpt-4-turbo-preview")]
     GPT4Turbo,
     #[serde(rename = "gpt-3-turbo")]
@@ -100,6 +102,7 @@ pub enum Model {
 impl fmt::Display for Model {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Model::GPT4o => write!(f, "GPT-4o"),
             Model::GPT4Turbo => write!(f, "GPT-4-Turbo"),
             Model::GPT3Turbo => write!(f, "GPT-3-Turbo"),
             Model::ClaudeOpus => write!(f, "Claude Opus"),
@@ -157,9 +160,9 @@ impl LLMClient {
 
     pub async fn send_message(
         &mut self,
-        messages: &mut Vec<Message>,
+        message: Message,
     ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
-        self.messages.append(messages);
+        self.messages.push(message);
 
         let prompt = match &self.provider {
             Provider::Anthropic => json!({
@@ -208,6 +211,11 @@ impl LLMClient {
                     ai_response.get_message()
                 }
             };
+
+            if let Some(msg) = message.clone() {
+                self.messages.push(msg);
+            }
+
             Ok(message)
         } else {
             match response.json::<Value>().await {

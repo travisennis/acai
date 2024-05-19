@@ -14,7 +14,7 @@ pub struct CodingAssistant {
     pub cmd: CodingAssistantCmd,
 
     /// Sets the model to use
-    #[arg(long, default_value_t = String::from("gpt-4-turbo"))]
+    #[arg(long, default_value_t = String::from("gpt-4o"))]
     pub model: String,
 
     /// Sets the temperature value
@@ -55,12 +55,12 @@ impl CmdConfig {
         max_tokens: u32,
     ) -> Self {
         let model_provider = match model {
-            // "gpt-4-turbo" => (Provider::OpenAI, Model::GPT4Turbo),
+            "gpt-4-turbo" => (Provider::OpenAI, Model::GPT4Turbo),
             "gpt-3-turbo" => (Provider::OpenAI, Model::GPT3Turbo),
             "opus" => (Provider::Anthropic, Model::ClaudeOpus),
             "sonnet" => (Provider::Anthropic, Model::ClaudeSonnet),
             "haiku" => (Provider::Anthropic, Model::ClaudeHaiku),
-            _ => (Provider::OpenAI, Model::GPT4Turbo),
+            _ => (Provider::OpenAI, Model::GPT4o),
         };
 
         Self {
