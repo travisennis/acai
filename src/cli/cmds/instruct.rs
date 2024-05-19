@@ -5,7 +5,7 @@ use clap::Args;
 
 use crate::{
     cli::{CmdConfig, CmdRunner},
-    clients::LLMClient,
+    clients::ChatCompletionClient,
     models::{Message, Role},
 };
 
@@ -20,7 +20,7 @@ impl CmdRunner for Cmd {
     async fn run(&self, cfg: CmdConfig) -> Result<(), Box<dyn Error + Send + Sync>> {
         let system_prompt = "You are a helpful coding assistant. Provide the answer and only the answer in the format requested.";
 
-        let mut client = LLMClient::new(
+        let mut client = ChatCompletionClient::new(
             cfg.provider,
             cfg.model,
             cfg.temperature,

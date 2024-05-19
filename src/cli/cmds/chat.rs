@@ -7,7 +7,7 @@ use termimad::MadSkin;
 
 use crate::{
     cli::{CmdConfig, CmdRunner},
-    clients::LLMClient,
+    clients::ChatCompletionClient,
     config::DataDir,
     models::{Message, Role},
 };
@@ -19,7 +19,7 @@ impl CmdRunner for Cmd {
     async fn run(&self, cfg: CmdConfig) -> Result<(), Box<dyn Error + Send + Sync>> {
         let system_prompt = "You are a helpful coding assistant. Provide answers in markdown format unless instructed otherwise. If the request is ambiguous, ask questions. If you don't know the answer, admit you don't.";
 
-        let mut client = LLMClient::new(
+        let mut client = ChatCompletionClient::new(
             cfg.provider,
             cfg.model,
             cfg.temperature,

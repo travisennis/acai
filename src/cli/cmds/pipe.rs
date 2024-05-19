@@ -5,7 +5,7 @@ use clap::{Args, ValueEnum};
 
 use crate::{
     cli::{CmdConfig, CmdRunner},
-    clients::LLMClient,
+    clients::ChatCompletionClient,
     errors::CAError,
     models::{Message, Role},
 };
@@ -52,7 +52,7 @@ impl CmdRunner for Cmd {
             _ => DEFAULT_PROMPT,
         };
 
-        let mut client = LLMClient::new(
+        let mut client = ChatCompletionClient::new(
             cfg.provider,
             cfg.model,
             cfg.temperature,

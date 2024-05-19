@@ -112,7 +112,7 @@ impl fmt::Display for Model {
     }
 }
 
-pub struct LLMClient {
+pub struct ChatCompletionClient {
     provider: Provider,
     model: Model,
     token: String,
@@ -123,7 +123,7 @@ pub struct LLMClient {
     messages: Vec<Message>,
 }
 
-impl LLMClient {
+impl ChatCompletionClient {
     pub fn new(
         provider: Provider,
         model: Model,
@@ -146,7 +146,7 @@ impl LLMClient {
             }],
         };
 
-        LLMClient {
+        ChatCompletionClient {
             provider,
             model,
             token,
