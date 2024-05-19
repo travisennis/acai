@@ -13,15 +13,15 @@ use crate::{
 
 const OPTIMIZE_PROMPT: &str = "Please review the following code snippet and propose optimizations to enhance its performance. Focus on identifying opportunities to increase efficiency, speed, and resource conservation. Ensure that any optimized code retains the same functionality as the original but demonstrates measurable performance improvements. Provide only the revised code in your response.";
 
-const FIX_PROMPT: &str = "Your task is to analyze the provided code snippet, identify any bugs or errors present, and provide a corrected version of the code that resolves these issues. The corrected code should be functional, efficient, and adhere to best practices in programming. Only return the code.";
+const FIX_PROMPT: &str = "Your task is to analyze the provided code snippet, identify any bugs or errors present, and provide a corrected version of the code that resolves these issues while retaining the same functionality. The corrected code should be functional, efficient, and adhere to best practices in programming. Only return the revised code.";
 
-const COMPLETE_PROMPT: &str = "Your task is to complete the provided code snippet. You should complete the function implementation. The completed code should be functional, efficient, and adhere to best practices in programming. Only return the code.";
+const COMPLETE_PROMPT: &str = "Your task is to complete the provided code snippet. You should complete the function implementation. The completed code should be functional, efficient, and adhere to best practices in programming. Only return the revised code.";
 
 const DOCUMENT_PROMPT: &str = "Your task is to document the provided code using the best practices for documenting code for this language.";
 
 const TODO_PROMPT: &str = "Your task is to add todo comments to the provided code snippet. The todo comments are to be added to parts of the code that can be improved or fixed. The todo comment should explain what needs to be done and give a short explanation of why.";
 
-const DEFAULT_PROMPT: &str = "You are a helpful coding assistant and senior software engineer. Provide the answer and only the answer to the user's request. The answer should be in plain text without Markdown formatting. Only return the code.";
+const DEFAULT_PROMPT: &str = "You are a helpful coding assistant and senior software engineer. Provide the answer and only the answer to the user's request. The answer should be in plain text without Markdown formatting. Only return the revised code.";
 
 #[derive(Debug, ValueEnum, Clone, PartialEq)]
 enum Task {
@@ -104,6 +104,7 @@ impl CmdRunner for Cmd {
             } else {
                 eprintln!("{response:?}");
             }
+
             DataDir::new().save_messages(&client.get_message_history());
         }
 
