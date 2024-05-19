@@ -100,6 +100,13 @@ pub struct ChatCompletionClient {
     max_tokens: u32,
     system: String,
     messages: Vec<Message>,
+    stop: Option<Vec<String>>,
+    presence_penalty: f32,
+    frequency_penalty: f32,
+    logit_bias: Option<std::collections::HashMap<String, f32>>,
+    user: Option<String>,
+    top_k: f32,
+    stream: bool,
 }
 
 impl ChatCompletionClient {
@@ -134,6 +141,13 @@ impl ChatCompletionClient {
             top_p,
             system: system_prompt.to_string(),
             messages: msgs,
+            stop: None,
+            presence_penalty: 0.0,
+            frequency_penalty: 0.0,
+            logit_bias: None,
+            user: None,
+            top_k: 1.0,
+            stream: false,
         }
     }
 
@@ -149,6 +163,8 @@ impl ChatCompletionClient {
                 "temperature": self.temperature,
                 "max_tokens": self.max_tokens,
                 "top_p": self.top_p,
+                "top_k": self.top_k,
+                "stream": self.stream,
                 "system": self.system,
                 "messages": self.messages
             }),
@@ -157,7 +173,13 @@ impl ChatCompletionClient {
                 "temperature": self.temperature,
                 "top_p": self.top_p,
                 "max_tokens": self.max_tokens,
-                "messages": self.messages
+                "stream": self.stream,
+                "messages": self.messages,
+                "presence_penalty": self.presence_penalty,
+                "frequency_penalty": self.frequency_penalty,
+                "stop": self.stop,
+                "logit_bias": self.logit_bias,
+                "user": self.user,
             }),
         };
 
