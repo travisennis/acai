@@ -78,27 +78,6 @@ pub enum Model {
     ClaudeHaiku,
 }
 
-// impl Into<String> for Model {
-//     fn into(self) -> String {
-//         match self {
-//             Model::GPT4Turbo => "gpt-4-turbo-preview".to_string(),
-//             Model::GPT3Turbo => "gpt-3-turbo".to_string(),
-//             Model::ClaudeOpus => "claude-3-opus-20240229".to_string(),
-//             Model::ClaudeSonnet => "claude-3-sonnet-20240229".to_string(),
-//             Model::ClaudeHaiku => "claude-3-haiku-20240307".to_string(),
-//         }
-//     }
-// }
-
-// impl_enum_string_serialization!(
-//     Model,
-//     GPT4Turbo => "gpt-4-turbo-preview",
-//     GPT3Turbo => "gpt-3-turbo",
-//     ClaudeOpus => "claude-3-opus-20240229",
-//     ClaudeSonnet => "claude-3-sonnet-20240229",
-//     ClaudeHaiku => "claude-3-haiku-20240307"
-// );
-
 impl fmt::Display for Model {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
