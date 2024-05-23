@@ -159,36 +159,43 @@ impl ChatCompletionClient {
         self
     }
 
+    #[allow(dead_code)]
     pub fn stop(mut self, stop: Vec<String>) -> Self {
         self.stop = Some(stop);
         self
     }
 
+    #[allow(dead_code)]
     pub fn presence_penalty(mut self, presence_penalty: f32) -> Self {
         self.presence_penalty = presence_penalty;
         self
     }
 
+    #[allow(dead_code)]
     pub fn frequency_penalty(mut self, frequency_penalty: f32) -> Self {
         self.frequency_penalty = frequency_penalty;
         self
     }
 
+    #[allow(dead_code)]
     pub fn logit_bias(mut self, logit_bias: std::collections::HashMap<String, f32>) -> Self {
         self.logit_bias = Some(logit_bias);
         self
     }
 
+    #[allow(dead_code)]
     pub fn user(mut self, user: String) -> Self {
         self.user = Some(user);
         self
     }
 
+    #[allow(dead_code)]
     pub fn top_k(mut self, top_k: f32) -> Self {
         self.top_k = top_k;
         self
     }
 
+    #[allow(dead_code)]
     pub fn stream(mut self, stream: bool) -> Self {
         self.stream = stream;
         self
