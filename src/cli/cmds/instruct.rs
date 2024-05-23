@@ -21,14 +21,10 @@ impl CmdRunner for Cmd {
     async fn run(&self, cfg: CmdConfig) -> Result<(), Box<dyn Error + Send + Sync>> {
         let system_prompt = "You are a helpful coding assistant. Provide the answer and only the answer in the format requested.";
 
-        let mut client = ChatCompletionClient::new(
-            cfg.provider,
-            cfg.model,
-            cfg.temperature,
-            cfg.top_p,
-            cfg.max_tokens,
-            system_prompt,
-        );
+        let mut client = ChatCompletionClient::new(cfg.provider, cfg.model, system_prompt)
+            .temperature(cfg.temperature)
+            .top_p(cfg.top_p)
+            .max_tokens(cfg.max_tokens);
 
         let prompt = self.prompt.to_string();
 

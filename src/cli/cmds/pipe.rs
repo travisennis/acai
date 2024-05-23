@@ -53,14 +53,10 @@ impl CmdRunner for Cmd {
             _ => DEFAULT_PROMPT,
         };
 
-        let mut client = ChatCompletionClient::new(
-            cfg.provider,
-            cfg.model,
-            cfg.temperature,
-            cfg.top_p,
-            cfg.max_tokens,
-            system_prompt,
-        );
+        let mut client = ChatCompletionClient::new(cfg.provider, cfg.model, system_prompt)
+            .temperature(cfg.temperature)
+            .top_p(cfg.top_p)
+            .max_tokens(cfg.max_tokens);
 
         let std_prompt: Result<String, CAError> = {
             if self.prompt.is_empty() {

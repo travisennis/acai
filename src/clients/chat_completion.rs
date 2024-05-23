@@ -110,14 +110,7 @@ pub struct ChatCompletionClient {
 }
 
 impl ChatCompletionClient {
-    pub fn new(
-        provider: Provider,
-        model: Model,
-        temperature: f32,
-        top_p: f32,
-        max_tokens: u32,
-        system_prompt: &str,
-    ) -> Self {
+    pub fn new(provider: Provider, model: Model, system_prompt: &str) -> Self {
         let token = match provider {
             Provider::Anthropic => env::var("CLAUDE_API_KEY"),
             Provider::OpenAI => env::var("OPENAI_API_KEY"),
@@ -136,9 +129,9 @@ impl ChatCompletionClient {
             provider,
             model,
             token,
-            temperature,
-            max_tokens,
-            top_p,
+            temperature: 0.0,
+            max_tokens: 1028,
+            top_p: 1.0,
             system: system_prompt.to_string(),
             messages: msgs,
             stop: None,
@@ -149,6 +142,56 @@ impl ChatCompletionClient {
             top_k: 1.0,
             stream: false,
         }
+    }
+
+    pub fn temperature(mut self, temperature: f32) -> Self {
+        self.temperature = temperature;
+        self
+    }
+
+    pub fn top_p(mut self, top_p: f32) -> Self {
+        self.top_p = top_p;
+        self
+    }
+
+    pub fn max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = max_tokens;
+        self
+    }
+
+    pub fn stop(mut self, stop: Vec<String>) -> Self {
+        self.stop = Some(stop);
+        self
+    }
+
+    pub fn presence_penalty(mut self, presence_penalty: f32) -> Self {
+        self.presence_penalty = presence_penalty;
+        self
+    }
+
+    pub fn frequency_penalty(mut self, frequency_penalty: f32) -> Self {
+        self.frequency_penalty = frequency_penalty;
+        self
+    }
+
+    pub fn logit_bias(mut self, logit_bias: std::collections::HashMap<String, f32>) -> Self {
+        self.logit_bias = Some(logit_bias);
+        self
+    }
+
+    pub fn user(mut self, user: String) -> Self {
+        self.user = Some(user);
+        self
+    }
+
+    pub fn top_k(mut self, top_k: f32) -> Self {
+        self.top_k = top_k;
+        self
+    }
+
+    pub fn stream(mut self, stream: bool) -> Self {
+        self.stream = stream;
+        self
     }
 
     pub async fn send_message(

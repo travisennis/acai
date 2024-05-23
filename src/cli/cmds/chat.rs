@@ -19,14 +19,10 @@ impl CmdRunner for Cmd {
     async fn run(&self, cfg: CmdConfig) -> Result<(), Box<dyn Error + Send + Sync>> {
         let system_prompt = "You are a helpful coding assistant. Provide answers in markdown format unless instructed otherwise. If the request is ambiguous, ask questions. If you don't know the answer, admit you don't.";
 
-        let mut client = ChatCompletionClient::new(
-            cfg.provider,
-            cfg.model,
-            cfg.temperature,
-            cfg.top_p,
-            cfg.max_tokens,
-            system_prompt,
-        );
+        let mut client = ChatCompletionClient::new(cfg.provider, cfg.model, system_prompt)
+            .temperature(cfg.temperature)
+            .top_p(cfg.top_p)
+            .max_tokens(cfg.max_tokens);
 
         let mut rl = DefaultEditor::new().expect("Editor not initialized.");
 
