@@ -91,21 +91,22 @@ impl fmt::Display for Model {
     }
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub struct ChatCompletionClient {
     provider: Provider,
     model: Model,
     token: String,
-    temperature: f32,
-    top_p: f32,
-    max_tokens: u32,
+    temperature: Option<f32>,
+    top_p: Option<f32>,
+    max_tokens: Option<u32>,
     system: String,
     messages: Vec<Message>,
     stop: Option<Vec<String>>,
-    presence_penalty: f32,
-    frequency_penalty: f32,
+    presence_penalty: Option<f32>,
+    frequency_penalty: Option<f32>,
     logit_bias: Option<std::collections::HashMap<String, f32>>,
     user: Option<String>,
-    top_k: f32,
+    top_k: Option<u32>,
     stream: bool,
 }
 
@@ -129,33 +130,33 @@ impl ChatCompletionClient {
             provider,
             model,
             token,
-            temperature: 0.0,
-            max_tokens: 1028,
-            top_p: 1.0,
+            temperature: Some(0.0),
+            max_tokens: Some(1028),
+            top_p: None,
             system: system_prompt.to_string(),
             messages: msgs,
             stop: None,
-            presence_penalty: 0.0,
-            frequency_penalty: 0.0,
+            presence_penalty: None,
+            frequency_penalty: None,
             logit_bias: None,
             user: None,
-            top_k: 1.0,
+            top_k: None,
             stream: false,
         }
     }
 
     pub fn temperature(mut self, temperature: f32) -> Self {
-        self.temperature = temperature;
+        self.temperature = Some(temperature);
         self
     }
 
     pub fn top_p(mut self, top_p: f32) -> Self {
-        self.top_p = top_p;
+        self.top_p = Some(top_p);
         self
     }
 
     pub fn max_tokens(mut self, max_tokens: u32) -> Self {
-        self.max_tokens = max_tokens;
+        self.max_tokens = Some(max_tokens);
         self
     }
 
@@ -167,13 +168,13 @@ impl ChatCompletionClient {
 
     #[allow(dead_code)]
     pub fn presence_penalty(mut self, presence_penalty: f32) -> Self {
-        self.presence_penalty = presence_penalty;
+        self.presence_penalty = Some(presence_penalty);
         self
     }
 
     #[allow(dead_code)]
     pub fn frequency_penalty(mut self, frequency_penalty: f32) -> Self {
-        self.frequency_penalty = frequency_penalty;
+        self.frequency_penalty = Some(frequency_penalty);
         self
     }
 
@@ -190,8 +191,8 @@ impl ChatCompletionClient {
     }
 
     #[allow(dead_code)]
-    pub fn top_k(mut self, top_k: f32) -> Self {
-        self.top_k = top_k;
+    pub fn top_k(mut self, top_k: u32) -> Self {
+        self.top_k = Some(top_k);
         self
     }
 
