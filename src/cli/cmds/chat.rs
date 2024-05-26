@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{collections::HashMap, error::Error};
 
 use anyhow::Result;
 use clap::Args;
@@ -10,6 +10,7 @@ use crate::{
     clients::ChatCompletionClient,
     config::DataDir,
     models::{Message, Role},
+    prompts::PromptBuilder,
 };
 
 #[derive(Clone, Args)]
@@ -28,6 +29,8 @@ impl CmdRunner for Cmd {
 
         let skin = MadSkin::default();
 
+        let prompt_builder = PromptBuilder::new()?;
+
         let mut is_first_iteration = true;
 
         loop {
@@ -37,28 +40,19 @@ impl CmdRunner for Cmd {
                     break;
                 }
                 Ok(line) => {
-                    let content = if is_first_iteration {
+                    let mut data = HashMap::new();
+                    data.insert("prompt".to_string(), line);
+                    if is_first_iteration {
                         is_first_iteration = false;
 
                         if let Some(ref context) = cfg.context {
-                            format!(
-                                "\n \
-                                {line}\n\n \
-                                ```\n \
-                                {context}\n \
-                                ```
-                                "
-                            )
-                        } else {
-                            line
+                            data.insert("context".to_string(), context.to_string());
                         }
-                    } else {
-                        line
-                    };
+                    }
 
                     let user_msg = Message {
                         role: Role::User,
-                        content: content.clone(),
+                        content: prompt_builder.render_template(&data)?,
                     };
 
                     let response = client.send_message(user_msg).await?;

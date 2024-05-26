@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{collections::HashMap, error::Error};
 
 use anyhow::Result;
 use clap::{Args, ValueEnum};
@@ -9,6 +9,7 @@ use crate::{
     config::DataDir,
     errors::CAError,
     models::{Message, Role},
+    prompts::PromptBuilder,
 };
 
 const OPTIMIZE_PROMPT: &str = "Please review the following code snippet and propose optimizations to enhance its performance. Focus on identifying opportunities to increase efficiency, speed, and resource conservation. Ensure that any optimized code retains the same functionality as the original but demonstrates measurable performance improvements. Provide only the revised code in your response.";
@@ -58,6 +59,8 @@ impl CmdRunner for Cmd {
             .top_p(cfg.top_p)
             .max_tokens(cfg.max_tokens);
 
+        let prompt_builder = PromptBuilder::new()?;
+
         let std_prompt: Result<String, CAError> = {
             if self.prompt.is_empty() {
                 Err(CAError::Input)
@@ -66,31 +69,19 @@ impl CmdRunner for Cmd {
             }
         };
 
-        let user_prompt: Result<String, CAError> = {
-            if let Ok(prompt) = std_prompt {
-                if let Some(context) = cfg.context {
-                    Ok(format!(
-                        "\n \
-                        {prompt}\n\n \
-                        ```\n \
-                        {context}\n \
-                        ```
-                        "
-                    ))
-                } else {
-                    Ok(prompt)
-                }
-            } else if let Some(context) = cfg.context {
-                Ok(context)
-            } else {
-                Err(CAError::Input)
-            }
-        };
+        let mut data = HashMap::new();
 
-        if user_prompt.is_ok() {
+        if let Ok(prompt) = std_prompt {
+            data.insert("prompt".to_string(), prompt);
+        }
+        if let Some(context) = cfg.context {
+            data.insert("context".to_string(), context.to_string());
+        }
+
+        if !data.is_empty() {
             let msg = Message {
                 role: Role::User,
-                content: user_prompt.unwrap(),
+                content: prompt_builder.render_template(&data)?,
             };
 
             let response = client.send_message(msg).await?;
