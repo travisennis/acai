@@ -5,7 +5,7 @@ pub struct CmdConfig {
     pub model: Model,
     pub context: Option<String>,
     pub temperature: f32,
-    pub top_p: f32,
+    pub top_p: Option<f32>,
     pub max_tokens: u32,
 }
 
@@ -14,7 +14,7 @@ impl CmdConfig {
         model: &str,
         context: Option<String>,
         temperature: f32,
-        top_p: f32,
+        top_p: Option<f32>,
         max_tokens: u32,
     ) -> Self {
         let model_provider = match model {

@@ -150,8 +150,10 @@ impl ChatCompletionClient {
         self
     }
 
-    pub fn top_p(mut self, top_p: f32) -> Self {
-        self.top_p = Some(top_p);
+    pub fn top_p(mut self, top_p: Option<f32>) -> Self {
+        if let Some(top_p) = top_p {
+            self.top_p = Some(top_p);
+        }
         self
     }
 

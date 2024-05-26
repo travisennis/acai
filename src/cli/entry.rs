@@ -22,8 +22,8 @@ pub struct CodingAssistant {
     pub max_tokens: u32,
 
     /// Sets the top-p value
-    #[arg(long, default_value_t = 1.0)]
-    pub top_p: f32,
+    #[arg(long)]
+    pub top_p: Option<f32>,
 }
 
 #[derive(Clone, Subcommand)]
