@@ -28,6 +28,8 @@ impl CmdRunner for Cmd {
 
         let skin = MadSkin::default();
 
+        let mut is_first_iteration = true;
+
         loop {
             let readline = rl.readline("> ");
             match readline {
@@ -35,9 +37,28 @@ impl CmdRunner for Cmd {
                     break;
                 }
                 Ok(line) => {
+                    let content = if is_first_iteration {
+                        is_first_iteration = false;
+
+                        if let Some(ref context) = cfg.context {
+                            format!(
+                                "\n \
+                                {line}\n\n \
+                                ```\n \
+                                {context}\n \
+                                ```
+                                "
+                            )
+                        } else {
+                            line
+                        }
+                    } else {
+                        line
+                    };
+
                     let user_msg = Message {
                         role: Role::User,
-                        content: line,
+                        content: content.clone(),
                     };
 
                     let response = client.send_message(user_msg).await?;
