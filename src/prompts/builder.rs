@@ -29,10 +29,7 @@ impl PromptBuilder<'_> {
         })
     }
 
-    pub fn render_template(
-        &self,
-        data: &HashMap<String, String>,
-    ) -> Result<String, PromptBuilderError> {
+    pub fn build(&self, data: &HashMap<String, String>) -> Result<String, PromptBuilderError> {
         self.template_engine
             .render("tpl_1", &data)
             .map_err(|_e| PromptBuilderError::RenderError)

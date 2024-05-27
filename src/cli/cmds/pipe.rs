@@ -81,7 +81,7 @@ impl CmdRunner for Cmd {
         if !data.is_empty() {
             let msg = Message {
                 role: Role::User,
-                content: prompt_builder.render_template(&data)?,
+                content: prompt_builder.build(&data)?,
             };
 
             let response = client.send_message(msg).await?;

@@ -52,7 +52,7 @@ impl CmdRunner for Cmd {
 
                     let user_msg = Message {
                         role: Role::User,
-                        content: prompt_builder.render_template(&data)?,
+                        content: prompt_builder.build(&data)?,
                     };
 
                     let response = client.send_message(user_msg).await?;
