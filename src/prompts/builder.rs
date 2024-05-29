@@ -18,7 +18,6 @@ pub struct PromptBuilder<'a> {
 impl PromptBuilder<'_> {
     pub fn new() -> Result<Self, PromptBuilderError> {
         let default_template = include_str!("prompt.hbs");
-        println!("{default_template}");
 
         let mut reg = Handlebars::new();
 
