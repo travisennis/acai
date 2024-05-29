@@ -86,8 +86,8 @@ impl CmdRunner for Cmd {
 
             let response = client.send_message(msg).await?;
 
-            if let Some(msg) = response {
-                println!("{}", msg.content);
+            if let Some(response_msg) = response {
+                println!("{}", response_msg.content);
             } else {
                 eprintln!("{response:?}");
             }
