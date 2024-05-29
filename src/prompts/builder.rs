@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use handlebars::Handlebars;
+use handlebars::{no_escape, Handlebars};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -17,11 +17,14 @@ pub struct PromptBuilder<'a> {
 
 impl PromptBuilder<'_> {
     pub fn new() -> Result<Self, PromptBuilderError> {
+        let default_template = include_str!("prompt.hbs");
+        println!("{default_template}");
+
         let mut reg = Handlebars::new();
 
-        let default_template = include_str!("prompt.hbs");
+        reg.register_escape_fn(no_escape);
 
-        reg.register_template_string("tpl_1", default_template)
+        reg.register_template_string("default", default_template)
             .map_err(|_e| PromptBuilderError::TemplateError)?;
 
         Ok(Self {
@@ -31,7 +34,7 @@ impl PromptBuilder<'_> {
 
     pub fn build(&self, data: &HashMap<String, String>) -> Result<String, PromptBuilderError> {
         self.template_engine
-            .render("tpl_1", &data)
+            .render("default", &data)
             .map_err(|_e| PromptBuilderError::RenderError)
     }
 }
