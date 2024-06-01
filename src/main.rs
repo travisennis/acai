@@ -44,6 +44,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         CodingAssistantCmd::Chat(chat_cmd) => chat_cmd.run(cfg).await?,
         CodingAssistantCmd::Pipe(pipe_cmd) => pipe_cmd.run(cfg).await?,
         CodingAssistantCmd::Instruct(instruct_cmd) => instruct_cmd.run(cfg).await?,
+        CodingAssistantCmd::PromptGenerator(prompt_generator_cmd) => {
+            prompt_generator_cmd.run(cfg).await?;
+        }
     };
 
     Ok(())
