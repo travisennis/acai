@@ -1,4 +1,4 @@
-use crate::clients::{Model, Provider};
+use crate::clients::providers::{Model, Provider};
 
 pub struct CmdConfig {
     pub provider: Provider,
@@ -23,6 +23,7 @@ impl CmdConfig {
             "opus" => (Provider::Anthropic, Model::ClaudeOpus),
             "sonnet" => (Provider::Anthropic, Model::ClaudeSonnet),
             "haiku" => (Provider::Anthropic, Model::ClaudeHaiku),
+            "codestral" => (Provider::Mistral, Model::Codestral),
             _ => (Provider::OpenAI, Model::GPT4o),
         };
 
