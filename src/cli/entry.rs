@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 
-use super::cmds::{chat, instruct, pipe, prompt_generator};
+use super::cmds::{chat, complete, instruct, pipe, prompt_generator};
 
 /// coding assistant commands
 #[derive(Parser)]
@@ -31,5 +31,6 @@ pub enum CodingAssistantCmd {
     Chat(chat::Cmd),
     Instruct(instruct::Cmd),
     Pipe(pipe::Cmd),
+    Complete(complete::Cmd),
     PromptGenerator(prompt_generator::Cmd),
 }
