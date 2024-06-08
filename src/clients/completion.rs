@@ -41,41 +41,51 @@ impl CompletionClient {
             token,
             temperature: Some(0.0),
             max_tokens: Some(1028),
-            prompt: "".to_string(),
-            suffix: "".to_string(),
+            prompt: String::new(),
+            suffix: String::new(),
             messages: msgs,
         }
     }
 
-    pub fn temperature(mut self, temperature: f32) -> Self {
-        self.temperature = Some(temperature);
+    pub fn temperature(mut self, temperature: Option<f32>) -> Self {
+        if let Some(temperature) = temperature {
+            self.temperature = Some(temperature);
+        }
         self
     }
 
-    pub fn max_tokens(mut self, max_tokens: u32) -> Self {
-        self.max_tokens = Some(max_tokens);
+    pub fn max_tokens(mut self, max_tokens: Option<u32>) -> Self {
+        if let Some(max_tokens) = max_tokens {
+            self.max_tokens = Some(max_tokens);
+        }
         self
     }
 
     pub async fn send_message(
         &mut self,
         message: &str,
+        suffix: Option<String>,
     ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
         self.messages.push(Message {
             role: Role::User,
             content: message.to_string(),
         });
 
-        self.prompt = message.to_owned();
+        message.clone_into(&mut self.prompt);
+        if let Some(sfx) = &suffix {
+            self.suffix.clone_from(sfx)
+        }
 
         let prompt = match &self.provider {
-            Provider::Mistral => json!({
-                "model": self.model,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "prompt": self.prompt,
-                "suffix": self.suffix,
-            }),
+            Provider::Mistral => {
+                let mut json_map = serde_json::Map::new();
+                json_map.insert("model".to_string(), json!(self.model));
+                json_map.insert("temperature".to_string(), json!(self.temperature));
+                json_map.insert("max_tokens".to_string(), json!(self.max_tokens));
+                json_map.insert("prompt".to_string(), json!(self.prompt));
+                json_map.insert("suffix".to_string(), json!(self.suffix));
+                json!(json_map)
+            }
             _ => panic!(),
         };
 
