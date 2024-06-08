@@ -2,6 +2,7 @@ mod cli;
 mod clients;
 mod config;
 mod errors;
+mod lsp;
 mod models;
 mod operations;
 mod prompts;
@@ -14,6 +15,7 @@ use clap::Subcommand;
 use cli::chat;
 use cli::complete;
 use cli::instruct;
+use cli::lsp as lsp_cmd;
 use cli::pipe;
 use cli::prompt_generator;
 use config::DataDir;
@@ -50,6 +52,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         CodingAssistantCmd::PromptGenerator(prompt_generator_cmd) => {
             prompt_generator_cmd.run().await?;
         }
+        CodingAssistantCmd::Lsp(lsp_cmd) => lsp_cmd.run().await?,
     };
 
     Ok(())
