@@ -12,14 +12,14 @@ pub struct DataDir {
 impl DataDir {
     pub fn new() -> Self {
         let home_dir = dirs::home_dir().expect("Home dir not found.");
-        let data_dir = home_dir.join(".config/coding-assistant");
+        let data_dir = home_dir.join(".cache/coding-assistant");
 
         Self { data_dir }
     }
 
     pub fn create() -> Self {
         let home_dir = dirs::home_dir().expect("Home dir not found.");
-        let data_dir = home_dir.join(".config/coding-assistant");
+        let data_dir = home_dir.join(".cache/coding-assistant");
 
         if let Some(p) = data_dir.parent() {
             fs::create_dir_all(p).expect("Directory not created.");
