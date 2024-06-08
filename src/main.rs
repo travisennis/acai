@@ -7,13 +7,33 @@ mod prompts;
 
 use std::error::Error;
 
+use crate::cli::CmdRunner;
 use clap::Parser;
-use cli::CmdConfig;
-use cli::CmdRunner;
-use cli::CodingAssistant;
-use cli::CodingAssistantCmd;
+use clap::Subcommand;
+use cli::chat;
+use cli::complete;
+use cli::instruct;
+use cli::pipe;
+use cli::prompt_generator;
 use config::DataDir;
-use errors::CAError;
+
+/// coding assistant commands
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct CodingAssistant {
+    #[command(subcommand)]
+    pub cmd: CodingAssistantCmd,
+}
+
+#[derive(Clone, Subcommand)]
+enum CodingAssistantCmd {
+    Chat(chat::Cmd),
+    Instruct(instruct::Cmd),
+    Pipe(pipe::Cmd),
+    Complete(complete::Cmd),
+    PromptGenerator(prompt_generator::Cmd),
+    Lsp(lsp_cmd::Cmd),
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -21,32 +41,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let args = CodingAssistant::parse();
 
-    let context: Result<String, CAError> = {
-        if atty::is(atty::Stream::Stdin) {
-            Err(CAError::Input)
-        } else {
-            match std::io::read_to_string(std::io::stdin()) {
-                Ok(result) => Ok(result),
-                Err(_error) => Err(CAError::Input),
-            }
-        }
-    };
-
-    let cfg = CmdConfig::new(
-        &args.model,
-        context.ok(),
-        args.temperature,
-        args.top_p,
-        args.max_tokens,
-    );
-
     match args.cmd {
-        CodingAssistantCmd::Chat(chat_cmd) => chat_cmd.run(cfg).await?,
-        CodingAssistantCmd::Pipe(pipe_cmd) => pipe_cmd.run(cfg).await?,
-        CodingAssistantCmd::Instruct(instruct_cmd) => instruct_cmd.run(cfg).await?,
-        CodingAssistantCmd::Complete(complete_cmd) => complete_cmd.run(cfg).await?,
+        CodingAssistantCmd::Chat(chat_cmd) => chat_cmd.run().await?,
+        CodingAssistantCmd::Pipe(pipe_cmd) => pipe_cmd.run().await?,
+        CodingAssistantCmd::Instruct(instruct_cmd) => instruct_cmd.run().await?,
+        CodingAssistantCmd::Complete(complete_cmd) => complete_cmd.run().await?,
         CodingAssistantCmd::PromptGenerator(prompt_generator_cmd) => {
-            prompt_generator_cmd.run(cfg).await?;
+            prompt_generator_cmd.run().await?;
         }
     };
 

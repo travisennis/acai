@@ -8,7 +8,7 @@ use std::{
 use clap::Args;
 
 use crate::{
-    cli::{CmdConfig, CmdRunner},
+    cli::CmdRunner,
     errors::CAError,
     models::{Message, Role},
     prompts::PromptBuilder,
@@ -22,11 +22,22 @@ pub struct Cmd {
 }
 
 impl CmdRunner for Cmd {
-    async fn run(&self, cfg: CmdConfig) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         match env::current_dir() {
             Ok(path) => println!("The current working directory is: {}", path.display()),
-            Err(e) => println!("Error: {}", e),
+            Err(e) => println!("Error: {e}"),
         }
+
+        let context: Result<String, CAError> = {
+            if atty::is(atty::Stream::Stdin) {
+                Err(CAError::Input)
+            } else {
+                match std::io::read_to_string(std::io::stdin()) {
+                    Ok(result) => Ok(result),
+                    Err(_error) => Err(CAError::Input),
+                }
+            }
+        };
 
         let prompt_builder = PromptBuilder::new()?;
 
@@ -43,7 +54,7 @@ impl CmdRunner for Cmd {
         if let Ok(prompt) = std_prompt {
             data.insert("prompt".to_string(), prompt);
         }
-        if let Some(context) = cfg.context {
+        if let Ok(context) = context {
             println!("{context}");
             let t = process_todo_comment2(&context);
             println!("Prompt: {}", t.0);

@@ -6,24 +6,66 @@ use rustyline::{error::ReadlineError, DefaultEditor};
 use termimad::MadSkin;
 
 use crate::{
-    cli::{CmdConfig, CmdRunner},
-    clients::ChatCompletionClient,
+    cli::CmdRunner,
+    clients::{
+        providers::{Model, Provider},
+        ChatCompletionClient,
+    },
     config::DataDir,
+    errors::CAError,
     models::{Message, Role},
     prompts::PromptBuilder,
 };
 
 #[derive(Clone, Args)]
-pub struct Cmd {}
+pub struct Cmd {
+    /// Sets the model to use
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Sets the temperature value
+    #[arg(long)]
+    pub temperature: Option<f32>,
+
+    /// Sets the max tokens value
+    #[arg(long)]
+    pub max_tokens: Option<u32>,
+
+    /// Sets the top-p value
+    #[arg(long)]
+    pub top_p: Option<f32>,
+}
 
 impl CmdRunner for Cmd {
-    async fn run(&self, cfg: CmdConfig) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let system_prompt = "You are a helpful coding assistant. Provide answers in markdown format unless instructed otherwise. If the request is ambiguous, ask questions. If you don't know the answer, admit you don't.";
 
-        let mut client = ChatCompletionClient::new(cfg.provider, cfg.model, system_prompt)
-            .temperature(cfg.temperature)
-            .top_p(cfg.top_p)
-            .max_tokens(cfg.max_tokens);
+        let model_provider = match self.model.clone().unwrap_or("default".to_string()).as_str() {
+            "gpt-4-turbo" => (Provider::OpenAI, Model::GPT4Turbo),
+            "gpt-3-turbo" => (Provider::OpenAI, Model::GPT3Turbo),
+            "opus" => (Provider::Anthropic, Model::ClaudeOpus),
+            "sonnet" => (Provider::Anthropic, Model::ClaudeSonnet),
+            "haiku" => (Provider::Anthropic, Model::ClaudeHaiku),
+            "codestral" => (Provider::Mistral, Model::Codestral),
+            _ => (Provider::OpenAI, Model::GPT4o),
+        };
+
+        let mut client =
+            ChatCompletionClient::new(model_provider.0, model_provider.1, system_prompt)
+                .temperature(self.temperature)
+                .top_p(self.top_p)
+                .max_tokens(self.max_tokens);
+
+        let context: Result<String, CAError> = {
+            if atty::is(atty::Stream::Stdin) {
+                Err(CAError::Input)
+            } else {
+                match std::io::read_to_string(std::io::stdin()) {
+                    Ok(result) => Ok(result),
+                    Err(_error) => Err(CAError::Input),
+                }
+            }
+        };
 
         let mut rl = DefaultEditor::new().expect("Editor not initialized.");
 
@@ -45,7 +87,7 @@ impl CmdRunner for Cmd {
                     if is_first_iteration {
                         is_first_iteration = false;
 
-                        if let Some(ref context) = cfg.context {
+                        if let Ok(ref context) = context {
                             data.insert("context".to_string(), context.to_string());
                         }
                     }

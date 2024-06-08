@@ -4,8 +4,11 @@ use anyhow::Result;
 use clap::{Args, ValueEnum};
 
 use crate::{
-    cli::{CmdConfig, CmdRunner},
-    clients::ChatCompletionClient,
+    cli::CmdRunner,
+    clients::{
+        providers::{Model, Provider},
+        ChatCompletionClient,
+    },
     config::DataDir,
     errors::CAError,
     models::{Message, Role},
@@ -36,6 +39,22 @@ enum Task {
 #[derive(Clone, Args)]
 pub struct Cmd {
     /// Sets the task
+    /// Sets the model to use
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Sets the temperature value
+    #[arg(long)]
+    pub temperature: Option<f32>,
+
+    /// Sets the max tokens value
+    #[arg(long)]
+    pub max_tokens: Option<u32>,
+
+    /// Sets the top-p value
+    #[arg(long)]
+    pub top_p: Option<f32>,
+
     #[arg(long, value_enum)]
     task: Option<Task>,
 
@@ -44,7 +63,7 @@ pub struct Cmd {
 }
 
 impl CmdRunner for Cmd {
-    async fn run(&self, cfg: CmdConfig) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let system_prompt = match self.task {
             Some(Task::Optimize) => OPTIMIZE_PROMPT,
             Some(Task::Fix) => FIX_PROMPT,
@@ -54,12 +73,34 @@ impl CmdRunner for Cmd {
             _ => DEFAULT_PROMPT,
         };
 
-        let mut client = ChatCompletionClient::new(cfg.provider, cfg.model, system_prompt)
-            .temperature(cfg.temperature)
-            .top_p(cfg.top_p)
-            .max_tokens(cfg.max_tokens);
+        let model_provider = match self.model.clone().unwrap_or("default".to_string()).as_str() {
+            "gpt-4-turbo" => (Provider::OpenAI, Model::GPT4Turbo),
+            "gpt-3-turbo" => (Provider::OpenAI, Model::GPT3Turbo),
+            "opus" => (Provider::Anthropic, Model::ClaudeOpus),
+            "sonnet" => (Provider::Anthropic, Model::ClaudeSonnet),
+            "haiku" => (Provider::Anthropic, Model::ClaudeHaiku),
+            "codestral" => (Provider::Mistral, Model::Codestral),
+            _ => (Provider::OpenAI, Model::GPT4o),
+        };
+
+        let mut client =
+            ChatCompletionClient::new(model_provider.0, model_provider.1, system_prompt)
+                .temperature(self.temperature)
+                .top_p(self.top_p)
+                .max_tokens(self.max_tokens);
 
         let prompt_builder = PromptBuilder::new()?;
+
+        let context: Result<String, CAError> = {
+            if atty::is(atty::Stream::Stdin) {
+                Err(CAError::Input)
+            } else {
+                match std::io::read_to_string(std::io::stdin()) {
+                    Ok(result) => Ok(result),
+                    Err(_error) => Err(CAError::Input),
+                }
+            }
+        };
 
         let std_prompt: Result<String, CAError> = {
             if self.prompt.is_empty() {
@@ -74,7 +115,7 @@ impl CmdRunner for Cmd {
         if let Ok(prompt) = std_prompt {
             data.insert("prompt".to_string(), prompt);
         }
-        if let Some(context) = cfg.context {
+        if let Ok(context) = context {
             data.insert("context".to_string(), context.to_string());
         }
 

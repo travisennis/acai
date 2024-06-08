@@ -74,8 +74,10 @@ impl ChatCompletionClient {
         }
     }
 
-    pub fn temperature(mut self, temperature: f32) -> Self {
-        self.temperature = Some(temperature);
+    pub fn temperature(mut self, temperature: Option<f32>) -> Self {
+        if let Some(temperature) = temperature {
+            self.temperature = Some(temperature);
+        }
         self
     }
 
@@ -86,8 +88,10 @@ impl ChatCompletionClient {
         self
     }
 
-    pub fn max_tokens(mut self, max_tokens: u32) -> Self {
-        self.max_tokens = Some(max_tokens);
+    pub fn max_tokens(mut self, max_tokens: Option<u32>) -> Self {
+        if let Some(max_tokens) = max_tokens {
+            self.max_tokens = Some(max_tokens);
+        }
         self
     }
 

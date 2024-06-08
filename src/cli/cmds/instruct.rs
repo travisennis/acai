@@ -1,62 +1,63 @@
-use std::{collections::HashMap, error::Error};
+use std::error::Error;
 
 use anyhow::Result;
 use clap::Args;
 
-use crate::{
-    cli::{CmdConfig, CmdRunner},
-    clients::ChatCompletionClient,
-    config::DataDir,
-    models::{Message, Role},
-    prompts::PromptBuilder,
-};
+use crate::{cli::CmdRunner, operations::Instruct};
 
 #[derive(Clone, Args)]
 pub struct Cmd {
+    /// Sets the model to use
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Sets the temperature value
+    #[arg(long)]
+    pub temperature: Option<f32>,
+
+    /// Sets the max tokens value
+    #[arg(long)]
+    pub max_tokens: Option<u32>,
+
+    /// Sets the top-p value
+    #[arg(long)]
+    pub top_p: Option<f32>,
+
     /// Sets the prompt
     #[arg(short, long)]
     prompt: Option<String>,
 }
 
-const DEFAULT_PROMPT: &str = "You are a helpful coding assistant and senior software engineer. Provide the answer and only the answer to the user's request. The user's request will be in a TODO comment within the code snippet.  The answer should be in plain text without Markdown formatting. Only return the revised code and remove the TODO comment.";
-
 impl CmdRunner for Cmd {
-    async fn run(&self, cfg: CmdConfig) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // let system_prompt = "You are a helpful coding assistant. Provide the answer and only the answer in the format requested.";
 
-        let system_prompt = DEFAULT_PROMPT;
-
-        let mut client = ChatCompletionClient::new(cfg.provider, cfg.model, system_prompt)
-            .temperature(cfg.temperature)
-            .top_p(cfg.top_p)
-            .max_tokens(cfg.max_tokens);
-
-        let prompt_builder = PromptBuilder::new()?;
-
-        let mut data = HashMap::new();
-
-        if let Some(prompt) = &self.prompt {
-            data.insert("prompt".to_string(), prompt.to_string());
-        }
-        if let Some(context) = cfg.context {
-            data.insert("context".to_string(), context.to_string());
-        }
-
-        if !data.is_empty() {
-            let msg = Message {
-                role: Role::User,
-                content: prompt_builder.build(&data)?,
-            };
-
-            let response = client.send_message(msg).await?;
-
-            if let Some(response_msg) = response {
-                println!("{}", response_msg.content);
+        let context: Option<String> = {
+            if atty::is(atty::Stream::Stdin) {
+                None
             } else {
-                eprintln!("{response:?}");
+                match std::io::read_to_string(std::io::stdin()) {
+                    Ok(result) => Some(result),
+                    Err(_error) => None,
+                }
             }
+        };
 
-            DataDir::new().save_messages(&client.get_message_history());
+        let op = Instruct {
+            model: self.model.clone(),
+            temperature: self.temperature,
+            max_tokens: self.max_tokens,
+            top_p: self.top_p,
+            prompt: self.prompt.clone(),
+            context,
+        };
+
+        let response = op.send().await?;
+
+        if let Some(response_msg) = response {
+            println!("{}", response_msg.content);
+        } else {
+            eprintln!("{response:?}");
         }
 
         Ok(())
