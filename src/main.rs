@@ -3,6 +3,7 @@ mod clients;
 mod config;
 mod errors;
 mod models;
+mod operations;
 mod prompts;
 
 use std::error::Error;
