@@ -30,8 +30,6 @@ pub struct Cmd {
 
 impl CmdRunner for Cmd {
     async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // let system_prompt = "You are a helpful coding assistant. Provide the answer and only the answer in the format requested.";
-
         let context: Option<String> = {
             if atty::is(atty::Stream::Stdin) {
                 None

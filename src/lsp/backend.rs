@@ -4,7 +4,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::*;
+use tower_lsp::lsp_types::{
+    CodeAction, CodeActionKind, CodeActionOptions, CodeActionOrCommand, CodeActionParams,
+    CodeActionProviderCapability, CodeActionResponse, CompletionOptions, CompletionParams,
+    CompletionResponse, DidChangeConfigurationParams, DidChangeTextDocumentParams,
+    DidChangeWatchedFilesParams, DidChangeWorkspaceFoldersParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, DidSaveTextDocumentParams, ExecuteCommandOptions,
+    ExecuteCommandParams, InitializeParams, InitializeResult, InitializedParams, MessageType,
+    Range, ServerCapabilities, TextDocumentContentChangeEvent, TextDocumentItem,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
+    VersionedTextDocumentIdentifier, WorkDoneProgressOptions, WorkspaceEdit,
+};
 use tower_lsp::{Client, LanguageServer};
 
 use crate::operations::Instruct;
@@ -41,7 +51,7 @@ impl Backend {
         let document_uri = text_doc.uri;
         let range = params.range;
         self.client
-            .log_message(MessageType::INFO, format!("{:?}", range))
+            .log_message(MessageType::INFO, format!("{range:?}"))
             .await;
         // let diagnostics = params.context.diagnostics;
         // let error_id_to_ranges = build_error_id_to_ranges(diagnostics);
@@ -152,13 +162,13 @@ impl LanguageServer for Backend {
                 }),
                 execute_command_provider: Some(ExecuteCommandOptions {
                     commands: vec!["instruct".to_string()],
-                    work_done_progress_options: Default::default(),
+                    work_done_progress_options: WorkDoneProgressOptions::default(),
                 }),
                 code_action_provider: Some(CodeActionProviderCapability::Options(
                     CodeActionOptions {
                         code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
                         resolve_provider: Some(true),
-                        work_done_progress_options: Default::default(),
+                        work_done_progress_options: WorkDoneProgressOptions::default(),
                     },
                 )),
                 // Some(CodeActionProviderCapability::Simple(true)),
@@ -296,18 +306,14 @@ fn reload_source(
 }
 
 fn get_source_range(state: &mut State, document_uri: &Url, range: &Range) -> Option<String> {
-    if let Some(src) = state.sources.get(&document_uri) {
+    if let Some(src) = state.sources.get(document_uri) {
         let source = src.to_owned();
         let lines: Vec<&str> = source.lines().collect();
         let start = usize::try_from(range.start.line).unwrap();
         let end = usize::try_from(range.end.line).unwrap();
         let range_lines = lines.get(start..end);
 
-        if let Some(target_lines) = range_lines {
-            Some(target_lines.join("\n"))
-        } else {
-            None
-        }
+        range_lines.map(|target_lines| target_lines.join("\n"))
     } else {
         None
     }

@@ -38,7 +38,6 @@ enum Task {
 
 #[derive(Clone, Args)]
 pub struct Cmd {
-    /// Sets the task
     /// Sets the model to use
     #[arg(long)]
     pub model: Option<String>,
@@ -55,6 +54,7 @@ pub struct Cmd {
     #[arg(long)]
     pub top_p: Option<f32>,
 
+    /// Sets the task
     #[arg(long, value_enum)]
     task: Option<Task>,
 

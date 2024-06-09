@@ -73,7 +73,7 @@ impl CompletionClient {
 
         message.clone_into(&mut self.prompt);
         if let Some(sfx) = &suffix {
-            self.suffix.clone_from(sfx)
+            self.suffix.clone_from(sfx);
         }
 
         let prompt = match &self.provider {
