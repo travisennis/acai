@@ -17,7 +17,7 @@ use tower_lsp::lsp_types::{
 };
 use tower_lsp::{Client, LanguageServer};
 
-use crate::operations::Instruct;
+use crate::operations::{Complete, Instruct};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct CodeActionData {
@@ -58,7 +58,7 @@ impl Backend {
 
         let mut response = CodeActionResponse::new();
 
-        let action = CodeAction {
+        let instruct_action = CodeAction {
             title: "Instruct LLM".to_string(),
             command: None,
             diagnostics: None,
@@ -67,12 +67,28 @@ impl Backend {
             kind: Some(CodeActionKind::QUICKFIX),
             is_preferred: Some(true),
             data: Some(serde_json::json!(CodeActionData {
-                document_uri,
+                document_uri: document_uri.clone(),
                 range,
             })),
         };
 
-        response.push(CodeActionOrCommand::from(action));
+        response.push(CodeActionOrCommand::from(instruct_action));
+
+        let fim_action = CodeAction {
+            title: "FIM".to_string(),
+            command: None,
+            diagnostics: None,
+            edit: None,
+            disabled: None,
+            kind: Some(CodeActionKind::QUICKFIX),
+            is_preferred: Some(true),
+            data: Some(serde_json::json!(CodeActionData {
+                document_uri: document_uri.clone(),
+                range,
+            })),
+        };
+
+        response.push(CodeActionOrCommand::from(fim_action));
 
         Some(response)
     }
@@ -104,25 +120,54 @@ impl Backend {
                         .log_message(MessageType::INFO, format!("{context:?}"))
                         .await;
 
-                    let op = Instruct {
-                        model: None,
-                        temperature: None,
-                        max_tokens: None,
-                        top_p: None,
-                        prompt: None,
-                        context,
+                    let response = match params.title.as_str() {
+                        "Instruct LLM" => {
+                            let op = Instruct {
+                                model: None,
+                                temperature: None,
+                                max_tokens: None,
+                                top_p: None,
+                                prompt: None,
+                                context,
+                            };
+
+                            let response = op.send().await;
+
+                            if let Ok(Some(response_msg)) = response {
+                                Some(response_msg.content)
+                            } else {
+                                None
+                            }
+                        }
+                        "FIM" => {
+                            let op = Complete {
+                                model: None,
+                                temperature: None,
+                                max_tokens: None,
+                                top_p: None,
+                                prompt: None,
+                                context,
+                            };
+
+                            let response = op.send().await;
+
+                            if let Ok(Some(response_msg)) = response {
+                                Some(response_msg)
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
                     };
 
-                    let response = op.send().await;
-
-                    if let Ok(Some(response_msg)) = response {
+                    if let Some(str_edit) = response {
                         let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
 
                         let edits = changes.entry(cad.document_uri.clone()).or_default();
 
                         let edit = TextEdit {
                             range: cad.range,
-                            new_text: response_msg.content,
+                            new_text: str_edit,
                         };
 
                         edits.push(edit);
