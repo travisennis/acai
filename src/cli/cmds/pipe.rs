@@ -15,7 +15,7 @@ use crate::{
     prompts::PromptBuilder,
 };
 
-const OPTIMIZE_PROMPT: &str = "Please review the following code snippet and propose optimizations to enhance its performance. Focus on identifying opportunities to increase efficiency, speed, and resource conservation. Ensure that any optimized code retains the same functionality as the original but demonstrates measurable performance improvements. Provide only the revised code in your response.";
+const OPTIMIZE_PROMPT: &str = "Review the code snippet below and suggest optimizations to improve performance. Focus on efficiency, speed, and resource usage while maintaining the original functionality. Provide only the optimized code.";
 
 const FIX_PROMPT: &str = "Your task is to analyze the provided code snippet, identify any bugs or errors present, and provide a corrected version of the code that resolves these issues while retaining the same functionality. The corrected code should be functional, efficient, and adhere to best practices in programming. Only return the revised code.";
 
