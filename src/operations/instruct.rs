@@ -26,6 +26,7 @@ pub struct Instruct {
     /// Sets the prompt
     pub prompt: Option<String>,
 
+    /// Sets the context
     pub context: Option<String>,
 }
 
@@ -45,11 +46,13 @@ impl Instruct {
             _ => (Provider::OpenAI, Model::GPT4o),
         };
 
-        let mut client =
-            ChatCompletionClient::new(model_provider.0, model_provider.1, system_prompt)
-                .temperature(self.temperature)
-                .top_p(self.top_p)
-                .max_tokens(self.max_tokens);
+        let model = model_provider.0;
+        let provider = model_provider.1;
+
+        let mut client = ChatCompletionClient::new(model, provider, system_prompt)
+            .temperature(self.temperature)
+            .top_p(self.top_p)
+            .max_tokens(self.max_tokens);
 
         let prompt_builder = PromptBuilder::new()?;
 
