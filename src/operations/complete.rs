@@ -30,15 +30,20 @@ pub struct Complete {
 
 impl Complete {
     pub async fn send(&self) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
-        let model_provider = match self.model.clone().unwrap_or("default".to_string()).as_str() {
-            "gpt-4-turbo" => (Provider::OpenAI, Model::GPT4Turbo),
-            "gpt-3-turbo" => (Provider::OpenAI, Model::GPT3Turbo),
-            "opus" => (Provider::Anthropic, Model::ClaudeOpus),
-            "sonnet" => (Provider::Anthropic, Model::ClaudeSonnet),
-            "haiku" => (Provider::Anthropic, Model::ClaudeHaiku),
-            "codestral" => (Provider::Mistral, Model::Codestral),
-            _ => (Provider::Mistral, Model::Codestral),
-        };
+        let model_provider =
+            self.model
+                .clone()
+                .map_or((Provider::Mistral, Model::Codestral), |model| {
+                    match model.as_str() {
+                        "gpt-4-turbo" => (Provider::OpenAI, Model::GPT4Turbo),
+                        "gpt-3-turbo" => (Provider::OpenAI, Model::GPT3Turbo),
+                        "sonnet" => (Provider::Anthropic, Model::Claude3_5Sonnet),
+                        "opus3" => (Provider::Anthropic, Model::Claude3Opus),
+                        "sonnet3" => (Provider::Anthropic, Model::Claude3Sonnet),
+                        "haiku3" => (Provider::Anthropic, Model::Claude3Haiku),
+                        _ => (Provider::Mistral, Model::Codestral),
+                    }
+                });
 
         let mut client = CompletionClient::new(model_provider.0, model_provider.1)
             .temperature(self.temperature)

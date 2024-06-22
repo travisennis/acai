@@ -17,12 +17,14 @@ pub enum Model {
     GPT4Turbo,
     #[serde(rename = "gpt-3-turbo")]
     GPT3Turbo,
+    #[serde(rename = "claude-3-5-sonnet-20240620")]
+    Claude3_5Sonnet,
     #[serde(rename = "claude-3-opus-20240229")]
-    ClaudeOpus,
+    Claude3Opus,
     #[serde(rename = "claude-3-sonnet-20240229")]
-    ClaudeSonnet,
+    Claude3Sonnet,
     #[serde(rename = "claude-3-haiku-20240307")]
-    ClaudeHaiku,
+    Claude3Haiku,
     #[serde(rename = "codestral-latest")]
     Codestral,
 }
@@ -33,10 +35,11 @@ impl fmt::Display for Model {
             Model::GPT4o => write!(f, "GPT-4o"),
             Model::GPT4Turbo => write!(f, "GPT-4-Turbo"),
             Model::GPT3Turbo => write!(f, "GPT-3-Turbo"),
-            Model::ClaudeOpus => write!(f, "Claude Opus"),
-            Model::ClaudeSonnet => write!(f, "Claude Sonnet"),
-            Model::ClaudeHaiku => write!(f, "Claude Haiku"),
+            Model::Claude3Opus => write!(f, "Claude 3 Opus"),
+            Model::Claude3Sonnet => write!(f, "Claude 3 Sonnet"),
+            Model::Claude3Haiku => write!(f, "Claude 3 Haiku"),
             Model::Codestral => write!(f, "Codestral"),
+            Model::Claude3_5Sonnet => write!(f, "Claude 3.5 Sonnet"),
         }
     }
 }

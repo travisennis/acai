@@ -36,15 +36,21 @@ impl Instruct {
     pub async fn send(&self) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
         let system_prompt = DEFAULT_PROMPT;
 
-        let model_provider = match self.model.clone().unwrap_or("default".to_string()).as_str() {
-            "gpt-4-turbo" => (Provider::OpenAI, Model::GPT4Turbo),
-            "gpt-3-turbo" => (Provider::OpenAI, Model::GPT3Turbo),
-            "opus" => (Provider::Anthropic, Model::ClaudeOpus),
-            "sonnet" => (Provider::Anthropic, Model::ClaudeSonnet),
-            "haiku" => (Provider::Anthropic, Model::ClaudeHaiku),
-            "codestral" => (Provider::Mistral, Model::Codestral),
-            _ => (Provider::OpenAI, Model::GPT4o),
-        };
+        let model_provider = self
+            .model
+            .clone()
+            .map_or((Provider::OpenAI, Model::GPT4o), |model| {
+                match model.as_str() {
+                    "gpt-4-turbo" => (Provider::OpenAI, Model::GPT4Turbo),
+                    "gpt-3-turbo" => (Provider::OpenAI, Model::GPT3Turbo),
+                    "sonnet" => (Provider::Anthropic, Model::Claude3_5Sonnet),
+                    "opus3" => (Provider::Anthropic, Model::Claude3Opus),
+                    "sonnet3" => (Provider::Anthropic, Model::Claude3Sonnet),
+                    "haiku3" => (Provider::Anthropic, Model::Claude3Haiku),
+                    "codestral" => (Provider::Mistral, Model::Codestral),
+                    _ => (Provider::OpenAI, Model::GPT4o),
+                }
+            });
 
         let provider = model_provider.0;
         let model = model_provider.1;
