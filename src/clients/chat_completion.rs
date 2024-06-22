@@ -3,14 +3,13 @@ use std::{env, error::Error};
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use crate::models::{Message, Role};
+use crate::models::{IntoMessage, Message, Role};
 
 use super::{
-    anthropic::AnthropicResponse,
-    mistral::MistralResponse,
-    open_ai::OpenAIResponse,
+    anthropic::Response as AnthropicResponse,
+    mistral::Response as MistralResponse,
+    open_ai::Response as OpenAIResponse,
     providers::{Model, Provider},
-    response::Response,
 };
 
 #[allow(clippy::module_name_repetitions)]
@@ -197,19 +196,19 @@ impl ChatCompletionClient {
             let message = match &self.provider {
                 Provider::Anthropic => {
                     let anth_response = response.json::<AnthropicResponse>().await?;
-                    anth_response.get_message()
+                    anth_response.into_message()
                 }
                 Provider::OpenAI => {
                     let ai_response = response.json::<OpenAIResponse>().await?;
-                    ai_response.get_message()
+                    ai_response.into_message()
                 }
                 Provider::Mistral => {
                     let mistral_response = response.json::<MistralResponse>().await?;
-                    mistral_response.get_message()
+                    mistral_response.into_message()
                 }
                 Provider::Google => {
                     let mistral_response = response.json::<MistralResponse>().await?;
-                    mistral_response.get_message()
+                    mistral_response.into_message()
                 }
             };
 

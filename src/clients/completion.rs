@@ -1,5 +1,4 @@
-use crate::clients::mistral::MistralResponse;
-use crate::clients::response::Response;
+use crate::{clients::mistral::Response as MistralResponse, models::IntoMessage};
 use core::panic;
 use std::{env, error::Error};
 
@@ -110,7 +109,7 @@ impl CompletionClient {
             let message = match &self.provider {
                 Provider::Mistral => {
                     let anth_response = response.json::<MistralResponse>().await?;
-                    anth_response.get_message()
+                    anth_response.into_message()
                 }
                 _ => panic!(),
             };
