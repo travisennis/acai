@@ -40,7 +40,8 @@ impl CmdRunner for Cmd {
     async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let system_prompt = "You are a helpful coding assistant. Provide answers in markdown format unless instructed otherwise. If the request is ambiguous, ask questions. If you don't know the answer, admit you don't.";
 
-        let model_provider = match self.model.clone().unwrap_or("default".to_string()).as_str() {
+        let model = self.model.clone().map_or("default".to_string(), |m| m);
+        let model_provider = match model.as_str() {
             "gpt-4-turbo" => (Provider::OpenAI, Model::GPT4Turbo),
             "gpt-3-turbo" => (Provider::OpenAI, Model::GPT3Turbo),
             "opus" => (Provider::Anthropic, Model::ClaudeOpus),
@@ -67,7 +68,7 @@ impl CmdRunner for Cmd {
             }
         };
 
-        let mut rl = DefaultEditor::new().expect("Editor not initialized.");
+        let mut rl = DefaultEditor::new()?;
 
         let skin = MadSkin::default();
 

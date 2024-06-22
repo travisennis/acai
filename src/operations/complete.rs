@@ -47,12 +47,13 @@ impl Complete {
         let prompt = &self.context;
 
         if let Some(prompt) = prompt {
-            let (prefix, suffix) = if let Some(index) = prompt.find("<fim>") {
-                let (before, after) = prompt.split_at(index);
-                (before.to_string(), Some(after[5..].to_string()))
-            } else {
-                (prompt.to_string(), None)
-            };
+            let (prefix, suffix) = prompt.find("<fim>").map_or_else(
+                || (prompt.to_string(), None),
+                |index| {
+                    let (before, after) = prompt.split_at(index);
+                    (before.to_string(), Some(after[5..].to_string()))
+                },
+            );
 
             let response = client.send_message(&prefix, suffix.clone()).await?;
 

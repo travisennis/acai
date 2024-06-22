@@ -30,9 +30,10 @@ impl CompletionClient {
         }
         .unwrap_or_else(|_error| panic!("Error: Environment variable not set."));
 
-        let msgs: Vec<Message> = match provider {
-            Provider::Mistral => vec![],
-            _ => panic!(),
+        let msgs: Vec<Message> = if let Provider::Mistral = provider {
+            vec![]
+        } else {
+            panic!()
         };
 
         CompletionClient {

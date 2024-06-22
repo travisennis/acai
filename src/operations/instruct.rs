@@ -46,10 +46,10 @@ impl Instruct {
             _ => (Provider::OpenAI, Model::GPT4o),
         };
 
-        let model = model_provider.0;
-        let provider = model_provider.1;
+        let provider = model_provider.0;
+        let model = model_provider.1;
 
-        let mut client = ChatCompletionClient::new(model, provider, system_prompt)
+        let mut client = ChatCompletionClient::new(provider, model, system_prompt)
             .temperature(self.temperature)
             .top_p(self.top_p)
             .max_tokens(self.max_tokens);

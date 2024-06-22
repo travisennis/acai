@@ -116,7 +116,7 @@ impl CmdRunner for Cmd {
             data.insert("prompt".to_string(), prompt);
         }
         if let Ok(context) = context {
-            data.insert("context".to_string(), context.to_string());
+            data.insert("context".to_string(), context);
         }
 
         if !data.is_empty() {

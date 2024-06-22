@@ -1,3 +1,4 @@
+use anyhow::Result;
 use regex::Regex;
 use std::{collections::HashMap, env, error::Error};
 
@@ -53,22 +54,24 @@ impl CmdRunner for Cmd {
         if let Ok(context) = context {
             println!("{context}");
             let t = process_todo_comment(&context);
-            println!("Prompt: {}", t.0);
-            for item in t.1 {
-                println!("URL: {item}");
+            if let Ok(t) = t {
+                println!("Prompt: {}", t.0);
+                for item in t.1 {
+                    println!("URL: {item}");
 
-                match extractor::scrape(&item) {
-                    Ok(product) => {
-                        println!("------- html ------");
-                        println!("{}", product.content);
-                        println!("---- plain text ---");
-                        println!("{}", product.text);
+                    match extractor::scrape(&item) {
+                        Ok(product) => {
+                            println!("------- html ------");
+                            println!("{}", product.content);
+                            println!("---- plain text ---");
+                            println!("{}", product.text);
+                        }
+                        Err(e) => println!("error occured: {e}"),
                     }
-                    Err(e) => println!("error occured: {e}"),
                 }
+                println!("Temp: {}", t.2);
+                data.insert("context".to_string(), t.0);
             }
-            println!("Temp: {}", t.2);
-            data.insert("context".to_string(), t.0.to_string());
         }
 
         if !data.is_empty() {
@@ -84,10 +87,10 @@ impl CmdRunner for Cmd {
     }
 }
 
-fn process_todo_comment(comment: &str) -> (String, Vec<String>, f32) {
+fn process_todo_comment(comment: &str) -> Result<(String, Vec<String>, f32)> {
     // Regular expressions to match the URLs and temperature
-    let url_re = Regex::new(r"https?://[^\s]+").unwrap();
-    let temp_re = Regex::new(r"Temperature=(\d+(\.\d+)?)").unwrap();
+    let url_re = Regex::new(r"https?://[^\s]+")?;
+    let temp_re = Regex::new(r"Temperature=(\d+(\.\d+)?)")?;
 
     // Extract URLs
     let urls: Vec<String> = url_re
@@ -96,15 +99,11 @@ fn process_todo_comment(comment: &str) -> (String, Vec<String>, f32) {
         .collect();
 
     // Extract temperature
-    let temp_cap = temp_re
-        .captures(comment)
-        .expect("Temperature not found in comment");
-    let temp: f32 = temp_cap
-        .get(1)
-        .unwrap()
-        .as_str()
-        .parse()
-        .expect("Failed to parse temperature value");
+    let temp_cap = temp_re.captures(comment);
+    let temp: f32 = temp_cap.map_or(0.0, |t| {
+        t.get(1)
+            .map_or(0.0, |g| g.as_str().parse().map_or(0.0, |r| r))
+    });
 
     // Remove URL sentences
     let comment_without_urls = url_re.replace_all(comment, "").to_string();
@@ -120,5 +119,5 @@ fn process_todo_comment(comment: &str) -> (String, Vec<String>, f32) {
         .collect::<Vec<&str>>()
         .join("\n");
 
-    (cleaned_comment, urls, temp)
+    Ok((cleaned_comment, urls, temp))
 }

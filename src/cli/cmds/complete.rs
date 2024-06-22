@@ -49,7 +49,7 @@ impl CmdRunner for Cmd {
         let response = complete.send().await?;
 
         if let Some(msg) = response {
-            println!("{}", msg);
+            println!("{msg}");
         } else {
             eprintln!("{response:?}");
         }
