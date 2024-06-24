@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -6,18 +7,19 @@ use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CodeAction, CodeActionKind, CodeActionOptions, CodeActionOrCommand, CodeActionParams,
-    CodeActionProviderCapability, CodeActionResponse, CompletionOptions, CompletionParams,
-    CompletionResponse, DidChangeConfigurationParams, DidChangeTextDocumentParams,
-    DidChangeWatchedFilesParams, DidChangeWorkspaceFoldersParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams, DidSaveTextDocumentParams, ExecuteCommandOptions,
-    ExecuteCommandParams, InitializeParams, InitializeResult, InitializedParams, MessageType,
-    Range, ServerCapabilities, TextDocumentContentChangeEvent, TextDocumentItem,
+    CodeActionProviderCapability, CodeActionResponse, CompletionItem, CompletionOptions,
+    CompletionParams, CompletionResponse, DidChangeConfigurationParams,
+    DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidChangeWorkspaceFoldersParams,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
+    ExecuteCommandOptions, ExecuteCommandParams, InitializeParams, InitializeResult,
+    InitializedParams, MessageType, Position, Range, ServerCapabilities,
+    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
     TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
     VersionedTextDocumentIdentifier, WorkDoneProgressOptions, WorkspaceEdit,
 };
 use tower_lsp::{Client, LanguageServer};
 
-use crate::operations::{Complete, Instruct};
+use crate::operations::{Complete, Document, Fix, Instruct, Optimize, Suggest};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct CodeActionData {
@@ -46,20 +48,77 @@ impl Backend {
         }
     }
 
-    async fn on_code_action(&self, params: CodeActionParams) -> Option<CodeActionResponse> {
+    async fn on_code_action(&self, params: CodeActionParams) -> CodeActionResponse {
+        self.client
+            .log_message(MessageType::INFO, "on code action")
+            .await;
+
         let text_doc = params.text_document;
         let document_uri = text_doc.uri;
         let range = params.range;
-        self.client
-            .log_message(MessageType::INFO, format!("{range:?}"))
-            .await;
         // let diagnostics = params.context.diagnostics;
         // let error_id_to_ranges = build_error_id_to_ranges(diagnostics);
 
         let mut response = CodeActionResponse::new();
 
         let instruct_action = CodeAction {
-            title: "Instruct LLM".to_string(),
+            title: "CA: Instruct".to_string(),
+            command: None,
+            diagnostics: None,
+            edit: None,
+            disabled: None,
+            kind: Some(CodeActionKind::QUICKFIX),
+            is_preferred: Some(true),
+            data: Some(serde_json::json!(CodeActionData {
+                document_uri: document_uri.clone(),
+                range,
+            })),
+        };
+
+        let document_action = CodeAction {
+            title: "CA: Document".to_string(),
+            command: None,
+            diagnostics: None,
+            edit: None,
+            disabled: None,
+            kind: Some(CodeActionKind::QUICKFIX),
+            is_preferred: Some(true),
+            data: Some(serde_json::json!(CodeActionData {
+                document_uri: document_uri.clone(),
+                range,
+            })),
+        };
+
+        let fix_action = CodeAction {
+            title: "CA: Fix".to_string(),
+            command: None,
+            diagnostics: None,
+            edit: None,
+            disabled: None,
+            kind: Some(CodeActionKind::QUICKFIX),
+            is_preferred: Some(true),
+            data: Some(serde_json::json!(CodeActionData {
+                document_uri: document_uri.clone(),
+                range,
+            })),
+        };
+
+        let optimize_action = CodeAction {
+            title: "CA: Optimize".to_string(),
+            command: None,
+            diagnostics: None,
+            edit: None,
+            disabled: None,
+            kind: Some(CodeActionKind::QUICKFIX),
+            is_preferred: Some(true),
+            data: Some(serde_json::json!(CodeActionData {
+                document_uri: document_uri.clone(),
+                range,
+            })),
+        };
+
+        let suggest_action = CodeAction {
+            title: "CA: Suggest".to_string(),
             command: None,
             diagnostics: None,
             edit: None,
@@ -73,9 +132,13 @@ impl Backend {
         };
 
         response.push(CodeActionOrCommand::from(instruct_action));
+        response.push(CodeActionOrCommand::from(document_action));
+        response.push(CodeActionOrCommand::from(fix_action));
+        response.push(CodeActionOrCommand::from(optimize_action));
+        response.push(CodeActionOrCommand::from(suggest_action));
 
-        let fim_action = CodeAction {
-            title: "FIM".to_string(),
+        let fill_in_middle_action = CodeAction {
+            title: "CA: Fill-in-middle".to_string(),
             command: None,
             diagnostics: None,
             edit: None,
@@ -88,9 +151,9 @@ impl Backend {
             })),
         };
 
-        response.push(CodeActionOrCommand::from(fim_action));
+        response.push(CodeActionOrCommand::from(fill_in_middle_action));
 
-        Some(response)
+        response
     }
 
     async fn on_code_action_resolve(&self, params: CodeAction) -> CodeAction {
@@ -109,56 +172,10 @@ impl Backend {
         if let Some(some_cad) = code_action_data {
             match some_cad {
                 Ok(cad) => {
-                    self.client
-                        .log_message(MessageType::INFO, format!("{cad:?}"))
-                        .await;
-
                     let mut state = self.state.lock().await;
                     let context = get_source_range(&mut state, &cad.document_uri, &cad.range);
 
-                    self.client
-                        .log_message(MessageType::INFO, format!("{context:?}"))
-                        .await;
-
-                    let response = match params.title.as_str() {
-                        "Instruct LLM" => {
-                            let op = Instruct {
-                                model: None,
-                                temperature: None,
-                                max_tokens: None,
-                                top_p: None,
-                                prompt: None,
-                                context,
-                            };
-
-                            let response = op.send().await;
-
-                            if let Ok(Some(response_msg)) = response {
-                                Some(response_msg.content)
-                            } else {
-                                None
-                            }
-                        }
-                        "FIM" => {
-                            let op = Complete {
-                                model: None,
-                                temperature: None,
-                                max_tokens: None,
-                                top_p: None,
-                                prompt: None,
-                                context,
-                            };
-
-                            let response = op.send().await;
-
-                            if let Ok(Some(response_msg)) = response {
-                                Some(response_msg)
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    };
+                    let response = execute_operation(params.title.as_str(), context).await;
 
                     if let Some(str_edit) = response {
                         let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
@@ -189,24 +206,125 @@ impl Backend {
     }
 }
 
+async fn execute_operation(op_title: &str, context: Option<String>) -> Option<String> {
+    match op_title {
+        "CA: Instruct" => {
+            let op = Instruct {
+                model: None,
+                temperature: None,
+                max_tokens: None,
+                top_p: None,
+                prompt: None,
+                context,
+            };
+
+            let response = op.send().await;
+
+            response.map_or(None, |result| result.map(|msg| msg.content))
+        }
+        "CA: Document" => {
+            let op = Document {
+                model: None,
+                temperature: None,
+                max_tokens: None,
+                top_p: None,
+                prompt: None,
+                context,
+            };
+
+            let response = op.send().await;
+
+            response.map_or(None, |result| result.map(|msg| msg.content))
+        }
+        "CA: Fix" => {
+            let op = Fix {
+                model: None,
+                temperature: None,
+                max_tokens: None,
+                top_p: None,
+                prompt: None,
+                context,
+            };
+
+            let response = op.send().await;
+
+            response.map_or(None, |result| result.map(|msg| msg.content))
+        }
+        "CA: Optimize" => {
+            let op = Optimize {
+                model: None,
+                temperature: None,
+                max_tokens: None,
+                top_p: None,
+                prompt: None,
+                context,
+            };
+
+            let response = op.send().await;
+
+            response.map_or(None, |result| result.map(|msg| msg.content))
+        }
+        "CA: Suggest" => {
+            let op = Suggest {
+                model: None,
+                temperature: None,
+                max_tokens: None,
+                top_p: None,
+                prompt: None,
+                context,
+            };
+
+            let response = op.send().await;
+
+            response.map_or(None, |result| result.map(|msg| msg.content))
+        }
+        "CA: Fill-in-middle" => {
+            let op = Complete {
+                model: None,
+                temperature: None,
+                max_tokens: None,
+                top_p: None,
+                prompt: None,
+                context,
+            };
+
+            let response = op.send().await;
+
+            if let Ok(Some(response_msg)) = response {
+                Some(response_msg)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        self.client
+            .log_message(
+                MessageType::INFO,
+                format!("Initializing {:?}", params.root_uri.unwrap().path()),
+            )
+            .await;
+
         Ok(InitializeResult {
             server_info: None,
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::FULL,
                 )),
-                completion_provider: Some(CompletionOptions {
-                    resolve_provider: Some(true),
-                    trigger_characters: Some(vec![".".to_string()]),
-                    work_done_progress_options: WorkDoneProgressOptions::default(),
-                    all_commit_characters: None,
-                    ..Default::default()
-                }),
+                // completion_provider: Some(CompletionOptions {
+                //     resolve_provider: Some(true),
+                //     trigger_characters: Some(vec![".".to_owned(), ":".to_owned()]),
+                //     work_done_progress_options: WorkDoneProgressOptions::default(),
+                //     all_commit_characters: None,
+                //     ..Default::default()
+                // }),
                 execute_command_provider: Some(ExecuteCommandOptions {
-                    commands: vec!["instruct".to_string()],
+                    commands: vec!["codingassistant/instruct".to_owned()],
                     work_done_progress_options: WorkDoneProgressOptions::default(),
                 }),
                 code_action_provider: Some(CodeActionProviderCapability::Options(
@@ -266,24 +384,38 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         self.client
-            .log_message(MessageType::INFO, "file opened!")
+            .log_message(
+                MessageType::INFO,
+                format!("file opened! {}", params.text_document.uri),
+            )
             .await;
+
         let mut state = self.state.lock().await;
-        get_or_insert_source(&mut state, &params.text_document);
+        insert_source(&mut state, &params.text_document);
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         self.client
-            .log_message(MessageType::INFO, "file changed!")
+            .log_message(
+                MessageType::INFO,
+                format!("file changed! {}", params.text_document.uri),
+            )
             .await;
-        let mut state = self.state.lock().await;
-        reload_source(&mut state, &params.text_document, params.content_changes);
+
+        // let mut state = self.state.lock().await;
+        // reload_source(&mut state, &params.text_document, params.content_changes);
     }
 
-    async fn did_save(&self, _: DidSaveTextDocumentParams) {
+    async fn did_save(&self, params: DidSaveTextDocumentParams) {
         self.client
-            .log_message(MessageType::INFO, "file saved!")
+            .log_message(
+                MessageType::INFO,
+                format!("file saved! {}", params.text_document.uri),
+            )
             .await;
+
+        let mut state = self.state.lock().await;
+        update_source(&mut state, &params.text_document, params.text);
     }
 
     async fn did_close(&self, _: DidCloseTextDocumentParams) {
@@ -297,7 +429,7 @@ impl LanguageServer for Backend {
             .log_message(MessageType::INFO, "code action!")
             .await;
 
-        Ok(self.on_code_action(params).await)
+        Ok(Some(self.on_code_action(params).await))
     }
 
     async fn code_action_resolve(&self, params: CodeAction) -> Result<CodeAction> {
@@ -308,20 +440,75 @@ impl LanguageServer for Backend {
         Ok(self.on_code_action_resolve(params).await)
     }
 
-    async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
-        // Ok(Some(CompletionResponse::Array(vec![
-        //     CompletionItem::new_simple("Hello".to_string(), "Some detail".to_string()),
-        //     CompletionItem::new_simple("Bye".to_string(), "More detail".to_string()),
-        // ])))
-        Ok(None)
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        self.client
+            .log_message(MessageType::INFO, "completion")
+            .await;
+
+        let uri = params.text_document_position.text_document.uri;
+        let position = params.text_document_position.position;
+
+        self.client
+            .log_message(MessageType::INFO, uri.clone())
+            .await;
+
+        let range = Range {
+            start: Position {
+                line: max(position.line - 3, 0),
+                character: 0,
+            },
+            end: position,
+        };
+
+        let mut state = self.state.lock().await;
+        let context = get_source_range(&mut state, &uri, &range);
+
+        self.client
+            .log_message(MessageType::INFO, context.clone().unwrap())
+            .await;
+
+        let op = Complete {
+            model: None,
+            temperature: None,
+            max_tokens: None,
+            top_p: None,
+            prompt: None,
+            context,
+        };
+
+        let response = op.send().await;
+
+        let msg = if let Ok(Some(response_msg)) = response {
+            Some(response_msg)
+        } else {
+            None
+        };
+
+        self.client
+            .log_message(MessageType::INFO, msg.clone().unwrap())
+            .await;
+
+        if let Some(msg) = msg {
+            Ok(Some(CompletionResponse::Array(vec![
+                CompletionItem::new_simple(msg.clone(), msg),
+            ])))
+        } else {
+            Ok(None)
+        }
     }
 }
 
-fn get_or_insert_source(state: &mut State, document: &TextDocumentItem) {
+fn insert_source(state: &mut State, document: &TextDocumentItem) {
     if !state.sources.contains_key(&document.uri) {
         state
             .sources
             .insert(document.uri.clone(), document.text.clone());
+    }
+}
+
+fn update_source(state: &mut State, document: &TextDocumentIdentifier, text: Option<String>) {
+    if let Some(text) = text {
+        state.sources.insert(document.uri.clone(), text);
     }
 }
 
