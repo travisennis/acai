@@ -61,97 +61,31 @@ impl Backend {
 
         let mut response = CodeActionResponse::new();
 
-        let instruct_action = CodeAction {
-            title: "CA: Instruct".to_string(),
-            command: None,
-            diagnostics: None,
-            edit: None,
-            disabled: None,
-            kind: Some(CodeActionKind::QUICKFIX),
-            is_preferred: Some(true),
-            data: Some(serde_json::json!(CodeActionData {
-                document_uri: document_uri.clone(),
-                range,
-            })),
-        };
+        let actions = [
+            "CA: Instruct",
+            "CA: Document",
+            "CA: Fix",
+            "CA: Optimize",
+            "CA: Suggest",
+            "CA: Fill-in-middle",
+        ];
 
-        let document_action = CodeAction {
-            title: "CA: Document".to_string(),
-            command: None,
-            diagnostics: None,
-            edit: None,
-            disabled: None,
-            kind: Some(CodeActionKind::QUICKFIX),
-            is_preferred: Some(true),
-            data: Some(serde_json::json!(CodeActionData {
-                document_uri: document_uri.clone(),
-                range,
-            })),
-        };
-
-        let fix_action = CodeAction {
-            title: "CA: Fix".to_string(),
-            command: None,
-            diagnostics: None,
-            edit: None,
-            disabled: None,
-            kind: Some(CodeActionKind::QUICKFIX),
-            is_preferred: Some(true),
-            data: Some(serde_json::json!(CodeActionData {
-                document_uri: document_uri.clone(),
-                range,
-            })),
-        };
-
-        let optimize_action = CodeAction {
-            title: "CA: Optimize".to_string(),
-            command: None,
-            diagnostics: None,
-            edit: None,
-            disabled: None,
-            kind: Some(CodeActionKind::QUICKFIX),
-            is_preferred: Some(true),
-            data: Some(serde_json::json!(CodeActionData {
-                document_uri: document_uri.clone(),
-                range,
-            })),
-        };
-
-        let suggest_action = CodeAction {
-            title: "CA: Suggest".to_string(),
-            command: None,
-            diagnostics: None,
-            edit: None,
-            disabled: None,
-            kind: Some(CodeActionKind::QUICKFIX),
-            is_preferred: Some(true),
-            data: Some(serde_json::json!(CodeActionData {
-                document_uri: document_uri.clone(),
-                range,
-            })),
-        };
-
-        response.push(CodeActionOrCommand::from(instruct_action));
-        response.push(CodeActionOrCommand::from(document_action));
-        response.push(CodeActionOrCommand::from(fix_action));
-        response.push(CodeActionOrCommand::from(optimize_action));
-        response.push(CodeActionOrCommand::from(suggest_action));
-
-        let fill_in_middle_action = CodeAction {
-            title: "CA: Fill-in-middle".to_string(),
-            command: None,
-            diagnostics: None,
-            edit: None,
-            disabled: None,
-            kind: Some(CodeActionKind::QUICKFIX),
-            is_preferred: Some(true),
-            data: Some(serde_json::json!(CodeActionData {
-                document_uri: document_uri.clone(),
-                range,
-            })),
-        };
-
-        response.push(CodeActionOrCommand::from(fill_in_middle_action));
+        for title in &actions {
+            let action = CodeAction {
+                title: (*title).to_string(),
+                command: None,
+                diagnostics: None,
+                edit: None,
+                disabled: None,
+                kind: Some(CodeActionKind::QUICKFIX),
+                is_preferred: Some(true),
+                data: Some(serde_json::json!(CodeActionData {
+                    document_uri: document_uri.clone(),
+                    range,
+                })),
+            };
+            response.push(CodeActionOrCommand::from(action));
+        }
 
         response
     }
