@@ -30,7 +30,7 @@ pub struct Fix {
     pub context: Option<String>,
 }
 
-const DEFAULT_PROMPT: &str = "Your task is to analyze the provided code snippet, identify any bugs or errors present, and provide a corrected version of the code that resolves these issues while retaining the same functionality. The corrected code should be functional, efficient, and adhere to best practices in programming. Only return the revised code.";
+const DEFAULT_PROMPT: &str = "Your task is to analyze the provided code snippet, identify any bugs or errors present, and provide a corrected version of the code that resolves these issues while retaining the same functionality. The corrected code should be functional, efficient, and adhere to best practices in programming. The answer should be in plain text without Markdown formatting.Only return the revised code.";
 
 impl Fix {
     pub async fn send(&self) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {

@@ -30,7 +30,7 @@ pub struct Document {
     pub context: Option<String>,
 }
 
-const DEFAULT_PROMPT: &str = "Your task is to document the provided code using the best practices for documenting code for this language.";
+const DEFAULT_PROMPT: &str = "Document the provided code using the best practices for documenting code for this language. The answer should be in plain text without Markdown formatting.";
 
 impl Document {
     pub async fn send(&self) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {

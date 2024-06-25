@@ -30,7 +30,7 @@ pub struct Suggest {
     pub context: Option<String>,
 }
 
-const DEFAULT_PROMPT: &str = "Your task is to add todo comments to the provided code snippet. The todo comments are to be added to parts of the code that can be improved or fixed. The todo comment should explain what needs to be done and give a short explanation of why.";
+const DEFAULT_PROMPT: &str = "Add todo comments to the provided code snippet. The todo comments are to be added to parts of the code that can be improved or fixed. Each the todo comment should explain what needs to be done and give a short explanation of why the change should be made. The answer should be in plain text without Markdown formatting.";
 
 impl Suggest {
     pub async fn send(&self) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
