@@ -1,0 +1,34 @@
+# a bacon.toml file dedicated to the bacon tool
+
+default_job = "check-all"
+
+[jobs]
+
+[jobs.check]
+command = [
+	"cargo", "check",
+	"--color", "always",
+]
+need_stdout = false
+
+[jobs.check-all]
+command = [
+	"cargo", "check",
+	"--all-targets",
+	"--color", "always",
+]
+need_stdout = false
+
+[jobs.clippy-all]
+command = [
+	"cargo", "clippy",
+	"--color", "always",
+	"--",
+	"-D", "clippy::all",
+	"-D", "clippy::pedantic", 
+	"-W", "clippy::nursery", 
+]
+need_stdout = false
+
+[keybindings]
+c = "job:clippy-all"
