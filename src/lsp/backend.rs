@@ -40,7 +40,7 @@ pub struct Backend {
 
 impl Backend {
     pub fn new(client: Client) -> Self {
-        Backend {
+        Self {
             client,
             state: Mutex::new(State {
                 sources: HashMap::new(),
@@ -99,7 +99,7 @@ impl Backend {
             || None,
             |data| {
                 let result: core::result::Result<CodeActionData, serde_json::Error> =
-                    serde_json::from_value::<CodeActionData>(data.clone());
+                    serde_json::from_value::<CodeActionData>(data);
                 Some(result)
             },
         );
@@ -107,8 +107,11 @@ impl Backend {
         if let Some(some_cad) = code_action_data {
             match some_cad {
                 Ok(cad) => {
-                    let state = self.state.lock().await;
-                    let context = get_source_range(&state, &cad.document_uri, &cad.range);
+                    let context = get_source_range(
+                        &self.state.lock().await.sources,
+                        &cad.document_uri,
+                        &cad.range,
+                    );
 
                     let response = execute_operation(params.title.as_str(), context).await;
 
@@ -142,97 +145,90 @@ impl Backend {
 }
 
 async fn execute_operation(op_title: &str, context: Option<String>) -> Option<String> {
-    match op_title {
-        "CA: Instruct" => {
-            let op = Instruct {
-                model: None,
-                temperature: None,
-                max_tokens: None,
-                top_p: None,
-                prompt: None,
-                context,
-            };
-
-            let response = op.send().await;
-
-            response.map_or(None, |result| result.map(|msg| msg.content))
+    if matches!(op_title, "CA: Fill-in-middle") {
+        let response = Complete {
+            model: None,
+            temperature: None,
+            max_tokens: None,
+            top_p: None,
+            prompt: None,
+            context,
         }
-        "CA: Document" => {
-            let op = Document {
-                model: None,
-                temperature: None,
-                max_tokens: None,
-                top_p: None,
-                prompt: None,
-                context,
-            };
+        .send()
+        .await;
 
-            let response = op.send().await;
-
-            response.map_or(None, |result| result.map(|msg| msg.content))
-        }
-        "CA: Fix" => {
-            let op = Fix {
-                model: None,
-                temperature: None,
-                max_tokens: None,
-                top_p: None,
-                prompt: None,
-                context,
-            };
-
-            let response = op.send().await;
-
-            response.map_or(None, |result| result.map(|msg| msg.content))
-        }
-        "CA: Optimize" => {
-            let op = Optimize {
-                model: None,
-                temperature: None,
-                max_tokens: None,
-                top_p: None,
-                prompt: None,
-                context,
-            };
-
-            let response = op.send().await;
-
-            response.map_or(None, |result| result.map(|msg| msg.content))
-        }
-        "CA: Suggest" => {
-            let op = Suggest {
-                model: None,
-                temperature: None,
-                max_tokens: None,
-                top_p: None,
-                prompt: None,
-                context,
-            };
-
-            let response = op.send().await;
-
-            response.map_or(None, |result| result.map(|msg| msg.content))
-        }
-        "CA: Fill-in-middle" => {
-            let op = Complete {
-                model: None,
-                temperature: None,
-                max_tokens: None,
-                top_p: None,
-                prompt: None,
-                context,
-            };
-
-            let response = op.send().await;
-
-            if let Ok(Some(response_msg)) = response {
-                Some(response_msg)
-            } else {
-                None
-            }
-        }
-        _ => None,
+        return if let Ok(Some(response_msg)) = response {
+            Some(response_msg)
+        } else {
+            None
+        };
     }
+
+    let result = match op_title {
+        "CA: Instruct" => Some(
+            Instruct {
+                model: None,
+                temperature: None,
+                max_tokens: None,
+                top_p: None,
+                prompt: None,
+                context,
+            }
+            .send()
+            .await,
+        ),
+        "CA: Document" => Some(
+            Document {
+                model: None,
+                temperature: None,
+                max_tokens: None,
+                top_p: None,
+                prompt: None,
+                context,
+            }
+            .send()
+            .await,
+        ),
+        "CA: Fix" => Some(
+            Fix {
+                model: None,
+                temperature: None,
+                max_tokens: None,
+                top_p: None,
+                prompt: None,
+                context,
+            }
+            .send()
+            .await,
+        ),
+        "CA: Optimize" => Some(
+            Optimize {
+                model: None,
+                temperature: None,
+                max_tokens: None,
+                top_p: None,
+                prompt: None,
+                context,
+            }
+            .send()
+            .await,
+        ),
+        "CA: Suggest" => Some(
+            Suggest {
+                model: None,
+                temperature: None,
+                max_tokens: None,
+                top_p: None,
+                prompt: None,
+                context,
+            }
+            .send()
+            .await,
+        ),
+        _ => None,
+    };
+
+    result.and_then(|response| response.map_or(None, |result| result.map(|msg| msg.content)))
 }
 
 #[tower_lsp::async_trait]
@@ -395,8 +391,7 @@ impl LanguageServer for Backend {
             end: position,
         };
 
-        let state = self.state.lock().await;
-        let context = get_source_range(&state, &uri, &range);
+        let context = get_source_range(&self.state.lock().await.sources, &uri, &range);
 
         self.client
             .log_message(MessageType::INFO, context.clone().unwrap())
@@ -470,8 +465,12 @@ fn reload_source(
     }
 }
 
-fn get_source_range(state: &State, document_uri: &Url, range: &Range) -> Option<String> {
-    state.sources.get(document_uri).and_then(|src| {
+fn get_source_range(
+    sources: &HashMap<Url, String>,
+    document_uri: &Url,
+    range: &Range,
+) -> Option<String> {
+    sources.get(document_uri).and_then(|src| {
         let source = src.to_owned();
         let lines: Vec<&str> = source.lines().collect();
         let start = usize::try_from(range.start.line).unwrap();
