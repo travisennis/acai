@@ -76,42 +76,43 @@ impl CompletionClient {
             self.suffix.clone_from(sfx);
         }
 
-        let prompt = match &self.provider {
-            Provider::Mistral => {
-                let mut json_map = serde_json::Map::new();
-                json_map.insert("model".to_string(), json!(self.model));
-                json_map.insert("temperature".to_string(), json!(self.temperature));
-                json_map.insert("max_tokens".to_string(), json!(self.max_tokens));
-                json_map.insert("prompt".to_string(), json!(self.prompt));
-                json_map.insert("suffix".to_string(), json!(self.suffix));
-                json!(json_map)
-            }
-            _ => panic!(),
+        let prompt = if let Provider::Mistral = &self.provider {
+            let mut json_map = serde_json::Map::new();
+            json_map.insert("model".to_string(), json!(self.model));
+            json_map.insert("temperature".to_string(), json!(self.temperature));
+            json_map.insert("max_tokens".to_string(), json!(self.max_tokens));
+            json_map.insert("prompt".to_string(), json!(self.prompt));
+            json_map.insert("suffix".to_string(), json!(self.suffix));
+            json!(json_map)
+        } else {
+            panic!()
         };
 
-        let request_url = match &self.provider {
-            Provider::Mistral => "https://codestral.mistral.ai/v1/fim/completions",
-            _ => panic!(),
+        let request_url = if let Provider::Mistral = &self.provider {
+            "https://codestral.mistral.ai/v1/fim/completions"
+        } else {
+            panic!()
         };
 
         let req_base = Client::new()
             .post(request_url)
             .json(&prompt)
             .header("content-type", "application/json");
-        let req = match &self.provider {
-            Provider::Mistral => req_base.bearer_auth(self.token.to_string()),
-            _ => panic!(),
+
+        let req = if let Provider::Mistral = &self.provider {
+            req_base.bearer_auth(self.token.to_string())
+        } else {
+            panic!()
         };
 
         let response = req.send().await?;
 
         if response.status().is_success() {
-            let message = match &self.provider {
-                Provider::Mistral => {
-                    let anth_response = response.json::<MistralResponse>().await?;
-                    anth_response.into_message()
-                }
-                _ => panic!(),
+            let message = if let Provider::Mistral = &self.provider {
+                let anth_response = response.json::<MistralResponse>().await?;
+                anth_response.into_message()
+            } else {
+                panic!()
             };
 
             if let Some(msg) = message.clone() {
@@ -134,9 +135,10 @@ impl CompletionClient {
 
     pub fn get_message_history(&self) -> Vec<Message> {
         let msgs = self.messages.clone();
-        match self.provider {
-            Provider::Mistral => msgs,
-            _ => panic!(),
+        if let Provider::Mistral = self.provider {
+            msgs
+        } else {
+            panic!()
         }
     }
 }

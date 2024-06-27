@@ -42,16 +42,11 @@ impl ChatCompletionClient {
         .unwrap_or_else(|_error| panic!("Error: Environment variable not set."));
 
         let msgs: Vec<Message> = match provider {
-            Provider::Anthropic => vec![],
-            Provider::OpenAI => vec![Message {
+            Provider::OpenAI | Provider::Mistral => vec![Message {
                 role: Role::System,
                 content: system_prompt.to_string(),
             }],
-            Provider::Google => vec![],
-            Provider::Mistral => vec![Message {
-                role: Role::System,
-                content: system_prompt.to_string(),
-            }],
+            Provider::Google | Provider::Anthropic => vec![],
         };
 
         ChatCompletionClient {
@@ -166,8 +161,7 @@ impl ChatCompletionClient {
                 "logit_bias": self.logit_bias,
                 "user": self.user,
             }),
-            Provider::Mistral => json!({}),
-            Provider::Google => json!({}),
+            Provider::Mistral | Provider::Google => json!({}),
         };
 
         let request_url = match &self.provider {
@@ -185,9 +179,9 @@ impl ChatCompletionClient {
             Provider::Anthropic => req_base
                 .header("anthropic-version", "2023-06-01")
                 .header("x-api-key", self.token.to_string()),
-            Provider::OpenAI => req_base.bearer_auth(self.token.to_string()),
-            Provider::Mistral => req_base.bearer_auth(self.token.to_string()),
-            Provider::Google => req_base.bearer_auth(self.token.to_string()),
+            Provider::OpenAI | Provider::Mistral | Provider::Google => {
+                req_base.bearer_auth(self.token.to_string())
+            }
         };
 
         let response = req.send().await?;
@@ -241,9 +235,7 @@ impl ChatCompletionClient {
                 result.append(&mut msgs);
                 result
             }
-            Provider::OpenAI => msgs,
-            Provider::Mistral => msgs,
-            Provider::Google => msgs,
+            Provider::OpenAI | Provider::Mistral | Provider::Google => msgs,
         }
     }
 }

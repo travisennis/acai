@@ -95,19 +95,20 @@ impl Backend {
 
         let data = params.data;
 
-        let code_action_data = if let Some(data) = data {
-            let result: core::result::Result<CodeActionData, serde_json::Error> =
-                serde_json::from_value::<CodeActionData>(data.clone());
-            Some(result)
-        } else {
-            None
-        };
+        let code_action_data = data.map_or_else(
+            || None,
+            |data| {
+                let result: core::result::Result<CodeActionData, serde_json::Error> =
+                    serde_json::from_value::<CodeActionData>(data.clone());
+                Some(result)
+            },
+        );
 
         if let Some(some_cad) = code_action_data {
             match some_cad {
                 Ok(cad) => {
-                    let mut state = self.state.lock().await;
-                    let context = get_source_range(&mut state, &cad.document_uri, &cad.range);
+                    let state = self.state.lock().await;
+                    let context = get_source_range(&state, &cad.document_uri, &cad.range);
 
                     let response = execute_operation(params.title.as_str(), context).await;
 
@@ -394,8 +395,8 @@ impl LanguageServer for Backend {
             end: position,
         };
 
-        let mut state = self.state.lock().await;
-        let context = get_source_range(&mut state, &uri, &range);
+        let state = self.state.lock().await;
+        let context = get_source_range(&state, &uri, &range);
 
         self.client
             .log_message(MessageType::INFO, context.clone().unwrap())
@@ -422,13 +423,11 @@ impl LanguageServer for Backend {
             .log_message(MessageType::INFO, msg.clone().unwrap())
             .await;
 
-        if let Some(msg) = msg {
+        msg.map_or(Ok(None), |msg| {
             Ok(Some(CompletionResponse::Array(vec![
                 CompletionItem::new_simple(msg.clone(), msg),
             ])))
-        } else {
-            Ok(None)
-        }
+        })
     }
 }
 
@@ -454,7 +453,7 @@ fn reload_source(
     if let Some(src) = state.sources.get(&document.uri) {
         let mut source = src.to_owned();
         for change in changes {
-            if let (None, None) = (change.range, change.range_length) {
+            if (change.range, change.range_length) == (None, None) {
                 source = change.text;
             } else if let Some(range) = change.range {
                 let mut lines: Vec<&str> = source.lines().collect();
@@ -471,8 +470,8 @@ fn reload_source(
     }
 }
 
-fn get_source_range(state: &mut State, document_uri: &Url, range: &Range) -> Option<String> {
-    if let Some(src) = state.sources.get(document_uri) {
+fn get_source_range(state: &State, document_uri: &Url, range: &Range) -> Option<String> {
+    state.sources.get(document_uri).and_then(|src| {
         let source = src.to_owned();
         let lines: Vec<&str> = source.lines().collect();
         let start = usize::try_from(range.start.line).unwrap();
@@ -480,7 +479,5 @@ fn get_source_range(state: &mut State, document_uri: &Url, range: &Range) -> Opt
         let range_lines = lines.get(start..end);
 
         range_lines.map(|target_lines| target_lines.join("\n"))
-    } else {
-        None
-    }
+    })
 }
