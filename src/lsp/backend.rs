@@ -1,5 +1,7 @@
 use std::cmp::max;
 use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -12,17 +14,87 @@ use tower_lsp::lsp_types::{
     DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidChangeWorkspaceFoldersParams,
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
     ExecuteCommandOptions, ExecuteCommandParams, InitializeParams, InitializeResult,
-    InitializedParams, MessageType, Position, Range, ServerCapabilities,
+    InitializedParams, MessageType, Position, Range, SaveOptions, ServerCapabilities,
     TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
-    TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
-    VersionedTextDocumentIdentifier, WorkDoneProgressOptions, WorkspaceEdit,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
+    TextDocumentSyncSaveOptions, TextEdit, Url, VersionedTextDocumentIdentifier,
+    WorkDoneProgressOptions, WorkspaceEdit,
 };
 use tower_lsp::{Client, LanguageServer};
 
 use crate::operations::{Complete, Document, Fix, Instruct, Optimize, Suggest};
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum AiCodeAction {
+    Instruct,
+    Document,
+    Fix,
+    Optimize,
+    Suggest,
+    FillInMiddle,
+    Test,
+}
+
+impl AiCodeAction {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Instruct => "Acai - Instruct",
+            Self::Document => "Acai - Document",
+            Self::Fix => "Acai - Fix",
+            Self::Optimize => "Acai - Optimize",
+            Self::Suggest => "Acai - Suggest",
+            Self::FillInMiddle => "Acai - Fill in middle",
+            Self::Test => "Acai - Test",
+        }
+    }
+
+    /// Returns the identifier of the command.
+    const fn identifier(self) -> &'static str {
+        match self {
+            Self::Instruct => "ai.instruct",
+            Self::Document => "ai.document",
+            Self::Fix => "ai.fix",
+            Self::Optimize => "ai.optimize",
+            Self::Suggest => "ai.suggest",
+            Self::FillInMiddle => "ai.fillInMiddle",
+            Self::Test => "ai.test",
+        }
+    }
+
+    /// Returns all the commands that the server currently supports.
+    const fn all() -> [Self; 7] {
+        [
+            Self::Instruct,
+            Self::Document,
+            Self::Fix,
+            Self::Optimize,
+            Self::Suggest,
+            Self::FillInMiddle,
+            Self::Test,
+        ]
+    }
+}
+
+impl FromStr for AiCodeAction {
+    type Err = anyhow::Error;
+
+    fn from_str(name: &str) -> anyhow::Result<Self, Self::Err> {
+        Ok(match name {
+            "ai.instruct" => Self::Instruct,
+            "ai.document" => Self::Document,
+            "ai.fix" => Self::Fix,
+            "ai.optimize" => Self::Optimize,
+            "ai.suggest" => Self::Suggest,
+            "ai.fillInMiddle" => Self::FillInMiddle,
+            "ai.test" => Self::Test,
+            _ => return Err(anyhow::anyhow!("Invalid command `{name}`")),
+        })
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 struct CodeActionData {
+    id: String,
     document_uri: Url,
     range: Range,
 }
@@ -32,19 +104,75 @@ struct State {
     sources: HashMap<Url, String>,
 }
 
+impl State {
+    fn new() -> Self {
+        Self {
+            sources: HashMap::new(),
+        }
+    }
+
+    fn insert_source(&mut self, document: &TextDocumentItem) {
+        if !self.sources.contains_key(&document.uri) {
+            self.sources
+                .insert(document.uri.clone(), document.text.clone());
+        }
+    }
+
+    fn update_source(&mut self, document: &TextDocumentIdentifier, text: Option<String>) {
+        if let Some(text) = text {
+            self.sources.insert(document.uri.clone(), text);
+        }
+    }
+
+    fn reload_source(
+        &mut self,
+        document: &VersionedTextDocumentIdentifier,
+        changes: Vec<TextDocumentContentChangeEvent>,
+    ) {
+        if let Some(src) = self.sources.get(&document.uri) {
+            let mut source = src.to_owned();
+            for change in changes {
+                if (change.range, change.range_length) == (None, None) {
+                    source = change.text;
+                } else if let Some(range) = change.range {
+                    let mut lines: Vec<&str> = source.lines().collect();
+                    let new_lines: Vec<&str> = change.text.lines().collect();
+                    let start = usize::try_from(range.start.line).unwrap();
+                    let end = usize::try_from(range.end.line).unwrap();
+                    lines.splice(start..end, new_lines);
+                    source = lines.join("\n");
+                }
+            }
+            self.sources.insert(document.uri.clone(), source);
+        } else {
+            panic!("attempted to reload source that does not exist");
+        }
+    }
+
+    fn get_source_range(&self, document_uri: &Url, range: &Range) -> Option<String> {
+        self.sources.get(document_uri).and_then(|src| {
+            let source = src.to_owned();
+            let lines: Vec<&str> = source.lines().collect();
+            let start = usize::try_from(range.start.line).unwrap();
+            let end = usize::try_from(range.end.line).unwrap();
+            let range_lines = lines.get(start..end);
+
+            range_lines.map(|target_lines| target_lines.join("\n"))
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct Backend {
     client: Client,
-    state: Mutex<State>,
+    state: Arc<Mutex<State>>,
 }
 
 impl Backend {
     pub fn new(client: Client) -> Self {
         Self {
             client,
-            state: Mutex::new(State {
-                sources: HashMap::new(),
-            }),
+            state: Arc::new(Mutex::new(State::new())),
         }
     }
 
@@ -61,18 +189,11 @@ impl Backend {
 
         let mut response = CodeActionResponse::new();
 
-        let actions = [
-            "CA: Instruct",
-            "CA: Document",
-            "CA: Fix",
-            "CA: Optimize",
-            "CA: Suggest",
-            "CA: Fill-in-middle",
-        ];
+        let code_actions = AiCodeAction::all();
 
-        for title in &actions {
+        for code_action in &code_actions {
             let action = CodeAction {
-                title: (*title).to_string(),
+                title: code_action.label().to_string(),
                 command: None,
                 diagnostics: None,
                 edit: None,
@@ -80,6 +201,7 @@ impl Backend {
                 kind: Some(CodeActionKind::QUICKFIX),
                 is_preferred: Some(true),
                 data: Some(serde_json::json!(CodeActionData {
+                    id: code_action.identifier().to_string(),
                     document_uri: document_uri.clone(),
                     range,
                 })),
@@ -97,46 +219,75 @@ impl Backend {
 
         let code_action_data = data.map_or_else(
             || None,
-            |data| {
+            |json_obj| {
                 let result: core::result::Result<CodeActionData, serde_json::Error> =
-                    serde_json::from_value::<CodeActionData>(data);
+                    serde_json::from_value::<CodeActionData>(json_obj);
                 Some(result)
             },
         );
 
-        if let Some(some_cad) = code_action_data {
+        let args = if let Some(some_cad) = code_action_data {
             match some_cad {
                 Ok(cad) => {
-                    let context = get_source_range(
-                        &self.state.lock().await.sources,
-                        &cad.document_uri,
-                        &cad.range,
-                    );
+                    self.client
+                        .log_message(MessageType::INFO, format!("Range {:#?}", &cad.range))
+                        .await;
 
-                    let response = execute_operation(params.title.as_str(), context).await;
+                    let context = self
+                        .state
+                        .lock()
+                        .await
+                        .get_source_range(&cad.document_uri, &cad.range);
 
-                    if let Some(str_edit) = response {
-                        let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
-
-                        let edits = changes.entry(cad.document_uri.clone()).or_default();
-
-                        let edit = TextEdit {
-                            range: cad.range,
-                            new_text: str_edit,
-                        };
-
-                        edits.push(edit);
-
-                        let edit = Some(WorkspaceEdit {
-                            changes: Some(changes),
-                            document_changes: None,
-                            change_annotations: None,
-                        });
-
-                        new_params.edit = edit;
-                    }
+                    Some((cad.document_uri.clone(), cad.range, context, cad.id))
                 }
-                Err(err) => self.client.log_message(MessageType::ERROR, err).await,
+                Err(err) => {
+                    self.client.log_message(MessageType::ERROR, err).await;
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        if let Some(arg) = args {
+            self.client
+                .log_message(
+                    MessageType::INFO,
+                    format!("Executing {}", params.title.as_str()),
+                )
+                .await;
+
+            let document_uri = arg.0;
+            let range = arg.1;
+            let context = arg.2;
+            let id = arg.3;
+
+            self.client
+                .log_message(MessageType::INFO, format!("Context {context:?}"))
+                .await;
+
+            let response = execute_operation(id, context).await;
+
+            if let Some(str_edit) = response {
+                let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
+
+                let edits = changes.entry(document_uri).or_default();
+
+                let edit = TextEdit {
+                    range,
+                    new_text: str_edit,
+                };
+
+                edits.push(edit);
+
+                let edit = Some(WorkspaceEdit {
+                    changes: Some(changes),
+                    document_changes: None,
+                    change_annotations: None,
+                });
+
+                new_params.edit = edit;
             }
         }
 
@@ -144,8 +295,14 @@ impl Backend {
     }
 }
 
-async fn execute_operation(op_title: &str, context: Option<String>) -> Option<String> {
-    if matches!(op_title, "CA: Fill-in-middle") {
+async fn execute_operation(op_title: String, context: Option<String>) -> Option<String> {
+    let code_action = AiCodeAction::from_str(op_title.as_str()).unwrap();
+
+    if matches!(code_action, AiCodeAction::Test) {
+        return None::<String>;
+    }
+
+    if matches!(code_action, AiCodeAction::FillInMiddle) {
         let response = Complete {
             model: None,
             temperature: None,
@@ -164,8 +321,8 @@ async fn execute_operation(op_title: &str, context: Option<String>) -> Option<St
         };
     }
 
-    let result = match op_title {
-        "CA: Instruct" => Some(
+    let result = match code_action {
+        AiCodeAction::Instruct => Some(
             Instruct {
                 model: None,
                 temperature: None,
@@ -177,7 +334,7 @@ async fn execute_operation(op_title: &str, context: Option<String>) -> Option<St
             .send()
             .await,
         ),
-        "CA: Document" => Some(
+        AiCodeAction::Document => Some(
             Document {
                 model: None,
                 temperature: None,
@@ -189,7 +346,7 @@ async fn execute_operation(op_title: &str, context: Option<String>) -> Option<St
             .send()
             .await,
         ),
-        "CA: Fix" => Some(
+        AiCodeAction::Fix => Some(
             Fix {
                 model: None,
                 temperature: None,
@@ -201,7 +358,7 @@ async fn execute_operation(op_title: &str, context: Option<String>) -> Option<St
             .send()
             .await,
         ),
-        "CA: Optimize" => Some(
+        AiCodeAction::Optimize => Some(
             Optimize {
                 model: None,
                 temperature: None,
@@ -213,7 +370,7 @@ async fn execute_operation(op_title: &str, context: Option<String>) -> Option<St
             .send()
             .await,
         ),
-        "CA: Suggest" => Some(
+        AiCodeAction::Suggest => Some(
             Suggest {
                 model: None,
                 temperature: None,
@@ -241,12 +398,20 @@ impl LanguageServer for Backend {
             )
             .await;
 
+        // Text Document Sync Configuration
+        let text_document_sync = TextDocumentSyncCapability::Options(TextDocumentSyncOptions {
+            open_close: Some(true),
+            change: Some(TextDocumentSyncKind::FULL),
+            save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions {
+                include_text: Some(true),
+            })),
+            ..TextDocumentSyncOptions::default()
+        });
+
         Ok(InitializeResult {
             server_info: None,
             capabilities: ServerCapabilities {
-                text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                    TextDocumentSyncKind::FULL,
-                )),
+                text_document_sync: Some(text_document_sync),
                 // completion_provider: Some(CompletionOptions {
                 //     resolve_provider: Some(true),
                 //     trigger_characters: Some(vec![".".to_owned(), ":".to_owned()]),
@@ -321,8 +486,7 @@ impl LanguageServer for Backend {
             )
             .await;
 
-        let mut state = self.state.lock().await;
-        insert_source(&mut state, &params.text_document);
+        self.state.lock().await.insert_source(&params.text_document);
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -333,10 +497,10 @@ impl LanguageServer for Backend {
             )
             .await;
 
-        // let mut state = self.state.lock().await;
-        // reload_source(&mut state, &params.text_document, params.content_changes);
+        // reload_source(&self.state, &params.text_document, params.content_changes).await;
     }
 
+    // Test
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         self.client
             .log_message(
@@ -345,8 +509,18 @@ impl LanguageServer for Backend {
             )
             .await;
 
-        let mut state = self.state.lock().await;
-        update_source(&mut state, &params.text_document, params.text);
+        // Update source
+        self.state
+            .lock()
+            .await
+            .update_source(&params.text_document, params.text.clone());
+
+        self.client
+            .log_message(
+                MessageType::INFO,
+                format!("file saved on server! {:#?}", params.text),
+            )
+            .await;
     }
 
     async fn did_close(&self, _: DidCloseTextDocumentParams) {
@@ -391,7 +565,7 @@ impl LanguageServer for Backend {
             end: position,
         };
 
-        let context = get_source_range(&self.state.lock().await.sources, &uri, &range);
+        let context = self.state.lock().await.get_source_range(&uri, &range);
 
         self.client
             .log_message(MessageType::INFO, context.clone().unwrap())
@@ -424,59 +598,4 @@ impl LanguageServer for Backend {
             ])))
         })
     }
-}
-
-fn insert_source(state: &mut State, document: &TextDocumentItem) {
-    if !state.sources.contains_key(&document.uri) {
-        state
-            .sources
-            .insert(document.uri.clone(), document.text.clone());
-    }
-}
-
-fn update_source(state: &mut State, document: &TextDocumentIdentifier, text: Option<String>) {
-    if let Some(text) = text {
-        state.sources.insert(document.uri.clone(), text);
-    }
-}
-
-fn reload_source(
-    state: &mut State,
-    document: &VersionedTextDocumentIdentifier,
-    changes: Vec<TextDocumentContentChangeEvent>,
-) {
-    if let Some(src) = state.sources.get(&document.uri) {
-        let mut source = src.to_owned();
-        for change in changes {
-            if (change.range, change.range_length) == (None, None) {
-                source = change.text;
-            } else if let Some(range) = change.range {
-                let mut lines: Vec<&str> = source.lines().collect();
-                let new_lines: Vec<&str> = change.text.lines().collect();
-                let start = usize::try_from(range.start.line).unwrap();
-                let end = usize::try_from(range.end.line).unwrap();
-                lines.splice(start..end, new_lines);
-                source = lines.join("\n");
-            }
-        }
-        state.sources.insert(document.uri.clone(), source);
-    } else {
-        panic!("attempted to reload source that does not exist");
-    }
-}
-
-fn get_source_range(
-    sources: &HashMap<Url, String>,
-    document_uri: &Url,
-    range: &Range,
-) -> Option<String> {
-    sources.get(document_uri).and_then(|src| {
-        let source = src.to_owned();
-        let lines: Vec<&str> = source.lines().collect();
-        let start = usize::try_from(range.start.line).unwrap();
-        let end = usize::try_from(range.end.line).unwrap();
-        let range_lines = lines.get(start..end);
-
-        range_lines.map(|target_lines| target_lines.join("\n"))
-    })
 }
