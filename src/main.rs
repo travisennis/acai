@@ -40,7 +40,7 @@ enum CodingAssistantCmd {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    DataDir::create();
+    DataDir::new();
 
     let args = CodingAssistant::parse();
 
