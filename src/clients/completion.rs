@@ -29,13 +29,13 @@ impl CompletionClient {
         }
         .unwrap_or_else(|_error| panic!("Error: Environment variable not set."));
 
-        let msgs: Vec<Message> = if let Provider::Mistral = provider {
+        let msgs: Vec<Message> = if matches!(provider, Provider::Mistral) {
             vec![]
         } else {
             panic!()
         };
 
-        CompletionClient {
+        Self {
             provider,
             model,
             token,
@@ -76,7 +76,7 @@ impl CompletionClient {
             self.suffix.clone_from(sfx);
         }
 
-        let prompt = if let Provider::Mistral = &self.provider {
+        let prompt = if matches!(&self.provider, Provider::Mistral) {
             let mut json_map = serde_json::Map::new();
             json_map.insert("model".to_string(), json!(self.model));
             json_map.insert("temperature".to_string(), json!(self.temperature));
@@ -88,7 +88,7 @@ impl CompletionClient {
             panic!()
         };
 
-        let request_url = if let Provider::Mistral = &self.provider {
+        let request_url = if matches!(&self.provider, Provider::Mistral) {
             "https://codestral.mistral.ai/v1/fim/completions"
         } else {
             panic!()
@@ -99,7 +99,7 @@ impl CompletionClient {
             .json(&prompt)
             .header("content-type", "application/json");
 
-        let req = if let Provider::Mistral = &self.provider {
+        let req = if matches!(&self.provider, Provider::Mistral) {
             req_base.bearer_auth(self.token.to_string())
         } else {
             panic!()
@@ -108,7 +108,7 @@ impl CompletionClient {
         let response = req.send().await?;
 
         if response.status().is_success() {
-            let message = if let Provider::Mistral = &self.provider {
+            let message = if matches!(&self.provider, Provider::Mistral) {
                 let anth_response = response.json::<MistralResponse>().await?;
                 anth_response.into_message()
             } else {
@@ -135,7 +135,7 @@ impl CompletionClient {
 
     pub fn get_message_history(&self) -> Vec<Message> {
         let msgs = self.messages.clone();
-        if let Provider::Mistral = self.provider {
+        if matches!(self.provider, Provider::Mistral) {
             msgs
         } else {
             panic!()

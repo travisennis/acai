@@ -49,7 +49,7 @@ impl ChatCompletionClient {
             Provider::Google | Provider::Anthropic => vec![],
         };
 
-        ChatCompletionClient {
+        Self {
             provider,
             model,
             token,
@@ -175,6 +175,7 @@ impl ChatCompletionClient {
             .post(request_url)
             .json(&prompt)
             .header("content-type", "application/json");
+
         let req = match &self.provider {
             Provider::Anthropic => req_base
                 .header("anthropic-version", "2023-06-01")

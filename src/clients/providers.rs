@@ -32,14 +32,14 @@ pub enum Model {
 impl fmt::Display for Model {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Model::GPT4o => write!(f, "GPT-4o"),
-            Model::GPT4Turbo => write!(f, "GPT-4-Turbo"),
-            Model::GPT3Turbo => write!(f, "GPT-3-Turbo"),
-            Model::Claude3Opus => write!(f, "Claude 3 Opus"),
-            Model::Claude3Sonnet => write!(f, "Claude 3 Sonnet"),
-            Model::Claude3Haiku => write!(f, "Claude 3 Haiku"),
-            Model::Codestral => write!(f, "Codestral"),
-            Model::Claude3_5Sonnet => write!(f, "Claude 3.5 Sonnet"),
+            Self::GPT4o => write!(f, "GPT-4o"),
+            Self::GPT4Turbo => write!(f, "GPT-4-Turbo"),
+            Self::GPT3Turbo => write!(f, "GPT-3-Turbo"),
+            Self::Claude3Opus => write!(f, "Claude 3 Opus"),
+            Self::Claude3Sonnet => write!(f, "Claude 3 Sonnet"),
+            Self::Claude3Haiku => write!(f, "Claude 3 Haiku"),
+            Self::Codestral => write!(f, "Codestral"),
+            Self::Claude3_5Sonnet => write!(f, "Claude 3.5 Sonnet"),
         }
     }
 }

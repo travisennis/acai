@@ -72,9 +72,11 @@ impl Instruct {
         }
 
         if !data.is_empty() {
+            let content = prompt_builder.build(&data)?;
+
             let msg = Message {
                 role: Role::User,
-                content: prompt_builder.build(&data)?,
+                content,
             };
 
             let response = client.send_message(msg).await?;
