@@ -47,14 +47,14 @@ impl CompletionClient {
         }
     }
 
-    pub fn temperature(mut self, temperature: Option<f32>) -> Self {
+    pub const fn temperature(mut self, temperature: Option<f32>) -> Self {
         if let Some(temperature) = temperature {
             self.temperature = Some(temperature);
         }
         self
     }
 
-    pub fn max_tokens(mut self, max_tokens: Option<u32>) -> Self {
+    pub const fn max_tokens(mut self, max_tokens: Option<u32>) -> Self {
         if let Some(max_tokens) = max_tokens {
             self.max_tokens = Some(max_tokens);
         }

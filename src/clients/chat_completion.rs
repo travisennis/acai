@@ -69,21 +69,21 @@ impl ChatCompletionClient {
         }
     }
 
-    pub fn temperature(mut self, temperature: Option<f32>) -> Self {
+    pub const fn temperature(mut self, temperature: Option<f32>) -> Self {
         if let Some(temperature) = temperature {
             self.temperature = Some(temperature);
         }
         self
     }
 
-    pub fn top_p(mut self, top_p: Option<f32>) -> Self {
+    pub const fn top_p(mut self, top_p: Option<f32>) -> Self {
         if let Some(top_p) = top_p {
             self.top_p = Some(top_p);
         }
         self
     }
 
-    pub fn max_tokens(mut self, max_tokens: Option<u32>) -> Self {
+    pub const fn max_tokens(mut self, max_tokens: Option<u32>) -> Self {
         if let Some(max_tokens) = max_tokens {
             self.max_tokens = Some(max_tokens);
         }
@@ -97,13 +97,13 @@ impl ChatCompletionClient {
     }
 
     #[allow(dead_code)]
-    pub fn presence_penalty(mut self, presence_penalty: f32) -> Self {
+    pub const fn presence_penalty(mut self, presence_penalty: f32) -> Self {
         self.presence_penalty = Some(presence_penalty);
         self
     }
 
     #[allow(dead_code)]
-    pub fn frequency_penalty(mut self, frequency_penalty: f32) -> Self {
+    pub const fn frequency_penalty(mut self, frequency_penalty: f32) -> Self {
         self.frequency_penalty = Some(frequency_penalty);
         self
     }
@@ -121,13 +121,13 @@ impl ChatCompletionClient {
     }
 
     #[allow(dead_code)]
-    pub fn top_k(mut self, top_k: u32) -> Self {
+    pub const fn top_k(mut self, top_k: u32) -> Self {
         self.top_k = Some(top_k);
         self
     }
 
     #[allow(dead_code)]
-    pub fn stream(mut self, stream: bool) -> Self {
+    pub const fn stream(mut self, stream: bool) -> Self {
         self.stream = stream;
         self
     }
