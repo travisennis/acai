@@ -7,6 +7,7 @@ use crate::models::{IntoMessage, Message, Role};
 
 use super::{
     anthropic::Response as AnthropicResponse,
+    google::{Instruction, Part, Request, Response as GoogleResponse, SystemInstruction},
     mistral::Response as MistralResponse,
     open_ai::Response as OpenAIResponse,
     providers::{Model, Provider},
@@ -161,14 +162,25 @@ impl ChatCompletionClient {
                 "logit_bias": self.logit_bias,
                 "user": self.user,
             }),
-            Provider::Mistral | Provider::Google => json!({}),
+            Provider::Google => serde_json::to_value(Request {
+                system_instruction: SystemInstruction {
+                    parts: Part {
+                        text: self.system.clone(),
+                    },
+                },
+                contents: self.messages.iter().map(Instruction::from).collect(),
+            })?,
+            Provider::Mistral => json!({}),
         };
 
         let request_url = match &self.provider {
-            Provider::Anthropic => "https://api.anthropic.com/v1/messages",
-            Provider::OpenAI => "https://api.openai.com/v1/chat/completions",
-            Provider::Mistral => "https://api.mistral.ai/v1/chat/completions",
-            Provider::Google => "todo",
+            Provider::Anthropic => "https://api.anthropic.com/v1/messages".to_string(),
+            Provider::OpenAI => "https://api.openai.com/v1/chat/completions".to_string(),
+            Provider::Mistral => "https://api.mistral.ai/v1/chat/completions".to_string(),
+            Provider::Google => format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}/generateContent?key={}",
+                self.model, self.token
+            ),
         };
 
         let req_base = Client::new()
@@ -180,9 +192,8 @@ impl ChatCompletionClient {
             Provider::Anthropic => req_base
                 .header("anthropic-version", "2023-06-01")
                 .header("x-api-key", self.token.to_string()),
-            Provider::OpenAI | Provider::Mistral | Provider::Google => {
-                req_base.bearer_auth(self.token.to_string())
-            }
+            Provider::OpenAI | Provider::Mistral => req_base.bearer_auth(self.token.to_string()),
+            Provider::Google => req_base,
         };
 
         let response = req.send().await?;
@@ -202,8 +213,8 @@ impl ChatCompletionClient {
                     mistral_response.into_message()
                 }
                 Provider::Google => {
-                    let mistral_response = response.json::<MistralResponse>().await?;
-                    mistral_response.into_message()
+                    let google_response = response.json::<GoogleResponse>().await?;
+                    google_response.into_message()
                 }
             };
 
@@ -228,7 +239,7 @@ impl ChatCompletionClient {
     pub fn get_message_history(&self) -> Vec<Message> {
         let mut msgs = self.messages.clone();
         match self.provider {
-            Provider::Anthropic => {
+            Provider::Anthropic | Provider::Google => {
                 let mut result = vec![Message {
                     role: Role::System,
                     content: self.system.to_string(),
@@ -236,7 +247,7 @@ impl ChatCompletionClient {
                 result.append(&mut msgs);
                 result
             }
-            Provider::OpenAI | Provider::Mistral | Provider::Google => msgs,
+            Provider::OpenAI | Provider::Mistral => msgs,
         }
     }
 }

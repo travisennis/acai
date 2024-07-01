@@ -27,6 +27,10 @@ pub enum Model {
     Claude3Haiku,
     #[serde(rename = "codestral-latest")]
     Codestral,
+    #[serde(rename = "gemini-1.5-flash-latest")]
+    GeminiFlash,
+    #[serde(rename = "gemini-1.5-pro-latest")]
+    GeminiPro,
 }
 
 impl fmt::Display for Model {
@@ -40,6 +44,34 @@ impl fmt::Display for Model {
             Self::Claude3Haiku => write!(f, "Claude 3 Haiku"),
             Self::Codestral => write!(f, "Codestral"),
             Self::Claude3_5Sonnet => write!(f, "Claude 3.5 Sonnet"),
+            Self::GeminiFlash => write!(f, "Gemini 1.5 Flash"),
+            Self::GeminiPro => write!(f, "Gemini 1.5 Pro"),
+        }
+    }
+}
+
+pub struct ProviderModel {
+    pub provider: Provider,
+    pub model: Model,
+}
+
+impl ProviderModel {
+    pub fn get_or_default(model_name: &str, default: (Provider, Model)) -> Self {
+        let result = match model_name {
+            "gpt-4-turbo" => (Provider::OpenAI, Model::GPT4Turbo),
+            "gpt-3-turbo" => (Provider::OpenAI, Model::GPT3Turbo),
+            "sonnet" => (Provider::Anthropic, Model::Claude3_5Sonnet),
+            "opus" => (Provider::Anthropic, Model::Claude3Opus),
+            "sonnet3" => (Provider::Anthropic, Model::Claude3Sonnet),
+            "haiku" => (Provider::Anthropic, Model::Claude3Haiku),
+            "gemini-flash" => (Provider::Google, Model::GeminiFlash),
+            "gemini-pro" => (Provider::Google, Model::GeminiPro),
+            _ => default,
+        };
+
+        Self {
+            provider: result.0,
+            model: result.1,
         }
     }
 }
