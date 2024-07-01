@@ -37,6 +37,7 @@ impl Complete {
 
         let mut client = CompletionClient::new(model_provider.provider, model_provider.model)
             .temperature(self.temperature)
+            .top_p(self.top_p)
             .max_tokens(self.max_tokens);
 
         let prompt = &self.context;

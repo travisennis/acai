@@ -15,6 +15,7 @@ pub struct CompletionClient {
     model: Model,
     token: String,
     temperature: Option<f32>,
+    top_p: Option<f32>,
     max_tokens: Option<u32>,
     prompt: String,
     suffix: String,
@@ -40,6 +41,7 @@ impl CompletionClient {
             model,
             token,
             temperature: Some(0.0),
+            top_p: Some(1.0),
             max_tokens: Some(1028),
             prompt: String::new(),
             suffix: String::new(),
@@ -50,6 +52,13 @@ impl CompletionClient {
     pub const fn temperature(mut self, temperature: Option<f32>) -> Self {
         if let Some(temperature) = temperature {
             self.temperature = Some(temperature);
+        }
+        self
+    }
+
+    pub const fn top_p(mut self, top_p: Option<f32>) -> Self {
+        if let Some(top_p) = top_p {
+            self.top_p = Some(top_p);
         }
         self
     }
@@ -80,6 +89,7 @@ impl CompletionClient {
             let mut json_map = serde_json::Map::new();
             json_map.insert("model".to_string(), json!(self.model));
             json_map.insert("temperature".to_string(), json!(self.temperature));
+            json_map.insert("top_p".to_string(), json!(self.top_p));
             json_map.insert("max_tokens".to_string(), json!(self.max_tokens));
             json_map.insert("prompt".to_string(), json!(self.prompt));
             json_map.insert("suffix".to_string(), json!(self.suffix));
