@@ -93,6 +93,7 @@ impl CompletionClient {
             json_map.insert("max_tokens".to_string(), json!(self.max_tokens));
             json_map.insert("prompt".to_string(), json!(self.prompt));
             json_map.insert("suffix".to_string(), json!(self.suffix));
+            json_map.insert("stop".to_string(), json!(["\n\n"]));
             json!(json_map)
         } else {
             panic!()
