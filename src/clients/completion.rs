@@ -7,12 +7,12 @@ use serde_json::{json, Value};
 
 use crate::models::{Message, Role};
 
-use super::providers::{Model, Provider};
+use super::providers::Provider;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct CompletionClient {
     provider: Provider,
-    model: Model,
+    model: String,
     token: String,
     temperature: Option<f32>,
     top_p: Option<f32>,
@@ -23,7 +23,7 @@ pub struct CompletionClient {
 }
 
 impl CompletionClient {
-    pub fn new(provider: Provider, model: Model) -> Self {
+    pub fn new(provider: Provider, model: String) -> Self {
         let token = match provider {
             Provider::Mistral => env::var("MISTRAL_API_KEY"),
             _ => todo!(),

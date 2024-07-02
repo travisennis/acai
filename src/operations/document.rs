@@ -2,7 +2,7 @@ use std::{collections::HashMap, error::Error};
 
 use crate::{
     clients::{
-        providers::{Model, Provider, ProviderModel},
+        providers::{ModelConfig, Provider},
         ChatCompletionClient,
     },
     config::DataDir,
@@ -36,9 +36,9 @@ impl Document {
     pub async fn send(&self) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
         let system_prompt = DEFAULT_PROMPT;
 
-        let model_provider = ProviderModel::get_or_default(
+        let model_provider = ModelConfig::get_or_default(
             self.model.clone().unwrap_or_default().as_str(),
-            (Provider::OpenAI, Model::GPT4o),
+            (Provider::Anthropic, "sonnet"),
         );
 
         let provider = model_provider.provider;

@@ -10,13 +10,13 @@ use super::{
     google::{Instruction, Part, Request, Response as GoogleResponse, SystemInstruction},
     mistral::Response as MistralResponse,
     open_ai::Response as OpenAIResponse,
-    providers::{Model, Provider},
+    providers::Provider,
 };
 
 #[allow(clippy::module_name_repetitions)]
 pub struct ChatCompletionClient {
     provider: Provider,
-    model: Model,
+    model: String,
     token: String,
     temperature: Option<f32>,
     top_p: Option<f32>,
@@ -33,7 +33,7 @@ pub struct ChatCompletionClient {
 }
 
 impl ChatCompletionClient {
-    pub fn new(provider: Provider, model: Model, system_prompt: &str) -> Self {
+    pub fn new(provider: Provider, model: String, system_prompt: &str) -> Self {
         let token = match provider {
             Provider::Anthropic => env::var("CLAUDE_API_KEY"),
             Provider::OpenAI => env::var("OPENAI_API_KEY"),

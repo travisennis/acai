@@ -6,7 +6,7 @@ use clap::{Args, ValueEnum};
 use crate::{
     cli::CmdRunner,
     clients::{
-        providers::{Model, Provider},
+        providers::{ModelConfig, Provider},
         ChatCompletionClient,
     },
     config::DataDir,
@@ -73,22 +73,13 @@ impl CmdRunner for Cmd {
             _ => DEFAULT_PROMPT,
         };
 
-        let model_provider = match self.model.clone().unwrap_or("default".to_string()).as_str() {
-            "gpt-4-turbo" => (Provider::OpenAI, Model::GPT4Turbo),
-            "gpt-3-turbo" => (Provider::OpenAI, Model::GPT3Turbo),
-            "sonnet35" => (Provider::Anthropic, Model::Claude3_5Sonnet),
-            "opus3" => (Provider::Anthropic, Model::Claude3Opus),
-            "sonnet3" => (Provider::Anthropic, Model::Claude3Sonnet),
-            "haiku3" => (Provider::Anthropic, Model::Claude3Haiku),
-            "codestral" => (Provider::Mistral, Model::Codestral),
-            _ => (Provider::OpenAI, Model::GPT4o),
-        };
+        let model = self.model.clone().unwrap_or_default();
+        let config = ModelConfig::get_or_default(&model, (Provider::Anthropic, "sonnet"));
 
-        let mut client =
-            ChatCompletionClient::new(model_provider.0, model_provider.1, system_prompt)
-                .temperature(self.temperature)
-                .top_p(self.top_p)
-                .max_tokens(self.max_tokens);
+        let mut client = ChatCompletionClient::new(config.provider, config.model, system_prompt)
+            .temperature(self.temperature)
+            .top_p(self.top_p)
+            .max_tokens(self.max_tokens);
 
         let prompt_builder = PromptBuilder::new()?;
 

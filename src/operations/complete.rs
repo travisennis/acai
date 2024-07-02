@@ -2,7 +2,7 @@ use std::error::Error;
 
 use crate::{
     clients::{
-        providers::{Model, Provider, ProviderModel},
+        providers::{ModelConfig, Provider},
         CompletionClient,
     },
     config::DataDir,
@@ -30,9 +30,9 @@ pub struct Complete {
 
 impl Complete {
     pub async fn send(&self) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
-        let model_provider = ProviderModel::get_or_default(
+        let model_provider = ModelConfig::get_or_default(
             self.model.clone().unwrap_or_default().as_str(),
-            (Provider::Mistral, Model::Codestral),
+            (Provider::Mistral, "codestral"),
         );
 
         let mut client = CompletionClient::new(model_provider.provider, model_provider.model)
