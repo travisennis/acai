@@ -70,8 +70,29 @@ impl CmdRunner for Cmd {
         loop {
             let readline = rl.readline("> ");
             match readline {
-                Ok(line) if line.trim() == "bye" => {
+                Ok(line) if line.trim() == "/bye" => {
                     break;
+                }
+                Ok(line) if line.starts_with("/model") => {
+                    let chosen_model = line.trim_start_matches("/model ").trim().to_string();
+
+                    let config =
+                        ModelConfig::get_or_default(&chosen_model, (Provider::Anthropic, "sonnet"));
+
+                    client = ChatCompletionClient::new(
+                        config.provider,
+                        config.model.clone(),
+                        system_prompt,
+                    )
+                    .temperature(self.temperature)
+                    .top_p(self.top_p)
+                    .max_tokens(self.max_tokens);
+
+                    println!("\n");
+                    skin.print_text(&format!("Model set to {}", config.model));
+                    println!("\n");
+
+                    continue;
                 }
                 Ok(line) => {
                     let mut data = HashMap::new();
