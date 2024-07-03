@@ -10,7 +10,7 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CodeAction, CodeActionKind, CodeActionOptions, CodeActionOrCommand, CodeActionParams,
     CodeActionProviderCapability, CodeActionResponse, CompletionItem, CompletionOptions,
-    CompletionParams, CompletionResponse, DidChangeConfigurationParams,
+    CompletionParams, CompletionResponse, Diagnostic, DidChangeConfigurationParams,
     DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidChangeWorkspaceFoldersParams,
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
     ExecuteCommandOptions, ExecuteCommandParams, InitializeParams, InitializeResult,
@@ -97,6 +97,7 @@ struct CodeActionData {
     id: String,
     document_uri: Url,
     range: Range,
+    diagnostics: Vec<Diagnostic>,
 }
 
 #[derive(Debug)]
@@ -184,7 +185,10 @@ impl Backend {
         let text_doc = params.text_document;
         let document_uri = text_doc.uri;
         let range = params.range;
-        // let diagnostics = params.context.diagnostics;
+        let diagnostics = params.context.diagnostics;
+        self.client
+            .log_message(MessageType::INFO, format!("{diagnostics:?}"))
+            .await;
         // let error_id_to_ranges = build_error_id_to_ranges(diagnostics);
 
         let mut response = CodeActionResponse::new();
@@ -204,6 +208,7 @@ impl Backend {
                     id: code_action.identifier().to_string(),
                     document_uri: document_uri.clone(),
                     range,
+                    diagnostics: diagnostics.clone(),
                 })),
             };
             response.push(CodeActionOrCommand::from(action));
@@ -408,19 +413,21 @@ impl LanguageServer for Backend {
             ..TextDocumentSyncOptions::default()
         });
 
+        let completion_options = CompletionOptions {
+            resolve_provider: Some(true),
+            trigger_characters: Some(vec![".".to_owned(), ":".to_owned()]),
+            work_done_progress_options: WorkDoneProgressOptions::default(),
+            all_commit_characters: None,
+            ..Default::default()
+        };
+
         Ok(InitializeResult {
             server_info: None,
             capabilities: ServerCapabilities {
                 text_document_sync: Some(text_document_sync),
-                // completion_provider: Some(CompletionOptions {
-                //     resolve_provider: Some(true),
-                //     trigger_characters: Some(vec![".".to_owned(), ":".to_owned()]),
-                //     work_done_progress_options: WorkDoneProgressOptions::default(),
-                //     all_commit_characters: None,
-                //     ..Default::default()
-                // }),
+                // completion_provider: Some(completion_options),
                 execute_command_provider: Some(ExecuteCommandOptions {
-                    commands: vec!["codingassistant/instruct".to_owned()],
+                    commands: vec!["acai_instruct".to_owned()],
                     work_done_progress_options: WorkDoneProgressOptions::default(),
                 }),
                 code_action_provider: Some(CodeActionProviderCapability::Options(
@@ -497,7 +504,10 @@ impl LanguageServer for Backend {
             )
             .await;
 
-        // reload_source(&self.state, &params.text_document, params.content_changes).await;
+        // self.state
+        //     .lock()
+        //     .await
+        //     .reload_source(&params.text_document, params.content_changes);
     }
 
     // Test
