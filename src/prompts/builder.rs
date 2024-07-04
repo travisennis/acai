@@ -4,7 +4,7 @@ use handlebars::{no_escape, Handlebars};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum PromptBuilderError {
+pub enum BuilderError {
     #[error("template error")]
     TemplateError,
     #[error("render error")]
@@ -16,7 +16,7 @@ pub struct PromptBuilder<'a> {
 }
 
 impl PromptBuilder<'_> {
-    pub fn new() -> Result<Self, PromptBuilderError> {
+    pub fn new() -> Result<Self, BuilderError> {
         let default_template = include_str!("prompt.hbs");
 
         let mut reg = Handlebars::new();
@@ -24,16 +24,16 @@ impl PromptBuilder<'_> {
         reg.register_escape_fn(no_escape);
 
         reg.register_template_string("default", default_template)
-            .map_err(|_e| PromptBuilderError::TemplateError)?;
+            .map_err(|_e| BuilderError::TemplateError)?;
 
         Ok(Self {
             template_engine: reg,
         })
     }
 
-    pub fn build(&self, data: &HashMap<String, String>) -> Result<String, PromptBuilderError> {
+    pub fn build(&self, data: &HashMap<String, String>) -> Result<String, BuilderError> {
         self.template_engine
             .render("default", &data)
-            .map_err(|_e| PromptBuilderError::RenderError)
+            .map_err(|_e| BuilderError::RenderError)
     }
 }
