@@ -47,18 +47,25 @@ pub struct Content {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct Candidate {
+    content: Vec<Content>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Response {
-    pub contents: Vec<Content>,
+    pub candidates: Vec<Candidate>,
 }
 
 impl IntoMessage for Response {
     fn into_message(self) -> Option<Message> {
-        if let Some(content) = self.contents.first() {
-            if let Some(part) = content.parts.first() {
-                return Some(Message {
-                    role: Role::Assistant,
-                    content: part.text.clone(),
-                });
+        if let Some(candidate) = self.candidates.first() {
+            if let Some(content) = candidate.content.first() {
+                if let Some(part) = content.parts.first() {
+                    return Some(Message {
+                        role: Role::Assistant,
+                        content: part.text.clone(),
+                    });
+                }
             }
         }
         None
