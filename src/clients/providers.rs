@@ -3,6 +3,7 @@ pub enum Provider {
     OpenAI,
     Mistral,
     Google,
+    Ollama,
 }
 
 pub struct ModelConfig {
@@ -14,10 +15,10 @@ impl ModelConfig {
     pub fn get_or_default(input: &str, default: (Provider, &str)) -> Self {
         let parts: Vec<&str> = input.split('/').collect();
 
-        let p_m: (&str, &str) = if parts.len() != 2 {
-            ("", default.1)
-        } else {
+        let p_m: (&str, &str) = if parts.len() == 2 {
             (parts[0], parts[1])
+        } else {
+            ("", default.1)
         };
 
         let provider = match p_m.0.to_lowercase().as_str() {
@@ -25,6 +26,7 @@ impl ModelConfig {
             "openai" => Provider::OpenAI,
             "mistral" => Provider::Mistral,
             "google" => Provider::Google,
+            "ollama" => Provider::Ollama,
             _ => default.0,
         };
 

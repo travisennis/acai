@@ -39,11 +39,12 @@ impl ChatCompletionClient {
             Provider::OpenAI => env::var("OPENAI_API_KEY"),
             Provider::Mistral => env::var("MISTRAL_API_KEY"),
             Provider::Google => env::var("GOOGLE_API_KEY"),
+            Provider::Ollama => Ok(String::new()),
         }
         .unwrap_or_else(|_error| panic!("Error: Environment variable not set."));
 
         let msgs: Vec<Message> = match provider {
-            Provider::OpenAI | Provider::Mistral => vec![Message {
+            Provider::OpenAI | Provider::Mistral | Provider::Ollama => vec![Message {
                 role: Role::System,
                 content: system_prompt.to_string(),
             }],
@@ -171,6 +172,17 @@ impl ChatCompletionClient {
                 contents: self.messages.iter().map(Instruction::from).collect(),
             })?,
             Provider::Mistral => json!({}),
+            Provider::Ollama => json!({
+                "model": self.model,
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+                "max_tokens": self.max_tokens,
+                "stream": self.stream,
+                "messages": self.messages,
+                "presence_penalty": self.presence_penalty,
+                "frequency_penalty": self.frequency_penalty,
+                "stop": self.stop,
+            }),
         };
 
         let request_url = match &self.provider {
@@ -181,6 +193,7 @@ impl ChatCompletionClient {
                 "https://generativelanguage.googleapis.com/v1beta/models/{}/generateContent?key={}",
                 self.model, self.token
             ),
+            Provider::Ollama => "http://localhost:11434".to_string(),
         };
 
         let req_base = Client::new()
@@ -193,7 +206,7 @@ impl ChatCompletionClient {
                 .header("anthropic-version", "2023-06-01")
                 .header("x-api-key", self.token.to_string()),
             Provider::OpenAI | Provider::Mistral => req_base.bearer_auth(self.token.to_string()),
-            Provider::Google => req_base,
+            Provider::Google | Provider::Ollama => req_base,
         };
 
         let response = req.send().await?;
@@ -204,7 +217,7 @@ impl ChatCompletionClient {
                     let anth_response = response.json::<AnthropicResponse>().await?;
                     anth_response.into_message()
                 }
-                Provider::OpenAI => {
+                Provider::OpenAI | Provider::Ollama => {
                     let ai_response = response.json::<OpenAIResponse>().await?;
                     ai_response.into_message()
                 }
@@ -247,7 +260,7 @@ impl ChatCompletionClient {
                 result.append(&mut msgs);
                 result
             }
-            Provider::OpenAI | Provider::Mistral => msgs,
+            Provider::OpenAI | Provider::Mistral | Provider::Ollama => msgs,
         }
     }
 }
