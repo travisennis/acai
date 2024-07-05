@@ -30,7 +30,7 @@ pub struct Optimize {
     pub context: Option<String>,
 }
 
-const DEFAULT_PROMPT: &str = "Review the code snippet below and suggest optimizations to improve performance. Focus on efficiency, speed, and resource usage while maintaining the original functionality. The answer should be in plain text without Markdown formatting. Provide only the optimized code.";
+const DEFAULT_PROMPT: &str = "Analyze the provided code snippet and propose optimizations to enhance performance. Concentrate on improving efficiency, speed, and resource utilization without altering the core functionality. Present the optimized code in plain text format, excluding any Markdown formatting. Provide only the revised code implementation.";
 
 impl Optimize {
     pub async fn send(&self) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {

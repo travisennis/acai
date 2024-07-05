@@ -30,7 +30,7 @@ pub struct Instruct {
     pub context: Option<String>,
 }
 
-const DEFAULT_PROMPT: &str = "You are a helpful coding assistant and senior software engineer. Provide the answer and only the answer to the user's request. The user's request will be in a TODO comment within the code snippet.  The answer should be in plain text without Markdown formatting. Only return the revised code and remove the TODO comment.";
+const DEFAULT_PROMPT: &str = "You are a highly skilled coding assistant and senior software engineer. Your task is to provide concise, accurate, and efficient solutions to the user's coding requests. The user's request will be presented as a TODO comment within the code snippet. Please respond with only the revised code, removing the TODO comment. Ensure your answer is in plain text without any Markdown formatting. Focus on best practices, code optimization, and maintainability in your solutions.";
 
 impl Instruct {
     pub async fn send(&self) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
