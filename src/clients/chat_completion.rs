@@ -56,7 +56,7 @@ impl ChatCompletionClient {
             model,
             token,
             temperature: Some(0.0),
-            max_tokens: Some(1028),
+            max_tokens: None,
             top_p: None,
             system: system_prompt.to_string(),
             messages: msgs,
@@ -143,9 +143,9 @@ impl ChatCompletionClient {
             Provider::Anthropic => json!({
                 "model": self.model,
                 "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "top_p": self.top_p,
-                "top_k": self.top_k,
+                // "max_tokens": self.max_tokens,
+                // "top_p": self.top_p,
+                // "top_k": self.top_k,
                 "stream": self.stream,
                 "system": self.system,
                 "messages": self.messages
@@ -185,16 +185,7 @@ impl ChatCompletionClient {
             }),
         };
 
-        let request_url = match &self.provider {
-            Provider::Anthropic => "https://api.anthropic.com/v1/messages".to_string(),
-            Provider::OpenAI => "https://api.openai.com/v1/chat/completions".to_string(),
-            Provider::Mistral => "https://api.mistral.ai/v1/chat/completions".to_string(),
-            Provider::Google => format!(
-                "https://generativelanguage.googleapis.com/v1beta/models/{}/generateContent?key={}",
-                self.model, self.token
-            ),
-            Provider::Ollama => "http://localhost:11434".to_string(),
-        };
+        let request_url = self.get_request_url();
 
         let req_base = Client::new()
             .post(request_url)
@@ -261,6 +252,19 @@ impl ChatCompletionClient {
                 result
             }
             Provider::OpenAI | Provider::Mistral | Provider::Ollama => msgs,
+        }
+    }
+
+    fn get_request_url(&self) -> String {
+        match &self.provider {
+            Provider::Anthropic => "https://api.anthropic.com/v1/messages".to_string(),
+            Provider::OpenAI => "https://api.openai.com/v1/chat/completions".to_string(),
+            Provider::Mistral => "https://api.mistral.ai/v1/chat/completions".to_string(),
+            Provider::Google => format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}/generateContent?key={}",
+                self.model, self.token
+            ),
+            Provider::Ollama => "http://localhost:11434".to_string(),
         }
     }
 }
