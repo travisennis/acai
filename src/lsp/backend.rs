@@ -22,6 +22,7 @@ use tower_lsp::lsp_types::{
 };
 use tower_lsp::{Client, LanguageServer};
 
+use crate::context::embedded_instructions::parse_context;
 use crate::operations::{Complete, Document, Fix, Instruct, Optimize, Suggest};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -307,6 +308,8 @@ async fn execute_operation(op_title: String, context: Option<String>) -> Option<
         return None::<String>;
     }
 
+    let embedded_instructions = context.as_ref().map(|c| parse_context(c));
+
     if matches!(code_action, AiCodeAction::FillInMiddle) {
         let response = Complete {
             model: None,
@@ -329,12 +332,14 @@ async fn execute_operation(op_title: String, context: Option<String>) -> Option<
     let result = match code_action {
         AiCodeAction::Instruct => Some(
             Instruct {
-                model: None,
-                temperature: None,
+                model: embedded_instructions
+                    .as_ref()
+                    .and_then(|ei| ei.model.clone()),
+                temperature: embedded_instructions.as_ref().map(|ei| ei.temperature),
                 max_tokens: None,
                 top_p: None,
                 prompt: None,
-                context,
+                context: embedded_instructions.map_or(context, |ei| Some(ei.context)),
             }
             .send()
             .await,

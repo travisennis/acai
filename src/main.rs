@@ -1,6 +1,7 @@
 mod cli;
 mod clients;
 mod config;
+mod context;
 mod errors;
 mod lsp;
 mod models;
