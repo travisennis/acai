@@ -6,8 +6,10 @@ use serde_json::{json, Value};
 use crate::models::{IntoMessage, Message, Role};
 
 use super::{
-    anthropic::Response as AnthropicResponse,
-    google::{Instruction, Part, Request, Response as GoogleResponse, SystemInstruction},
+    anthropic::{Request as AnthropicRequest, Response as AnthropicResponse},
+    google::{
+        Instruction, Part, Request as GoogleRequest, Response as GoogleResponse, SystemInstruction,
+    },
     mistral::Response as MistralResponse,
     open_ai::Response as OpenAIResponse,
     providers::Provider,
@@ -140,16 +142,16 @@ impl ChatCompletionClient {
         self.messages.push(message);
 
         let prompt = match &self.provider {
-            Provider::Anthropic => json!({
-                "model": self.model,
-                "temperature": self.temperature,
-                // "max_tokens": self.max_tokens,
-                // "top_p": self.top_p,
-                // "top_k": self.top_k,
-                "stream": self.stream,
-                "system": self.system,
-                "messages": self.messages
-            }),
+            Provider::Anthropic => serde_json::to_value(AnthropicRequest {
+                model: self.model.clone(),
+                temperature: self.temperature,
+                top_p: self.top_p,
+                max_tokens: self.max_tokens.unwrap_or(4096),
+                system: self.system.clone(),
+                messages: self.messages.clone(),
+                top_k: self.top_k,
+                stream: self.stream,
+            })?,
             Provider::OpenAI => json!({
                 "model": self.model,
                 "temperature": self.temperature,
@@ -163,7 +165,7 @@ impl ChatCompletionClient {
                 "logit_bias": self.logit_bias,
                 "user": self.user,
             }),
-            Provider::Google => serde_json::to_value(Request {
+            Provider::Google => serde_json::to_value(GoogleRequest {
                 system_instruction: SystemInstruction {
                     parts: Part {
                         text: self.system.clone(),
