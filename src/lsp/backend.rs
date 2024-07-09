@@ -25,6 +25,40 @@ use tower_lsp::{Client, LanguageServer};
 use crate::context::embedded_instructions::parse_context;
 use crate::operations::{Complete, Document, Fix, Instruct, Optimize, Suggest};
 
+/// Logs a client message at info level.
+///
+/// # Examples
+///
+/// ```
+/// # #[macro_use]
+/// client_info!(self.client, "{uri}");
+/// ```
+macro_rules! client_info {
+    ($client:expr, $($arg:tt)*) => {
+        $client.log_message(MessageType::INFO, format!($($arg)*)).await;
+    };
+}
+
+/// Logs a client message at error level.
+///
+/// # Examples
+///
+/// ```
+/// # #[macro_use]
+/// client_error!(self.client, "Error occurred: {error_message}");
+/// ```
+macro_rules! client_error {
+    ($client:expr, $($arg:tt)*) => {
+        $client.log_message(MessageType::ERROR, format!($($arg)*)).await;
+    };
+}
+
+// macro_rules! client_warn {
+//     ($client:expr, $($arg:tt)*) => {
+//         $client.log_message(MessageType::WARNING, format!($($arg)*)).await;
+//     };
+// }
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum AiCodeAction {
     Instruct,
@@ -179,17 +213,13 @@ impl Backend {
     }
 
     async fn on_code_action(&self, params: CodeActionParams) -> CodeActionResponse {
-        self.client
-            .log_message(MessageType::INFO, "on code action")
-            .await;
+        client_info!(self.client, "on code action");
 
         let text_doc = params.text_document;
         let document_uri = text_doc.uri;
         let range = params.range;
         let diagnostics = params.context.diagnostics;
-        self.client
-            .log_message(MessageType::INFO, format!("{diagnostics:?}"))
-            .await;
+        client_info!(self.client, "{diagnostics:?}");
         // let error_id_to_ranges = build_error_id_to_ranges(diagnostics);
 
         let mut response = CodeActionResponse::new();
@@ -248,7 +278,7 @@ impl Backend {
                     Some((cad.document_uri.clone(), cad.range, context, cad.id))
                 }
                 Err(err) => {
-                    self.client.log_message(MessageType::ERROR, err).await;
+                    client_error!(self.client, "{err}");
                     None
                 }
             }
