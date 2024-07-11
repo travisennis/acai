@@ -1,19 +1,19 @@
-static MODEL_INSTRUCTION: &str = "// model:";
-static TEMPERATURE_INSTRUCTION: &str = "// temperature:";
-static RETURN_FORMAT_INSTRUCTION: &str = "// return_format:";
+const MODEL_INSTRUCTION: &str = "// model:";
+const TEMPERATURE_INSTRUCTION: &str = "// temperature:";
+const RETURN_FORMAT_INSTRUCTION: &str = "// return_format:";
 
 pub struct EmbeddedInstructions {
     pub model: Option<String>,
-    pub temperature: f32,
+    pub temperature: Option<f32>,
     pub return_format: Option<String>,
     pub context: String,
 }
 
 pub fn parse_context(input: &str) -> EmbeddedInstructions {
     let mut model = None::<String>;
-    let mut temperature = 0.0;
+    let mut temperature = None::<f32>;
     let mut return_format = None::<String>;
-    let mut context = String::new();
+    let mut context: Vec<&str> = Vec::new();
 
     for line in input.lines() {
         if line.starts_with(MODEL_INSTRUCTION) {
@@ -23,11 +23,12 @@ pub fn parse_context(input: &str) -> EmbeddedInstructions {
                     .to_string(),
             );
         } else if line.starts_with(TEMPERATURE_INSTRUCTION) {
-            temperature = line
-                .trim_start_matches(TEMPERATURE_INSTRUCTION)
-                .trim()
-                .parse()
-                .unwrap_or(0.0);
+            temperature = Some(
+                line.trim_start_matches(TEMPERATURE_INSTRUCTION)
+                    .trim()
+                    .parse()
+                    .unwrap_or(0.0),
+            );
         } else if line.starts_with(RETURN_FORMAT_INSTRUCTION) {
             return_format = Some(
                 line.trim_start_matches(RETURN_FORMAT_INSTRUCTION)
@@ -35,8 +36,7 @@ pub fn parse_context(input: &str) -> EmbeddedInstructions {
                     .to_string(),
             );
         } else {
-            context.push_str(line);
-            context.push('\n');
+            context.push(line.trim());
         }
     }
 
@@ -44,6 +44,6 @@ pub fn parse_context(input: &str) -> EmbeddedInstructions {
         model,
         temperature,
         return_format,
-        context: context.trim().to_string(),
+        context: context.join("\n").to_string(),
     }
 }
