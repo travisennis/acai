@@ -25,6 +25,8 @@ const DOCUMENT_PROMPT: &str = "Your task is to document the provided code using 
 
 const TODO_PROMPT: &str = "Your task is to add todo comments to the provided code snippet. The todo comments are to be added to parts of the code that can be improved or fixed. The todo comment should explain what needs to be done and give a short explanation of why.";
 
+const SUGGESTION_PROMPT: &str = "Your task is to provide suggestions to improve the provided code snippet.Ths suggestions should focus on what can be improved or fixed about this code. The suggestions should explain what needs to be done and give a short explanation of why. Provide line numbers to indicate which part of the code the suggestion applies.";
+
 const DEFAULT_PROMPT: &str = "You are a helpful coding assistant and senior software engineer. Provide the answer and only the answer to the user's request. The user's request will be in a TODO comment within the code snippet.  The answer should be in plain text without Markdown formatting. Only return the revised code and remove the TODO comment.";
 
 #[derive(Debug, ValueEnum, Clone, PartialEq)]
@@ -34,6 +36,7 @@ enum Task {
     Complete,
     Todo,
     Document,
+    Suggestion,
 }
 
 #[derive(Clone, Args)]
@@ -70,6 +73,7 @@ impl CmdRunner for Cmd {
             Some(Task::Complete) => COMPLETE_PROMPT,
             Some(Task::Todo) => TODO_PROMPT,
             Some(Task::Document) => DOCUMENT_PROMPT,
+            Some(Task::Suggestion) => SUGGESTION_PROMPT,
             _ => DEFAULT_PROMPT,
         };
 
