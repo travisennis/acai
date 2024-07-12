@@ -1,11 +1,11 @@
 use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::Arc;
 
+use dashmap::DashMap;
+use ropey::Rope;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CodeAction, CodeActionKind, CodeActionOptions, CodeActionOrCommand, CodeActionParams,
@@ -15,10 +15,9 @@ use tower_lsp::lsp_types::{
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
     ExecuteCommandOptions, ExecuteCommandParams, InitializeParams, InitializeResult,
     InitializedParams, MessageType, Position, Range, SaveOptions, ServerCapabilities,
-    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
-    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
-    TextDocumentSyncSaveOptions, TextEdit, Url, VersionedTextDocumentIdentifier,
-    WorkDoneProgressOptions, WorkspaceEdit,
+    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentSyncCapability,
+    TextDocumentSyncKind, TextDocumentSyncOptions, TextDocumentSyncSaveOptions, TextEdit, Url,
+    VersionedTextDocumentIdentifier, WorkDoneProgressOptions, WorkspaceEdit,
 };
 use tower_lsp::{Client, LanguageServer};
 
@@ -136,80 +135,69 @@ struct CodeActionData {
 }
 
 #[derive(Debug)]
-struct State {
-    sources: HashMap<Url, String>,
-}
-
-impl State {
-    fn new() -> Self {
-        Self {
-            sources: HashMap::new(),
-        }
-    }
-
-    fn insert_source(&mut self, document: &TextDocumentItem) {
-        if !self.sources.contains_key(&document.uri) {
-            self.sources
-                .insert(document.uri.clone(), document.text.clone());
-        }
-    }
-
-    fn update_source(&mut self, document: &TextDocumentIdentifier, text: Option<String>) {
-        if let Some(text) = text {
-            self.sources.insert(document.uri.clone(), text);
-        }
-    }
-
-    fn reload_source(
-        &mut self,
-        document: &VersionedTextDocumentIdentifier,
-        changes: Vec<TextDocumentContentChangeEvent>,
-    ) {
-        if let Some(src) = self.sources.get(&document.uri) {
-            let mut source = src.to_owned();
-            for change in changes {
-                if (change.range, change.range_length) == (None, None) {
-                    source = change.text;
-                } else if let Some(range) = change.range {
-                    let mut lines: Vec<&str> = source.lines().collect();
-                    let new_lines: Vec<&str> = change.text.lines().collect();
-                    let start = usize::try_from(range.start.line).unwrap();
-                    let end = usize::try_from(range.end.line).unwrap();
-                    lines.splice(start..end, new_lines);
-                    source = lines.join("\n");
-                }
-            }
-            self.sources.insert(document.uri.clone(), source);
-        } else {
-            panic!("attempted to reload source that does not exist");
-        }
-    }
-
-    fn get_source_range(&self, document_uri: &Url, range: &Range) -> Option<String> {
-        self.sources.get(document_uri).and_then(|src| {
-            let source = src.to_owned();
-            let lines: Vec<&str> = source.lines().collect();
-            let start = usize::try_from(range.start.line).unwrap();
-            let end = usize::try_from(range.end.line).unwrap();
-            let range_lines = lines.get(start..end);
-
-            range_lines.map(|target_lines| target_lines.join("\n"))
-        })
-    }
-}
-
-#[derive(Debug)]
 pub struct Backend {
     client: Client,
-    state: Arc<Mutex<State>>,
+    document_map: DashMap<Url, Rope>,
 }
 
 impl Backend {
     pub fn new(client: Client) -> Self {
         Self {
             client,
-            state: Arc::new(Mutex::new(State::new())),
+            document_map: DashMap::new(),
         }
+    }
+
+    fn insert_source(&self, uri: Url, text: &str) {
+        let rope = Rope::from_str(text);
+        self.document_map.insert(uri, rope);
+    }
+
+    fn update_source(&self, document: &TextDocumentIdentifier, text: Option<String>) {
+        if let Some(text) = text {
+            let rope = Rope::from_str(&text);
+            self.document_map.insert(document.uri.clone(), rope);
+        }
+    }
+
+    fn get_indexes_from_range(&self, range: &Range, source: &Rope) -> (usize, usize) {
+        let start = usize::try_from(range.start.line).unwrap();
+        let end = usize::try_from(range.end.line).unwrap();
+        let start_idx = source.line_to_char(start);
+        let end_idx = source.line_to_char(end);
+        // client_info!(self.client, "{start},{end}={start_idx},{end_idx}");
+        (start_idx, end_idx)
+    }
+
+    fn reload_source(
+        &self,
+        document: &VersionedTextDocumentIdentifier,
+        changes: Vec<TextDocumentContentChangeEvent>,
+    ) {
+        if let Some(src) = self.document_map.get(&document.uri) {
+            let mut source = src.to_owned();
+            for change in changes {
+                if (change.range, change.range_length) == (None, None) {
+                    source = Rope::from_str(&change.text);
+                } else if let Some(range) = change.range {
+                    let new_lines: Vec<&str> = change.text.lines().collect();
+                    let (start_idx, end_idx) = self.get_indexes_from_range(&range, &source);
+                    source.remove(start_idx..end_idx);
+                    source.insert(start_idx, new_lines.join("\n").as_str());
+                }
+            }
+            self.document_map.insert(document.uri.clone(), source);
+        } else {
+            panic!("attempted to reload source that does not exist");
+        }
+    }
+
+    fn get_source_range(&self, document_uri: &Url, range: &Range) -> Option<String> {
+        self.document_map.get(document_uri).map(|src| {
+            let source = src.to_owned();
+            let (start_idx, end_idx) = self.get_indexes_from_range(range, &source);
+            source.slice(start_idx..end_idx).to_string()
+        })
     }
 
     async fn on_code_action(&self, params: CodeActionParams) -> CodeActionResponse {
@@ -269,11 +257,7 @@ impl Backend {
                         .log_message(MessageType::INFO, format!("Range {:#?}", &cad.range))
                         .await;
 
-                    let context = self
-                        .state
-                        .lock()
-                        .await
-                        .get_source_range(&cad.document_uri, &cad.range);
+                    let context = self.get_source_range(&cad.document_uri, &cad.range);
 
                     Some((cad.document_uri.clone(), cad.range, context, cad.id))
                 }
@@ -335,7 +319,7 @@ async fn execute_operation(op_title: String, context: Option<String>) -> Option<
     let code_action = AiCodeAction::from_str(op_title.as_str()).unwrap();
 
     if matches!(code_action, AiCodeAction::Test) {
-        return None::<String>;
+        return context;
     }
 
     let embedded_instructions = context.as_ref().map(|c| parse_context(c));
@@ -365,7 +349,7 @@ async fn execute_operation(op_title: String, context: Option<String>) -> Option<
                 model: embedded_instructions
                     .as_ref()
                     .and_then(|ei| ei.model.clone()),
-                temperature: embedded_instructions.as_ref().map(|ei| ei.temperature),
+                temperature: embedded_instructions.as_ref().and_then(|ei| ei.temperature),
                 max_tokens: None,
                 top_p: None,
                 prompt: None,
@@ -528,7 +512,7 @@ impl LanguageServer for Backend {
             )
             .await;
 
-        self.state.lock().await.insert_source(&params.text_document);
+        self.insert_source(params.text_document.uri, &params.text_document.text);
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -539,13 +523,13 @@ impl LanguageServer for Backend {
             )
             .await;
 
-        // self.state
-        //     .lock()
-        //     .await
-        //     .reload_source(&params.text_document, params.content_changes);
+        self.insert_source(
+            params.text_document.uri,
+            std::mem::take(&mut params.content_changes[0].text.as_str()),
+        );
+        // self.reload_source(&params.text_document, params.content_changes);
     }
 
-    // Test
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         self.client
             .log_message(
@@ -554,18 +538,8 @@ impl LanguageServer for Backend {
             )
             .await;
 
-        // Update source
-        self.state
-            .lock()
-            .await
-            .update_source(&params.text_document, params.text.clone());
-
-        self.client
-            .log_message(
-                MessageType::INFO,
-                format!("file saved on server! {:#?}", params.text),
-            )
-            .await;
+        // self.insert_source(params.text_document.uri, &params.text.unwrap());
+        // self.update_source(&params.text_document, params.text.clone());
     }
 
     async fn did_close(&self, _: DidCloseTextDocumentParams) {
@@ -610,7 +584,7 @@ impl LanguageServer for Backend {
             end: position,
         };
 
-        let context = self.state.lock().await.get_source_range(&uri, &range);
+        let context = self.get_source_range(&uri, &range);
 
         self.client
             .log_message(MessageType::INFO, context.clone().unwrap())
