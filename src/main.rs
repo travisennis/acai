@@ -20,6 +20,7 @@ use cli::lsp as lsp_cmd;
 use cli::pipe;
 use cli::prompt_generator;
 use config::DataDir;
+use config::DATA_DIR_INSTANCE;
 
 /// coding assistant commands
 #[derive(Parser)]
@@ -41,7 +42,11 @@ enum CodingAssistantCmd {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    DataDir::new();
+    let data_dir = DataDir::new()?;
+
+    DATA_DIR_INSTANCE
+        .set(data_dir.clone())
+        .expect("Data dir not found.");
 
     let args = CodingAssistant::parse();
 

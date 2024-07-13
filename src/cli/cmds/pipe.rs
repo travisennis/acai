@@ -129,7 +129,7 @@ impl CmdRunner for Cmd {
                 eprintln!("{response:?}");
             }
 
-            DataDir::new().save_messages(&client.get_message_history());
+            DataDir::global().save_messages(&client.get_message_history());
         }
 
         Ok(())

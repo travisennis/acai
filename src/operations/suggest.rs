@@ -68,7 +68,7 @@ impl Suggest {
 
             let response = client.send_message(msg).await?;
 
-            DataDir::new().save_messages(&client.get_message_history());
+            DataDir::global().save_messages(&client.get_message_history());
 
             return Ok(response);
         }

@@ -1,12 +1,19 @@
 use std::{
     fs,
+    path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use anyhow::anyhow;
 use serde::Serialize;
 
+use once_cell::sync::OnceCell;
+
+pub static DATA_DIR_INSTANCE: OnceCell<DataDir> = OnceCell::new();
+
+#[derive(Debug, Clone)]
 pub struct DataDir {
-    data_dir: std::path::PathBuf,
+    data_dir: PathBuf,
 }
 
 impl DataDir {
@@ -29,15 +36,29 @@ impl DataDir {
     /// ```
     /// let instance = DataDir::new();
     /// ```
-    pub fn new() -> Self {
-        let home_dir = dirs::home_dir().expect("Home dir not found.");
-        let data_dir = home_dir.join(".cache/coding-assistant");
+    pub fn new() -> anyhow::Result<Self> {
+        let home_dir = dirs::home_dir();
+        if let Some(home) = home_dir {
+            let data_dir = home.join(".cache").join("acai");
 
-        if !data_dir.exists() {
-            fs::create_dir_all(&data_dir).expect("Failed to create data directory");
+            if !data_dir.exists() {
+                fs::create_dir_all(&data_dir)?;
+            }
+
+            Ok(Self { data_dir })
+        } else {
+            Err(anyhow!("Could not create data directory."))
         }
+    }
 
-        Self { data_dir }
+    pub fn global() -> &'static DataDir {
+        DATA_DIR_INSTANCE
+            .get()
+            .expect("Data dir is not initialized")
+    }
+
+    pub fn get_cache_dir(&self) -> PathBuf {
+        self.data_dir.clone()
     }
 
     pub fn save_messages<T: Serialize>(&self, messages: &[T]) {

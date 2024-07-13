@@ -14,6 +14,7 @@ dependencies = [
  "dashmap 6.0.1",
  "dirs",
  "handlebars",
+ "once_cell",
  "readability",
  "regex",
  "reqwest 0.12.5",

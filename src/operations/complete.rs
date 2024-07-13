@@ -63,7 +63,7 @@ impl Complete {
                 None
             };
 
-            DataDir::new().save_messages(&client.get_message_history());
+            DataDir::global().save_messages(&client.get_message_history());
 
             Ok(result)
         } else {
