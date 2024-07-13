@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use dashmap::DashMap;
+use log::debug;
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -161,12 +162,14 @@ impl Backend {
     }
 
     fn get_indexes_from_range(&self, range: &Range, source: &Rope) -> (usize, usize) {
-        let start = usize::try_from(range.start.line).unwrap();
-        let end = usize::try_from(range.end.line).unwrap();
-        let start_idx = source.line_to_char(start);
-        let end_idx = source.line_to_char(end);
+        let start_line = usize::try_from(range.start.line).unwrap();
+        let end_line = usize::try_from(range.end.line).unwrap();
+        let start_char = usize::try_from(range.start.character).unwrap();
+        let end_char = usize::try_from(range.end.character).unwrap();
+        let start_idx = source.line_to_char(start_line);
+        let end_idx = source.line_to_char(end_line);
         // client_info!(self.client, "{start},{end}={start_idx},{end_idx}");
-        (start_idx, end_idx)
+        (start_idx + start_char, end_idx + end_char)
     }
 
     fn reload_source(
@@ -434,7 +437,7 @@ impl LanguageServer for Backend {
 
         let completion_options = CompletionOptions {
             resolve_provider: Some(true),
-            trigger_characters: Some(vec![".".to_owned(), ":".to_owned()]),
+            trigger_characters: Some(vec!["C-x".to_owned(), ":".to_owned()]),
             work_done_progress_options: WorkDoneProgressOptions::default(),
             all_commit_characters: None,
             ..Default::default()
@@ -444,7 +447,7 @@ impl LanguageServer for Backend {
             server_info: None,
             capabilities: ServerCapabilities {
                 text_document_sync: Some(text_document_sync),
-                // completion_provider: Some(completion_options),
+                completion_provider: Some(completion_options),
                 execute_command_provider: Some(ExecuteCommandOptions {
                     commands: vec!["acai_instruct".to_owned()],
                     work_done_progress_options: WorkDoneProgressOptions::default(),
@@ -456,7 +459,6 @@ impl LanguageServer for Backend {
                         work_done_progress_options: WorkDoneProgressOptions::default(),
                     },
                 )),
-                // Some(CodeActionProviderCapability::Simple(true)),
                 ..ServerCapabilities::default()
             },
         })
@@ -576,6 +578,8 @@ impl LanguageServer for Backend {
             .log_message(MessageType::INFO, uri.clone())
             .await;
 
+        debug!("{}", format!("### Completions position {position:?}"));
+
         let range = Range {
             start: Position {
                 line: max(position.line - 3, 0),
@@ -586,9 +590,8 @@ impl LanguageServer for Backend {
 
         let context = self.get_source_range(&uri, &range);
 
-        self.client
-            .log_message(MessageType::INFO, context.clone().unwrap())
-            .await;
+        let ctx = context.clone().unwrap();
+        debug!("{}", format!("### Completions context {ctx}"));
 
         let op = Complete {
             model: None,
@@ -601,20 +604,15 @@ impl LanguageServer for Backend {
 
         let response = op.send().await;
 
-        let msg = if let Ok(Some(response_msg)) = response {
-            Some(response_msg)
-        } else {
-            None
-        };
-
-        self.client
-            .log_message(MessageType::INFO, msg.clone().unwrap())
-            .await;
-
-        msg.map_or(Ok(None), |msg| {
+        if let Ok(Some(msg)) = response {
+            debug!("{}", format!("### Completions response  {msg}"));
+            let detail = msg.chars().take(8).collect::<String>();
+            debug!("{}", format!("### Completions detail {detail}"));
             Ok(Some(CompletionResponse::Array(vec![
-                CompletionItem::new_simple(msg.clone(), msg),
+                CompletionItem::new_simple(msg, detail),
             ])))
-        })
+        } else {
+            Ok(None)
+        }
     }
 }

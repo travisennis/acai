@@ -3,6 +3,7 @@ mod clients;
 mod config;
 mod context;
 mod errors;
+mod logger;
 mod lsp;
 mod models;
 mod operations;
@@ -47,6 +48,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     DATA_DIR_INSTANCE
         .set(data_dir.clone())
         .expect("Data dir not found.");
+
+    let _ = logger::configure(&data_dir.get_cache_dir());
 
     let args = CodingAssistant::parse();
 
