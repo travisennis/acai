@@ -54,10 +54,12 @@ impl Complete {
             let response = client.send_message(&prefix, suffix.clone()).await?;
 
             let result = if let Some(msg) = response {
+                // handle FIM response
                 if let Some(sfx) = suffix {
                     Some(format!("{}{}{}", prefix, msg.content, sfx))
                 } else {
-                    Some(format!("{}{}", prefix, msg.content))
+                    // Completion response
+                    Some(msg.content)
                 }
             } else {
                 None

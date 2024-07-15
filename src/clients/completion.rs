@@ -42,7 +42,7 @@ impl CompletionClient {
             token,
             temperature: Some(0.0),
             top_p: Some(1.0),
-            max_tokens: Some(1028),
+            max_tokens: Some(128),
             prompt: String::new(),
             suffix: String::new(),
             messages: msgs,
