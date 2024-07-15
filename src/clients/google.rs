@@ -37,18 +37,19 @@ impl From<&Message> for Instruction {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Request {
+    #[serde(rename = "systemInstruction")]
     pub system_instruction: SystemInstruction,
     pub contents: Vec<Instruction>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Content {
-    parts: Vec<Part>,
+    pub parts: Vec<Part>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Candidate {
-    content: Vec<Content>,
+    pub content: Content,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -59,13 +60,11 @@ pub struct Response {
 impl IntoMessage for Response {
     fn into_message(self) -> Option<Message> {
         if let Some(candidate) = self.candidates.first() {
-            if let Some(content) = candidate.content.first() {
-                if let Some(part) = content.parts.first() {
-                    return Some(Message {
-                        role: Role::Assistant,
-                        content: part.text.clone(),
-                    });
-                }
+            if let Some(part) = candidate.content.parts.first() {
+                return Some(Message {
+                    role: Role::Assistant,
+                    content: part.text.clone(),
+                });
             }
         }
         None
