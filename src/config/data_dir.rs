@@ -12,7 +12,9 @@ use once_cell::sync::OnceCell;
 pub static DATA_DIR_INSTANCE: OnceCell<DataDir> = OnceCell::new();
 
 #[derive(Debug, Clone)]
+/// Represents a data directory structure.
 pub struct DataDir {
+    /// The path to the data directory.
     data_dir: PathBuf,
 }
 

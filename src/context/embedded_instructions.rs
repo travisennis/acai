@@ -9,6 +9,30 @@ pub struct EmbeddedInstructions {
     pub context: String,
 }
 
+/// Parses the input string to extract embedded instructions and context.
+///
+/// This function processes the input string line by line, looking for specific
+/// instruction prefixes to populate the `EmbeddedInstructions` struct fields.
+/// Lines that don't match any instruction prefix are considered part of the context.
+///
+/// # Arguments
+///
+/// * `input` - A string slice containing the input text to parse.
+///
+/// # Returns
+///
+/// An `EmbeddedInstructions` struct with parsed values and remaining context.
+///
+/// # Examples
+///
+/// ```
+/// let input = "model: gpt-3.5-turbo\ntemperature: 0.7\nreturn_format: json\nSome context here\nMore context";
+/// let result = parse_context(input);
+/// assert_eq!(result.model, Some("gpt-3.5-turbo".to_string()));
+/// assert_eq!(result.temperature, Some(0.7));
+/// assert_eq!(result.return_format, Some("json".to_string()));
+/// assert_eq!(result.context, "Some context here\nMore context");
+/// ```
 pub fn parse_context(input: &str) -> EmbeddedInstructions {
     let mut model = None::<String>;
     let mut temperature = None::<f32>;
