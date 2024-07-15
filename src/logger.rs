@@ -6,7 +6,7 @@ use log4rs::{
         console::{ConsoleAppender, Target},
         file::FileAppender,
     },
-    config::{Appender, Root},
+    config::{Appender, Logger, Root},
     encode::pattern::PatternEncoder,
     filter::threshold::ThresholdFilter,
     Config,
@@ -18,6 +18,7 @@ use log4rs::{
 // debug!("Goes to file only");
 // trace!("Goes to file only");
 pub fn configure(log_path: &Path) -> Result<(), SetLoggerError> {
+    let log_line_pattern = "{d(%Y-%m-%d %H:%M:%S)} | {({l}):5.5} | {f}:{L} — {m}{n}\n";
     let level = LevelFilter::Info;
     let file_path = log_path.join("acai.log");
 
@@ -26,8 +27,7 @@ pub fn configure(log_path: &Path) -> Result<(), SetLoggerError> {
 
     // Logging to log file.
     let logfile = FileAppender::builder()
-        // Pattern: https://docs.rs/log4rs/*/log4rs/encode/pattern/index.html
-        .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
+        .encoder(Box::new(PatternEncoder::new(log_line_pattern)))
         .build(file_path)
         .unwrap();
 
@@ -40,12 +40,12 @@ pub fn configure(log_path: &Path) -> Result<(), SetLoggerError> {
                 .filter(Box::new(ThresholdFilter::new(level)))
                 .build("stderr", Box::new(stderr)),
         )
-        .build(
-            Root::builder()
+        .logger(
+            Logger::builder()
                 .appender("logfile")
-                .appender("stderr")
-                .build(LevelFilter::Trace),
+                .build("acai", LevelFilter::Trace),
         )
+        .build(Root::builder().appender("stderr").build(LevelFilter::Trace))
         .unwrap();
 
     // Use this to change log levels at runtime.
