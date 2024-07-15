@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error};
+use std::error::Error;
 
 use anyhow::Result;
 use clap::{Args, ValueEnum};
@@ -12,7 +12,6 @@ use crate::{
     config::DataDir,
     errors::CAError,
     models::{Message, Role},
-    prompts::PromptBuilder,
 };
 
 const OPTIMIZE_PROMPT: &str = "Review the code snippet below and suggest optimizations to improve performance. Focus on efficiency, speed, and resource usage while maintaining the original functionality. Provide only the optimized code.";
@@ -85,7 +84,7 @@ impl CmdRunner for Cmd {
             .top_p(self.top_p)
             .max_tokens(self.max_tokens);
 
-        let prompt_builder = PromptBuilder::new()?;
+        let mut prompt_builder = crate::prompts::Builder::new()?;
 
         let context: Result<String, CAError> = {
             if atty::is(atty::Stream::Stdin) {
@@ -106,19 +105,17 @@ impl CmdRunner for Cmd {
             }
         };
 
-        let mut data = HashMap::new();
-
         if let Ok(prompt) = std_prompt {
-            data.insert("prompt".to_string(), prompt);
+            prompt_builder.add_variable("prompt".to_string(), prompt);
         }
         if let Ok(context) = context {
-            data.insert("context".to_string(), context);
+            prompt_builder.add_variable("context".to_string(), context);
         }
 
-        if !data.is_empty() {
+        if prompt_builder.contains_variables() {
             let msg = Message {
                 role: Role::User,
-                content: prompt_builder.build(&data)?,
+                content: prompt_builder.build()?,
             };
 
             let response = client.send_message(msg).await?;

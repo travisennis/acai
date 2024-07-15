@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error};
+use std::error::Error;
 
 use anyhow::Result;
 use clap::Args;
@@ -14,7 +14,6 @@ use crate::{
     config::DataDir,
     errors::CAError,
     models::{Message, Role},
-    prompts::PromptBuilder,
 };
 
 #[derive(Clone, Args)]
@@ -63,7 +62,7 @@ impl CmdRunner for Cmd {
 
         let skin = MadSkin::default();
 
-        let prompt_builder = PromptBuilder::new()?;
+        let mut prompt_builder = crate::prompts::Builder::new()?;
 
         let mut is_first_iteration = true;
 
@@ -95,19 +94,18 @@ impl CmdRunner for Cmd {
                     continue;
                 }
                 Ok(line) => {
-                    let mut data = HashMap::new();
-                    data.insert("prompt".to_string(), line);
+                    prompt_builder.add_variable("prompt".to_string(), line);
                     if is_first_iteration {
                         is_first_iteration = false;
 
                         if let Ok(ref context) = context {
-                            data.insert("context".to_string(), context.to_string());
+                            prompt_builder.add_variable("context".to_string(), context.to_string());
                         }
                     }
 
                     let user_msg = Message {
                         role: Role::User,
-                        content: prompt_builder.build(&data)?,
+                        content: prompt_builder.build()?,
                     };
 
                     let response = client.send_message(user_msg).await?;
@@ -117,6 +115,8 @@ impl CmdRunner for Cmd {
                         skin.print_text(&msg.content);
                         println!("\n");
                     }
+
+                    prompt_builder.clear_variables();
                 }
                 Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
                     break;

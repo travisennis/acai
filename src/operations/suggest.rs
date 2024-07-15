@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error};
+use std::error::Error;
 
 use crate::{
     clients::{
@@ -7,7 +7,6 @@ use crate::{
     },
     config::DataDir,
     models::{Message, Role},
-    prompts::PromptBuilder,
 };
 
 pub struct Suggest {
@@ -49,21 +48,19 @@ impl Suggest {
             .top_p(self.top_p)
             .max_tokens(self.max_tokens);
 
-        let prompt_builder = PromptBuilder::new()?;
-
-        let mut data = HashMap::new();
+        let mut prompt_builder = crate::prompts::Builder::new()?;
 
         if let Some(prompt) = &self.prompt {
-            data.insert("prompt".to_string(), prompt.to_string());
+            prompt_builder.add_variable("prompt".to_string(), prompt.to_string());
         }
         if let Some(context) = &self.context {
-            data.insert("context".to_string(), context.to_string());
+            prompt_builder.add_variable("context".to_string(), context.to_string());
         }
 
-        if !data.is_empty() {
+        if prompt_builder.contains_variables() {
             let msg = Message {
                 role: Role::User,
-                content: prompt_builder.build(&data)?,
+                content: prompt_builder.build()?,
             };
 
             let response = client.send_message(msg).await?;
