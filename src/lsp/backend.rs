@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use dashmap::DashMap;
-use log::debug;
+use log::{debug, error, warn};
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -412,7 +412,21 @@ async fn execute_operation(op_title: String, context: Option<String>) -> Option<
         _ => None,
     };
 
-    result.and_then(|response| response.map_or(None, |result| result.map(|msg| msg.content)))
+    match result {
+        Some(response) => match response {
+            Ok(result) => result.map(|msg| msg.content),
+            Err(e) => {
+                error!(target: "acai", "Error running code action {code_action:?}");
+                error!(target: "acai", "Bad response {e}");
+                None
+            }
+        },
+        None => {
+            warn!(target: "acai", "Unkown code action: {code_action:?}");
+            None
+        }
+    }
+    // result.and_then(|response| response.map_or(None, |result| result.map(|msg| msg.content)))
 }
 
 #[tower_lsp::async_trait]
@@ -447,7 +461,7 @@ impl LanguageServer for Backend {
             server_info: None,
             capabilities: ServerCapabilities {
                 text_document_sync: Some(text_document_sync),
-                completion_provider: Some(completion_options),
+                // completion_provider: Some(completion_options),
                 execute_command_provider: Some(ExecuteCommandOptions {
                     commands: vec!["acai_instruct".to_owned()],
                     work_done_progress_options: WorkDoneProgressOptions::default(),
@@ -578,7 +592,7 @@ impl LanguageServer for Backend {
             .log_message(MessageType::INFO, uri.clone())
             .await;
 
-        debug!("{}", format!("### Completions position {position:?}"));
+        debug!(target: "acai", "{}", format!("### Completions position {position:?}"));
 
         let range = Range {
             start: Position {
@@ -591,7 +605,7 @@ impl LanguageServer for Backend {
         let context = self.get_source_range(&uri, &range);
 
         let ctx = context.clone().unwrap();
-        debug!("{}", format!("### Completions context {ctx}"));
+        debug!(target: "acai", "{}", format!("### Completions context {ctx}"));
 
         let op = Complete {
             model: None,
@@ -605,9 +619,9 @@ impl LanguageServer for Backend {
         let response = op.send().await;
 
         if let Ok(Some(msg)) = response {
-            debug!("{}", format!("### Completions response  {msg}"));
+            debug!(target: "acai", "{}", format!("### Completions response  {msg}"));
             let detail = msg.chars().take(8).collect::<String>();
-            debug!("{}", format!("### Completions detail {detail}"));
+            debug!(target: "acai", "{}", format!("### Completions detail {detail}"));
             Ok(Some(CompletionResponse::Array(vec![
                 CompletionItem::new_simple(msg, detail),
             ])))

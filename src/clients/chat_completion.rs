@@ -1,6 +1,7 @@
 use std::{env, error::Error};
 
-use reqwest::Client;
+use log::debug;
+use reqwest::{Client, Response};
 use serde_json::{json, Value};
 
 use crate::models::{IntoMessage, Message, Role};
@@ -189,6 +190,9 @@ impl ChatCompletionClient {
 
         let request_url = self.get_request_url();
 
+        debug!(target: "acai", "{request_url}");
+        debug!(target: "acai", "{prompt}");
+
         let req_base = Client::new()
             .post(request_url)
             .json(&prompt)
@@ -202,34 +206,25 @@ impl ChatCompletionClient {
             Provider::Google | Provider::Ollama => req_base,
         };
 
+        let test_req = req.try_clone().unwrap();
+
         let response = req.send().await?;
 
         if response.status().is_success() {
-            let message = match &self.provider {
-                Provider::Anthropic => {
-                    let anth_response = response.json::<AnthropicResponse>().await?;
-                    anth_response.into_message()
-                }
-                Provider::OpenAI | Provider::Ollama => {
-                    let ai_response = response.json::<OpenAIResponse>().await?;
-                    ai_response.into_message()
-                }
-                Provider::Mistral => {
-                    let mistral_response = response.json::<MistralResponse>().await?;
-                    mistral_response.into_message()
-                }
-                Provider::Google => {
-                    let google_response = response.json::<GoogleResponse>().await?;
-                    google_response.into_message()
-                }
-            };
+            let message = self.get_message(response).await;
 
             if let Some(msg) = message.clone() {
                 self.messages.push(msg);
             }
 
+            debug!(target: "acai", "{message:?}");
+
             Ok(message)
         } else {
+            let debug_response = test_req.send().await?;
+            debug!(target: "acai", "{}", debug_response.status());
+            debug!(target: "acai", "{:?}", debug_response.text().await?);
+
             match response.json::<Value>().await {
                 Ok(resp_json) => match serde_json::to_string_pretty(&resp_json) {
                     Ok(resp_formatted) => {
@@ -267,6 +262,27 @@ impl ChatCompletionClient {
                 self.model, self.token
             ),
             Provider::Ollama => "http://localhost:11434".to_string(),
+        }
+    }
+
+    async fn get_message(&self, response: Response) -> Option<Message> {
+        match &self.provider {
+            Provider::Anthropic => {
+                let anth_response = response.json::<AnthropicResponse>().await.ok()?;
+                anth_response.into_message()
+            }
+            Provider::OpenAI | Provider::Ollama => {
+                let ai_response = response.json::<OpenAIResponse>().await.ok()?;
+                ai_response.into_message()
+            }
+            Provider::Mistral => {
+                let mistral_response = response.json::<MistralResponse>().await.ok()?;
+                mistral_response.into_message()
+            }
+            Provider::Google => {
+                let google_response = response.json::<GoogleResponse>().await.ok()?;
+                google_response.into_message()
+            }
         }
     }
 }
