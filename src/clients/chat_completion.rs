@@ -263,7 +263,7 @@ impl ChatCompletionClient {
             Provider::OpenAI => "https://api.openai.com/v1/chat/completions".to_string(),
             Provider::Mistral => "https://api.mistral.ai/v1/chat/completions".to_string(),
             Provider::Google => format!(
-                "https://generativelanguage.googleapis.com/v1beta/models/{}/generateContent?key={}",
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
                 self.model, self.token
             ),
             Provider::Ollama => "http://localhost:11434".to_string(),
