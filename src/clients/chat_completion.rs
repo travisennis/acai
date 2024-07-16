@@ -142,12 +142,23 @@ impl ChatCompletionClient {
     ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
         self.messages.push(message);
 
+        let default_max_token = match &self.provider {
+            Provider::Anthropic => {
+                if &self.model == "claude-3-5-sonnet-20240620" {
+                    8192
+                } else {
+                    4096
+                }
+            }
+            _ => 4096,
+        };
+
         let prompt = match &self.provider {
             Provider::Anthropic => serde_json::to_value(AnthropicRequest {
                 model: self.model.clone(),
                 temperature: self.temperature,
                 top_p: self.top_p,
-                max_tokens: self.max_tokens.unwrap_or(8192),
+                max_tokens: self.max_tokens.unwrap_or(default_max_token),
                 system: self.system.clone(),
                 messages: self.messages.clone(),
                 top_k: self.top_k,
@@ -201,10 +212,15 @@ impl ChatCompletionClient {
         let req = match &self.provider {
             Provider::Anthropic => req_base
                 .header("anthropic-version", "2023-06-01")
-                .header("x-api-key", self.token.to_string())
-                .header("anthropic-beta", "max-tokens-3-5-sonnet-2024-07-15"),
+                .header("x-api-key", self.token.to_string()),
             Provider::OpenAI | Provider::Mistral => req_base.bearer_auth(self.token.to_string()),
             Provider::Google | Provider::Ollama => req_base,
+        };
+
+        let req = if &self.model == "claude-3-5-sonnet-20240620" {
+            req.header("anthropic-beta", "max-tokens-3-5-sonnet-2024-07-15")
+        } else {
+            req
         };
 
         let test_req = req.try_clone().unwrap();
