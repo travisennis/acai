@@ -147,7 +147,7 @@ impl ChatCompletionClient {
                 model: self.model.clone(),
                 temperature: self.temperature,
                 top_p: self.top_p,
-                max_tokens: self.max_tokens.unwrap_or(4096),
+                max_tokens: self.max_tokens.unwrap_or(8192),
                 system: self.system.clone(),
                 messages: self.messages.clone(),
                 top_k: self.top_k,
@@ -201,7 +201,8 @@ impl ChatCompletionClient {
         let req = match &self.provider {
             Provider::Anthropic => req_base
                 .header("anthropic-version", "2023-06-01")
-                .header("x-api-key", self.token.to_string()),
+                .header("x-api-key", self.token.to_string())
+                .header("anthropic-beta", "max-tokens-3-5-sonnet-2024-07-15"),
             Provider::OpenAI | Provider::Mistral => req_base.bearer_auth(self.token.to_string()),
             Provider::Google | Provider::Ollama => req_base,
         };
