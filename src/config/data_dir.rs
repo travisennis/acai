@@ -53,7 +53,7 @@ impl DataDir {
         }
     }
 
-    pub fn global() -> &'static DataDir {
+    pub fn global() -> &'static Self {
         DATA_DIR_INSTANCE
             .get()
             .expect("Data dir is not initialized")

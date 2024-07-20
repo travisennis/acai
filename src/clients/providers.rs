@@ -1,18 +1,18 @@
 pub enum Provider {
     /// Anthropic, provider of the Claude family of language models
     Anthropic,
-    /// OpenAI, provider of GPT models including ChatGPT
+    /// `OpenAI`, provider of GPT models including `ChatGPT`
     OpenAI,
     /// Mistral AI, provider of open-source language models
     Mistral,
-    /// Google, provider of various AI models including PaLM and Gemini
+    /// Google, provider of various AI models including `PaLM` and Gemini
     Google,
     /// Ollama, an open-source platform for running language models locally
     Ollama,
 }
 
 pub struct ModelConfig {
-    /// The provider or source of the LLM (e.g., OpenAI, Google, etc.)
+    /// The provider or source of the LLM (e.g., `OpenAI`, Google, etc.)
     pub provider: Provider,
     /// The name or identifier of the LLM (Large Language Model) being used
     pub model: String,

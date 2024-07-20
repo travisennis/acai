@@ -68,6 +68,6 @@ pub fn parse_context(input: &str) -> EmbeddedInstructions {
         model,
         temperature,
         return_format,
-        context: context.join("\n").to_string(),
+        context: context.join("\n"),
     }
 }
