@@ -54,6 +54,7 @@ impl ModelConfig {
             "gpt-4o" | "gpt4o" => "gpt-4o".into(),
             "gpt-4o-mini" | "gpt4omini" => "gpt-4o-mini".into(),
             "gpt-4-turbo" | "gtp4turbo" => "gpt-4-turbo-preview".into(),
+            "gpt-4" | "gtp4" => "gpt-4-0314".into(),
             "gpt-3.5-turbo" | "gpt35turbo" => "gpt-3.5-turbo".into(),
             "opus" => "claude-3-opus-20240229".into(),
             "sonnet" => "claude-3-5-sonnet-20240620".into(),
