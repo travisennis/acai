@@ -1,5 +1,17 @@
+{{#each files}}
+	{{#if code}}
+{{code}}
+	{{/if}}
+{{/each}}
+
 {{#if prompt}}
-{{prompt}}
+	{{#if context}}
+"""
+	{{/if}}
+{{/if}}
+
+{{#if context}}
+{{context}}
 {{/if}}
 
 {{#if prompt}}
@@ -7,11 +19,7 @@
 """
 	{{/if}}
 {{/if}}
-{{#if context}}
-{{context}}
-{{/if}}
+
 {{#if prompt}}
-	{{#if context}}
-"""
-	{{/if}}
+{{prompt}}
 {{/if}}

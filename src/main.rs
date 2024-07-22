@@ -3,6 +3,7 @@ mod clients;
 mod config;
 mod context;
 mod errors;
+mod files;
 mod logger;
 mod lsp;
 mod models;

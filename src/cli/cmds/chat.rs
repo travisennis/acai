@@ -62,7 +62,7 @@ impl CmdRunner for Cmd {
 
         let skin = MadSkin::default();
 
-        let mut prompt_builder = crate::prompts::Builder::new()?;
+        let mut prompt_builder = crate::prompts::Builder::new(&None)?;
 
         let mut is_first_iteration = true;
 

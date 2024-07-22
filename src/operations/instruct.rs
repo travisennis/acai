@@ -48,7 +48,7 @@ impl Instruct {
             .top_p(self.top_p)
             .max_tokens(self.max_tokens);
 
-        let mut prompt_builder = crate::prompts::Builder::new()?;
+        let mut prompt_builder = crate::prompts::Builder::new(&None)?;
 
         if let Some(prompt) = &self.prompt {
             prompt_builder.add_variable("prompt".to_string(), prompt.to_string());

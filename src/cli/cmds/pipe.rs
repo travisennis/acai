@@ -84,7 +84,7 @@ impl CmdRunner for Cmd {
             .top_p(self.top_p)
             .max_tokens(self.max_tokens);
 
-        let mut prompt_builder = crate::prompts::Builder::new()?;
+        let mut prompt_builder = crate::prompts::Builder::new(&None)?;
 
         let context: Result<String, CAError> = {
             if atty::is(atty::Stream::Stdin) {
