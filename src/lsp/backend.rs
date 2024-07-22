@@ -355,8 +355,12 @@ async fn execute_operation(op_title: String, context: Option<String>) -> Option<
                 temperature: embedded_instructions.as_ref().and_then(|ei| ei.temperature),
                 max_tokens: None,
                 top_p: None,
-                prompt: None,
-                context: embedded_instructions.map_or(context, |ei| Some(ei.context)),
+                prompt: embedded_instructions
+                    .as_ref()
+                    .and_then(|ei| ei.prompt.clone()),
+                context: embedded_instructions
+                    .as_ref()
+                    .map_or(context, |ei| Some(ei.context.clone())),
             }
             .send()
             .await,
@@ -412,21 +416,19 @@ async fn execute_operation(op_title: String, context: Option<String>) -> Option<
         _ => None,
     };
 
-    match result {
-        Some(response) => match response {
+    if let Some(response) = result {
+        match response {
             Ok(result) => result.map(|msg| msg.content),
             Err(e) => {
                 error!(target: "acai", "Error running code action {code_action:?}");
                 error!(target: "acai", "Bad response {e}");
                 None
             }
-        },
-        None => {
-            warn!(target: "acai", "Unkown code action: {code_action:?}");
-            None
         }
+    } else {
+        warn!(target: "acai", "Unkown code action: {code_action:?}");
+        None
     }
-    // result.and_then(|response| response.map_or(None, |result| result.map(|msg| msg.content)))
 }
 
 #[tower_lsp::async_trait]
@@ -527,7 +529,6 @@ impl LanguageServer for Backend {
                 format!("file opened! {}", params.text_document.uri),
             )
             .await;
-
         self.insert_source(params.text_document.uri, &params.text_document.text);
     }
 
