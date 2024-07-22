@@ -5,31 +5,51 @@ default_job = "check-all"
 [jobs]
 
 [jobs.check]
-command = [
-	"cargo", "check",
-	"--color", "always",
-]
+command = ["cargo", "check", "--color", "always"]
 need_stdout = false
 
 [jobs.check-all]
-command = [
-	"cargo", "check",
-	"--all-targets",
-	"--color", "always",
-]
+command = ["cargo", "check", "--all-targets", "--color", "always"]
 need_stdout = false
 
 [jobs.clippy-all]
 command = [
-	"cargo", "clippy",
-	"--color", "always",
-	"--",
-	"-D", "clippy::all",
-	"-D", "clippy::pedantic", 
-	"-W", "clippy::nursery",
-	"-A", "clippy::missing_const_for_fn",
+  "cargo",
+  "clippy",
+  "--color",
+  "always",
+  "--",
+  "-D",
+  "clippy::all",
+  "-D",
+  "clippy::pedantic",
+  "-W",
+  "clippy::nursery",
+  "-A",
+  "clippy::missing_const_for_fn",
+]
+need_stdout = false
+
+[jobs.clippy-strict]
+command = [
+  "cargo",
+  "clippy",
+  "--color",
+  "always",
+  "--",
+  "-D",
+  "clippy::all",
+  "-D",
+  "clippy::pedantic",
+  "-D",
+  "clippy::nursery",
+  "-W",
+  "clippy::unwrap_used",
+  "-W",
+  "clippy::expect_used",
 ]
 need_stdout = false
 
 [keybindings]
 c = "job:clippy-all"
+s = "job:clippy-strict"
