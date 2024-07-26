@@ -9,7 +9,7 @@ use crate::{
     cli::CmdRunner,
     clients::{
         providers::{ModelConfig, Provider},
-        ChatCompletionClient,
+        ChatCompletion,
     },
     config::DataDir,
     errors::CAError,
@@ -42,7 +42,7 @@ impl CmdRunner for Cmd {
         let model = self.model.clone().unwrap_or_default();
         let config = ModelConfig::get_or_default(&model, (Provider::Anthropic, "sonnet"));
 
-        let mut client = ChatCompletionClient::new(config.provider, config.model, system_prompt)
+        let mut client = ChatCompletion::new(config.provider, config.model, system_prompt)
             .temperature(self.temperature)
             .top_p(self.top_p)
             .max_tokens(self.max_tokens);

@@ -3,7 +3,7 @@ use std::error::Error;
 use crate::{
     clients::{
         providers::{ModelConfig, Provider},
-        ChatCompletionClient,
+        ChatCompletion,
     },
     config::DataDir,
     models::{Message, Role},
@@ -43,7 +43,7 @@ impl Suggest {
         let provider = model_provider.provider;
         let model = model_provider.model;
 
-        let mut client = ChatCompletionClient::new(provider, model, system_prompt)
+        let mut client = ChatCompletion::new(provider, model, system_prompt)
             .temperature(self.temperature)
             .top_p(self.top_p)
             .max_tokens(self.max_tokens);

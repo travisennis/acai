@@ -16,8 +16,7 @@ use super::{
     providers::Provider,
 };
 
-#[allow(clippy::module_name_repetitions)]
-pub struct ChatCompletionClient {
+pub struct ChatCompletion {
     provider: Provider,
     model: String,
     token: String,
@@ -35,7 +34,7 @@ pub struct ChatCompletionClient {
     stream: bool,
 }
 
-impl ChatCompletionClient {
+impl ChatCompletion {
     pub fn new(provider: Provider, model: String, system_prompt: &str) -> Self {
         let token = match provider {
             Provider::Anthropic => env::var("CLAUDE_API_KEY"),
