@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use handlebars::{no_escape, to_json, Handlebars};
 use serde_json::{Map, Value};
@@ -99,7 +99,7 @@ fn get_template(path: &Option<PathBuf>) -> anyhow::Result<(String, String)> {
         Ok((content, "custom".to_string()))
     } else {
         Ok((
-            include_str!("prompt.hbs").to_string(),
+            include_str!("default-prompt.hbs").to_string(),
             "default".to_string(),
         ))
     }
