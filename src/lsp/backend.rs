@@ -416,19 +416,20 @@ async fn execute_operation(op_title: String, context: Option<String>) -> Option<
         _ => None,
     };
 
-    if let Some(response) = result {
-        match response {
+    result.map_or_else(
+        || {
+            warn!(target: "acai", "Unkown code action: {code_action:?}");
+            None
+        },
+        |response| match response {
             Ok(result) => result.map(|msg| msg.content),
             Err(e) => {
                 error!(target: "acai", "Error running code action {code_action:?}");
                 error!(target: "acai", "Bad response {e}");
                 None
             }
-        }
-    } else {
-        warn!(target: "acai", "Unkown code action: {code_action:?}");
-        None
-    }
+        },
+    )
 }
 
 #[tower_lsp::async_trait]
