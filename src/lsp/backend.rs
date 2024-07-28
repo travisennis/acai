@@ -3,15 +3,14 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use dashmap::DashMap;
-use log::{debug, error, warn};
+use log::debug;
 use ropey::Rope;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CodeAction, CodeActionKind, CodeActionOptions, CodeActionOrCommand, CodeActionParams,
     CodeActionProviderCapability, CodeActionResponse, CompletionItem, CompletionOptions,
-    CompletionParams, CompletionResponse, Diagnostic, DidChangeConfigurationParams,
+    CompletionParams, CompletionResponse, DidChangeConfigurationParams,
     DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidChangeWorkspaceFoldersParams,
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
     ExecuteCommandOptions, ExecuteCommandParams, InitializeParams, InitializeResult,
@@ -22,8 +21,10 @@ use tower_lsp::lsp_types::{
 };
 use tower_lsp::{Client, LanguageServer};
 
-use crate::context::embedded_instructions::parse_context;
-use crate::operations::{Complete, Document, Fix, Instruct, Optimize, Suggest};
+use crate::lsp::code_actions::CodeActionData;
+use crate::lsp::complete::Complete;
+
+use super::code_actions::AiCodeAction;
 
 /// Logs a client message at info level.
 ///
@@ -58,82 +59,6 @@ macro_rules! client_error {
 //         $client.log_message(MessageType::WARNING, format!($($arg)*)).await;
 //     };
 // }
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum AiCodeAction {
-    Instruct,
-    Document,
-    Fix,
-    Optimize,
-    Suggest,
-    FillInMiddle,
-    Test,
-}
-
-impl AiCodeAction {
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Instruct => "Acai - Instruct",
-            Self::Document => "Acai - Document",
-            Self::Fix => "Acai - Fix",
-            Self::Optimize => "Acai - Optimize",
-            Self::Suggest => "Acai - Suggest",
-            Self::FillInMiddle => "Acai - Fill in middle",
-            Self::Test => "Acai - Test",
-        }
-    }
-
-    /// Returns the identifier of the command.
-    const fn identifier(self) -> &'static str {
-        match self {
-            Self::Instruct => "ai.instruct",
-            Self::Document => "ai.document",
-            Self::Fix => "ai.fix",
-            Self::Optimize => "ai.optimize",
-            Self::Suggest => "ai.suggest",
-            Self::FillInMiddle => "ai.fillInMiddle",
-            Self::Test => "ai.test",
-        }
-    }
-
-    /// Returns all the commands that the server currently supports.
-    const fn all() -> [Self; 7] {
-        [
-            Self::Instruct,
-            Self::Document,
-            Self::Fix,
-            Self::Optimize,
-            Self::Suggest,
-            Self::FillInMiddle,
-            Self::Test,
-        ]
-    }
-}
-
-impl FromStr for AiCodeAction {
-    type Err = anyhow::Error;
-
-    fn from_str(name: &str) -> anyhow::Result<Self, Self::Err> {
-        Ok(match name {
-            "ai.instruct" => Self::Instruct,
-            "ai.document" => Self::Document,
-            "ai.fix" => Self::Fix,
-            "ai.optimize" => Self::Optimize,
-            "ai.suggest" => Self::Suggest,
-            "ai.fillInMiddle" => Self::FillInMiddle,
-            "ai.test" => Self::Test,
-            _ => return Err(anyhow::anyhow!("Invalid command `{name}`")),
-        })
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct CodeActionData {
-    id: String,
-    document_uri: Url,
-    range: Range,
-    diagnostics: Vec<Diagnostic>,
-}
 
 #[derive(Debug)]
 pub struct Backend {
@@ -290,7 +215,8 @@ impl Backend {
                 .log_message(MessageType::INFO, format!("Context {context:?}"))
                 .await;
 
-            let response = execute_operation(id, context).await;
+            let code_action = AiCodeAction::from_str(&id).unwrap();
+            let response = code_action.execute(context).await;
 
             if let Some(str_edit) = response {
                 let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
@@ -316,120 +242,6 @@ impl Backend {
 
         new_params
     }
-}
-
-async fn execute_operation(op_title: String, context: Option<String>) -> Option<String> {
-    let code_action = AiCodeAction::from_str(op_title.as_str()).unwrap();
-
-    if matches!(code_action, AiCodeAction::Test) {
-        return context;
-    }
-
-    let embedded_instructions = context.as_ref().map(|c| parse_context(c));
-
-    if matches!(code_action, AiCodeAction::FillInMiddle) {
-        let response = Complete {
-            model: None,
-            temperature: None,
-            max_tokens: None,
-            top_p: None,
-            prompt: None,
-            context,
-        }
-        .send()
-        .await;
-
-        return if let Ok(Some(response_msg)) = response {
-            Some(response_msg)
-        } else {
-            None
-        };
-    }
-
-    let result = match code_action {
-        AiCodeAction::Instruct => Some(
-            Instruct {
-                model: embedded_instructions
-                    .as_ref()
-                    .and_then(|ei| ei.model.clone()),
-                temperature: embedded_instructions.as_ref().and_then(|ei| ei.temperature),
-                max_tokens: None,
-                top_p: None,
-                prompt: embedded_instructions
-                    .as_ref()
-                    .and_then(|ei| ei.prompt.clone()),
-                context: embedded_instructions
-                    .as_ref()
-                    .map_or(context, |ei| Some(ei.context.clone())),
-            }
-            .send()
-            .await,
-        ),
-        AiCodeAction::Document => Some(
-            Document {
-                model: None,
-                temperature: None,
-                max_tokens: None,
-                top_p: None,
-                prompt: None,
-                context,
-            }
-            .send()
-            .await,
-        ),
-        AiCodeAction::Fix => Some(
-            Fix {
-                model: None,
-                temperature: None,
-                max_tokens: None,
-                top_p: None,
-                prompt: None,
-                context,
-            }
-            .send()
-            .await,
-        ),
-        AiCodeAction::Optimize => Some(
-            Optimize {
-                model: None,
-                temperature: None,
-                max_tokens: None,
-                top_p: None,
-                prompt: None,
-                context,
-            }
-            .send()
-            .await,
-        ),
-        AiCodeAction::Suggest => Some(
-            Suggest {
-                model: None,
-                temperature: None,
-                max_tokens: None,
-                top_p: None,
-                prompt: None,
-                context,
-            }
-            .send()
-            .await,
-        ),
-        _ => None,
-    };
-
-    result.map_or_else(
-        || {
-            warn!(target: "acai", "Unkown code action: {code_action:?}");
-            None
-        },
-        |response| match response {
-            Ok(result) => result.map(|msg| msg.content),
-            Err(e) => {
-                error!(target: "acai", "Error running code action {code_action:?}");
-                error!(target: "acai", "Bad response {e}");
-                None
-            }
-        },
-    )
 }
 
 #[tower_lsp::async_trait]
@@ -614,7 +426,6 @@ impl LanguageServer for Backend {
             temperature: None,
             max_tokens: None,
             top_p: None,
-            prompt: None,
             context,
         };
 

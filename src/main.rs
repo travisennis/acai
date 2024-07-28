@@ -1,12 +1,10 @@
 mod cli;
 mod clients;
 mod config;
-mod context;
 mod files;
 mod logger;
 mod lsp;
 mod models;
-mod operations;
 mod prompts;
 
 use std::error::Error;

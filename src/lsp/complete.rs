@@ -21,9 +21,6 @@ pub struct Complete {
     /// Sets the top-p value
     pub top_p: Option<f32>,
 
-    /// Sets the prompt
-    pub prompt: Option<String>,
-
     /// Sets the context
     pub context: Option<String>,
 }
