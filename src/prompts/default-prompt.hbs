@@ -1,7 +1,19 @@
+{{#if files}}
+File Contents:
+{{/if}}
+
 {{#each files}}
-	{{#if code}}
-{{code}}
+	{{#if path}}
+File: {{path}}
 	{{/if}}
+
+    {{#if content}}
+{{content}}
+	{{/if}}
+
+---
+
+
 {{/each}}
 
 {{#if prompt}}

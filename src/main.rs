@@ -6,6 +6,7 @@ mod logger;
 mod lsp;
 mod models;
 mod prompts;
+mod search;
 
 use std::error::Error;
 
@@ -13,10 +14,8 @@ use crate::cli::CmdRunner;
 use clap::Parser;
 use clap::Subcommand;
 use cli::chat;
-use cli::complete;
 use cli::instruct;
 use cli::lsp as lsp_cmd;
-use cli::pipe;
 use cli::prompt_generator;
 use config::DataDir;
 use config::DATA_DIR_INSTANCE;
@@ -33,8 +32,6 @@ struct CodingAssistant {
 enum CodingAssistantCmd {
     Chat(chat::Cmd),
     Instruct(instruct::Cmd),
-    Pipe(pipe::Cmd),
-    Complete(complete::Cmd),
     PromptGenerator(prompt_generator::Cmd),
     Lsp(lsp_cmd::Cmd),
 }
@@ -53,9 +50,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     match args.cmd {
         CodingAssistantCmd::Chat(chat_cmd) => chat_cmd.run().await?,
-        CodingAssistantCmd::Pipe(pipe_cmd) => pipe_cmd.run().await?,
         CodingAssistantCmd::Instruct(instruct_cmd) => instruct_cmd.run().await?,
-        CodingAssistantCmd::Complete(complete_cmd) => complete_cmd.run().await?,
         CodingAssistantCmd::PromptGenerator(prompt_generator_cmd) => {
             prompt_generator_cmd.run().await?;
         }

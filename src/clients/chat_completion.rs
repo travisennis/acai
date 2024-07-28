@@ -268,6 +268,10 @@ impl ChatCompletion {
         }
     }
 
+    pub fn clear_message_history(&mut self) {
+        self.messages.clear();
+    }
+
     fn get_request_url(&self) -> String {
         match &self.provider {
             Provider::Anthropic => "https://api.anthropic.com/v1/messages".to_string(),

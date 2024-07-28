@@ -41,14 +41,12 @@ pub fn get_files(
     Ok(files)
 }
 
-pub fn get_code_blocks(files: &[FileInfo]) -> Vec<Value> {
+pub fn get_content_blocks(files: &[FileInfo]) -> Vec<Value> {
     let mut blocks = Vec::new();
     for file in files {
-        let code_block = wrap_code_block(&file.content, &file.path);
-
         blocks.push(json!({
             "path": file.path.display().to_string(),
-            "code": code_block,
+            "content": file.content,
         }));
     }
     blocks
@@ -97,14 +95,6 @@ pub fn should_include_file(
 pub fn read_file_contents<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
     let contents = fs::read_to_string(path)?;
     Ok(contents)
-}
-
-pub fn wrap_code_block(code: &str, path: &Path) -> String {
-    let file_path = path.display().to_string();
-    let block = code.to_string();
-    let end_delimiter = "---";
-
-    format!("File: {file_path}\n\n{block}\n\n{end_delimiter}\n\n")
 }
 
 pub fn extension_to_name(extension: &str) -> &'static str {

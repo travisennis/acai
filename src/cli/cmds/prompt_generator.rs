@@ -5,7 +5,7 @@ use std::{env, error::Error, path::PathBuf};
 
 use crate::{
     cli::CmdRunner,
-    files::{get_code_blocks, get_files, parse_patterns},
+    files::{get_content_blocks, get_files, parse_patterns},
     models::{Message, Role},
 };
 
@@ -45,11 +45,11 @@ impl CmdRunner for Cmd {
             &exclude_patterns,
         );
 
-        let code_blocks = get_code_blocks(&file_objects.unwrap());
+        let content_blocks = get_content_blocks(&file_objects.unwrap());
 
         let mut prompt_builder = crate::prompts::Builder::new(&self.template)?;
 
-        prompt_builder.add_vec_variable("files".to_string(), &code_blocks);
+        prompt_builder.add_vec_variable("files".to_string(), &content_blocks);
 
         if prompt_builder.contains_variables() {
             let msg = Message {
@@ -57,9 +57,94 @@ impl CmdRunner for Cmd {
                 content: prompt_builder.build()?,
             };
 
-            println!("Final: {}", msg.content);
+            println!("{}", msg.content);
         }
 
         Ok(())
     }
 }
+
+// let bpe = o200k_base().unwrap();
+
+// let query_tokens = bpe.encode_with_special_tokens("impl CmdRunner");
+
+// for result in Walk::new(self.path.clone().unwrap()) {
+//     // Each item yielded by the iterator is either a directory entry or an
+//     // error, so either print the path or the error.
+//     match result {
+//         Ok(entry) => {
+//             let path = entry.path();
+//             if path.is_file()
+//                 && should_include_file(path, &include_patterns, &exclude_patterns)
+//             {
+//                 println!("{}", path.display());
+//                 let contents = read_file_contents(path)?;
+//                 println!("{}", contents.len());
+//                 let tokens = bpe.encode_with_special_tokens(&contents);
+//                 println!("{}", tokens.len());
+//                 let similarity = jaccard_similarity_vec(&tokens, &query_tokens);
+//                 println!("{similarity}");
+
+//                 let file_extension =
+//                     path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+
+//                 let code_block = wrap_code_block(&contents, path);
+
+//                 files.push(json!({
+//                     "path": path.display().to_string(),
+//                     "extension": file_extension,
+//                     "code": code_block,
+//                 }));
+//             }
+//         }
+//         Err(err) => eprintln!("ERROR: {err}"),
+//     }
+// }
+
+// fn wrap_code_block_orig(
+//     code: &str,
+//     extension: &str,
+//     line_numbers: bool,
+//     no_codeblock: bool,
+// ) -> String {
+//     let delimiter = "`".repeat(3);
+//     let mut code_with_line_numbers = String::new();
+
+//     if line_numbers {
+//         for (line_number, line) in code.lines().enumerate() {
+//             code_with_line_numbers.push_str(&format!("{:4} | {}\n", line_number + 1, line));
+//         }
+//     } else {
+//         code_with_line_numbers = code.to_string();
+//     }
+
+//     if no_codeblock {
+//         code_with_line_numbers
+//     } else {
+//         format!("{delimiter}{extension}\n{code_with_line_numbers}\n{delimiter}")
+//     }
+// }
+
+// fn wrap_code_block2(code: &str, extension: &str) -> String {
+//     let markdown_delimiter = "`".repeat(3);
+//     let language_name = extension_to_name(extension);
+//     let start_delimiter = format!("{markdown_delimiter} {language_name}");
+//     let end_delimiter = "`".repeat(3);
+
+//     let block = code.to_string();
+
+//     format!("{start_delimiter}\n{block}\n{end_delimiter}")
+// }
+
+// fn jaccard_similarity<'a, 'b>(
+//     sa: impl Iterator<Item = &'a usize>,
+//     sb: impl Iterator<Item = &'b usize>,
+// ) -> usize {
+//     let s1: HashSet<&usize> = sa.collect::<HashSet<_>>();
+//     let s2: HashSet<&usize> = sb.collect::<HashSet<_>>();
+
+//     let i = s1.intersection(&s2).count();
+//     let u = s1.union(&s2).count();
+
+//     i / u
+// }
