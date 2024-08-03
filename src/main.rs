@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "data dir set: {}",
             data_dir.clone().get_cache_dir().display()
         ),
-        Err(_) => panic!("data dir could not be set"),
+        Err(e) => panic!("data dir could not be set: {e:?}"),
     };
 
     let _ = logger::configure(&data_dir.get_cache_dir());
