@@ -26,6 +26,10 @@ pub struct Cmd {
     // Path to a handlebars template
     #[clap(long)]
     pub template: Option<PathBuf>,
+
+    /// Prompt
+    #[clap(long)]
+    pub prompt: Option<String>,
 }
 
 impl CmdRunner for Cmd {
@@ -39,16 +43,21 @@ impl CmdRunner for Cmd {
         let include_patterns = parse_patterns(&self.include);
         let exclude_patterns = parse_patterns(&self.exclude);
 
-        let file_objects = get_files(
-            self.path.clone().unwrap().as_path(),
-            &include_patterns,
-            &exclude_patterns,
-        );
+        let file_objects = self.path.as_ref().map_or(Vec::new(), |path| {
+            get_files(path.as_path(), &include_patterns, &exclude_patterns)
+                .map_or(Vec::new(), |files| files)
+        });
 
-        let content_blocks = get_content_blocks(&file_objects.unwrap());
+        let content_blocks = get_content_blocks(&file_objects);
+
+        let final_prompt = self
+            .prompt
+            .as_ref()
+            .map_or_else(String::new, ToString::to_string);
 
         let mut prompt_builder = crate::prompts::Builder::new(&self.template)?;
 
+        prompt_builder.add_variable("prompt".to_string(), final_prompt);
         prompt_builder.add_vec_variable("files".to_string(), &content_blocks);
 
         if prompt_builder.contains_variables() {
