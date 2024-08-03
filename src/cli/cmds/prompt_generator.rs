@@ -5,7 +5,7 @@ use std::{env, error::Error, path::PathBuf};
 
 use crate::{
     cli::CmdRunner,
-    files::{get_content_blocks, get_files, parse_patterns},
+    files::{get_content_blocks, get_file_info, parse_patterns},
     models::{Message, Role},
 };
 
@@ -44,7 +44,7 @@ impl CmdRunner for Cmd {
         let exclude_patterns = parse_patterns(&self.exclude);
 
         let file_objects = self.path.as_ref().map_or(Vec::new(), |path| {
-            get_files(path.as_path(), &include_patterns, &exclude_patterns)
+            get_file_info(path.as_path(), &include_patterns, &exclude_patterns)
                 .map_or(Vec::new(), |files| files)
         });
 

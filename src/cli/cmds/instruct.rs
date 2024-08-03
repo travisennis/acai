@@ -10,7 +10,7 @@ use crate::{
         ChatCompletion,
     },
     config::DataDir,
-    files::{get_content_blocks, get_files, parse_patterns},
+    files::{get_content_blocks, get_file_info, parse_patterns},
     models::{Message, Role},
 };
 
@@ -73,7 +73,7 @@ impl CmdRunner for Cmd {
         let exclude_patterns = parse_patterns(&self.exclude);
 
         let content_blocks = self.path.as_ref().and_then(|path| {
-            let file_objects = get_files(path.as_path(), &include_patterns, &exclude_patterns);
+            let file_objects = get_file_info(path.as_path(), &include_patterns, &exclude_patterns);
 
             file_objects.map_or(None, |files| Some(get_content_blocks(&files)))
         });

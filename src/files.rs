@@ -13,7 +13,7 @@ pub struct FileInfo {
     pub content: String,
 }
 
-pub fn get_files(
+pub fn get_file_info(
     path: &Path,
     include_patterns: &[String],
     exclude_patterns: &[String],
