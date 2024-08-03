@@ -35,7 +35,7 @@ pub fn get_files(
                     });
                 }
             }
-            Err(err) => eprintln!("ERROR: {err}"),
+            Err(err) => error!("ERROR: {err}"),
         }
     }
     Ok(files)

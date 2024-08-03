@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::anyhow;
+use log::error;
 use serde::Serialize;
 
 use once_cell::sync::OnceCell;
@@ -63,7 +64,7 @@ impl DataDir {
         self.data_dir.clone()
     }
 
-    pub fn save_messages<T: Serialize>(&self, messages: &[T]) {
+    pub fn save_messages<T: Serialize>(&self, messages: &[T]) -> Option<PathBuf> {
         let in_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
@@ -77,11 +78,17 @@ impl DataDir {
 
         match serde_json::to_string_pretty(&messages) {
             Ok(json_string) => {
-                if let Err(e) = std::fs::write(output_path, json_string) {
-                    eprintln!("Failed to write to file: {e}");
+                if let Err(e) = std::fs::write(output_path.clone(), json_string) {
+                    error!("Failed to write to file: {e}");
+                    None
+                } else {
+                    Some(output_path)
                 }
             }
-            Err(e) => eprintln!("Failed to serialize messages: {e}"),
+            Err(e) => {
+                error!("Failed to serialize messages: {e}");
+                None
+            }
         }
     }
 }
