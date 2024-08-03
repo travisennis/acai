@@ -289,10 +289,12 @@ impl ChatCompletion {
         match &self.provider {
             Provider::Anthropic => {
                 let anth_response = response.json::<AnthropicResponse>().await.ok()?;
+                debug!(target: "acai", "{anth_response:?}");
                 anth_response.into_message()
             }
             Provider::OpenAI | Provider::Ollama => {
                 let ai_response = response.json::<OpenAIResponse>().await.ok()?;
+                debug!(target: "acai", "{ai_response:?}");
                 ai_response.into_message()
             }
             Provider::Mistral => {
