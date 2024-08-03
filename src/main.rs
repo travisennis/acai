@@ -19,6 +19,7 @@ use cli::lsp as lsp_cmd;
 use cli::prompt_generator;
 use config::DataDir;
 use config::DATA_DIR_INSTANCE;
+use log::info;
 
 /// coding assistant commands
 #[derive(Parser)]
@@ -40,9 +41,13 @@ enum CodingAssistantCmd {
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let data_dir = DataDir::new()?;
 
-    DATA_DIR_INSTANCE
-        .set(data_dir.clone())
-        .expect("Data dir not found.");
+    match DATA_DIR_INSTANCE.set(data_dir.clone()) {
+        Ok(()) => info!(
+            "data dir set: {}",
+            data_dir.clone().get_cache_dir().display()
+        ),
+        Err(_) => panic!("data dir could not be set"),
+    };
 
     let _ = logger::configure(&data_dir.get_cache_dir());
 
