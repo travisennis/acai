@@ -93,14 +93,52 @@ impl Builder<'_> {
     }
 }
 
+const DEFAULT_TEMPLATE: &str = r#"
+{{#if file_tree}}
+File Tree:
+
+{{file_tree}}
+
+{{/if}}
+{{#if files}}
+File Contents:
+
+{{/if}}
+{{#each files}}
+	{{#if path}}
+File: {{path}}
+
+	{{/if}}
+    {{#if content}}
+{{content}}
+	{{/if}}
+
+---
+
+{{/each}}
+{{#if prompt}}
+	{{#if context}}
+"""
+	{{/if}}
+{{/if}}
+{{#if context}}
+{{context}}
+{{/if}}
+{{#if prompt}}
+	{{#if context}}
+"""
+	{{/if}}
+{{/if}}
+{{#if prompt}}
+{{prompt}}
+{{/if}}
+"#;
+
 fn get_template(path: &Option<PathBuf>) -> anyhow::Result<(String, String)> {
     if let Some(template_path) = path {
         let content = std::fs::read_to_string(template_path)?;
         Ok((content, "custom".to_string()))
     } else {
-        Ok((
-            include_str!("default-prompt.hbs").to_string(),
-            "default".to_string(),
-        ))
+        Ok((DEFAULT_TEMPLATE.to_string(), "default".to_string()))
     }
 }
