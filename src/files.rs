@@ -4,9 +4,10 @@ use std::{
 };
 
 use glob::Pattern;
-use ignore::Walk;
+use ignore::{Walk, WalkBuilder};
 use log::error;
 use serde_json::{json, Value};
+use termtree::Tree;
 
 pub struct FileInfo {
     pub path: PathBuf,
@@ -66,7 +67,6 @@ pub fn should_include_file(
     include_patterns: &[String],
     exclude_patterns: &[String],
 ) -> bool {
-    // ~~~ Clean path ~~~
     let canonical_path = match fs::canonicalize(path) {
         Ok(path) => path,
         Err(e) => {
@@ -76,7 +76,6 @@ pub fn should_include_file(
     };
     let path_str = canonical_path.to_str().unwrap();
 
-    // ~~~ Check glob patterns ~~~
     let included = include_patterns
         .iter()
         .any(|pattern| Pattern::new(pattern).unwrap().matches(path_str));
@@ -84,7 +83,6 @@ pub fn should_include_file(
         .iter()
         .any(|pattern| Pattern::new(pattern).unwrap().matches(path_str));
 
-    // ~~~ Decision ~~~
     match (included, excluded) {
         (true, _) => true,      // If include pattern match, include the file
         (false, true) => false, // If the path is excluded, exclude it
@@ -103,5 +101,64 @@ pub fn extension_to_name(extension: &str) -> &'static str {
         "py" => "python",
         "rs" => "rust",
         _ => "unknown",
+    }
+}
+
+pub fn get_file_tree(
+    dir: &Path,
+    include_patterns: &[String],
+    exclude_patterns: &[String],
+) -> std::io::Result<String> {
+    let canonical_root_path = dir.canonicalize()?;
+    let parent_directory = label(&canonical_root_path);
+    let tree = WalkBuilder::new(&canonical_root_path)
+        .git_ignore(true)
+        .build()
+        .filter_map(std::result::Result::ok)
+        .fold(Tree::new(parent_directory), |mut root, entry| {
+            let path = entry.path();
+            if let Ok(relative_path) = path.strip_prefix(&canonical_root_path) {
+                let mut current_tree = &mut root;
+                for component in relative_path.components() {
+                    let component_str = component.as_os_str().to_string_lossy().to_string();
+
+                    // Check if the current component should be excluded from the tree
+                    if !should_include_file(path, include_patterns, exclude_patterns) {
+                        break;
+                    }
+
+                    current_tree = if let Some(pos) = current_tree
+                        .leaves
+                        .iter_mut()
+                        .position(|child| child.root == component_str)
+                    {
+                        &mut current_tree.leaves[pos]
+                    } else {
+                        let new_tree = Tree::new(component_str.clone());
+                        current_tree.leaves.push(new_tree);
+                        current_tree.leaves.last_mut().unwrap()
+                    };
+                }
+            }
+            root
+        });
+
+    Ok(tree.to_string())
+}
+
+fn label<P: AsRef<Path>>(p: P) -> String {
+    let path = p.as_ref();
+    if path.file_name().is_none() {
+        let current_dir = std::env::current_dir().unwrap();
+        current_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(".")
+            .to_owned()
+    } else {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("")
+            .to_owned()
     }
 }
