@@ -5,7 +5,7 @@ use std::{env, error::Error, path::PathBuf};
 
 use crate::{
     cli::CmdRunner,
-    files::{get_content_blocks, get_file_info, parse_patterns},
+    files::{get_content_blocks, get_file_info, get_file_tree, parse_patterns},
     models::{Message, Role},
 };
 
@@ -43,6 +43,12 @@ impl CmdRunner for Cmd {
         let include_patterns = parse_patterns(&self.include);
         let exclude_patterns = parse_patterns(&self.exclude);
 
+        let file_tree = get_file_tree(
+            &self.path.clone().unwrap_or_else(|| ".".into()),
+            &include_patterns,
+            &exclude_patterns,
+        )?;
+
         let file_objects = self.path.as_ref().map_or(Vec::new(), |path| {
             get_file_info(path.as_path(), &include_patterns, &exclude_patterns)
                 .map_or(Vec::new(), |files| files)
@@ -58,6 +64,7 @@ impl CmdRunner for Cmd {
         let mut prompt_builder = crate::prompts::Builder::new(&self.template)?;
 
         prompt_builder.add_variable("prompt".to_string(), final_prompt);
+        prompt_builder.add_variable("file_tree".to_owned(), file_tree);
         prompt_builder.add_vec_variable("files".to_string(), &content_blocks);
 
         if prompt_builder.contains_variables() {
