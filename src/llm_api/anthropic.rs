@@ -1,6 +1,6 @@
 use std::env;
 
-use crate::llm_api::send_debug_request;
+use crate::llm_api::{log_debug_response, send_debug_request};
 
 use super::{Backend, BackendError, ChatCompletionRequest, JsonSchema, ToolDefinition};
 use async_trait::async_trait;
@@ -17,33 +17,30 @@ impl Anthropic {
     pub const fn new(model: String) -> Self {
         Self { model }
     }
-}
 
-#[async_trait]
-impl Backend for Anthropic {
-    async fn chat(
-        &self,
-        request: ChatCompletionRequest,
-        tools: &[&dyn ToolDefinition],
-    ) -> Result<super::open_ai::Message, BackendError> {
-        let model = match self.model.to_lowercase().as_str() {
+    fn get_model_name(&self) -> String {
+        match self.model.to_lowercase().as_str() {
             "opus" => "claude-3-opus-20240229".into(),
             "sonnet" => "claude-3-5-sonnet-20240620".into(),
             "sonnet3" => "claude-3-sonnet-20240229".into(),
             "haiku" => "claude-3-haiku-20240307".into(),
             _ => self.model.clone(),
-        };
+        }
+    }
 
-        let api_token = env::var("CLAUDE_API_KEY").ok();
-        let request_url = "https://api.anthropic.com/v1/messages".to_string();
-
-        let max_tokens = if self.model == "claude-3-5-sonnet-20240620" {
+    fn build_request_body(
+        &self,
+        request: &ChatCompletionRequest,
+        tools: &[&dyn ToolDefinition],
+    ) -> Value {
+        let model = self.get_model_name();
+        let max_tokens = if model == "claude-3-5-sonnet-20240620" {
             8192
         } else {
             4096
         };
 
-        let request_body = serde_json::to_value(Request {
+        serde_json::to_value(Request {
             model,
             temperature: request.temperature,
             top_p: request.top_p,
@@ -61,10 +58,15 @@ impl Backend for Anthropic {
             tool_choice: None,
             tools: &tools.iter().map(|&t| t.into()).collect::<Box<[Tool]>>(),
         })
-        .unwrap_or_default();
+        .unwrap_or_default()
+    }
 
-        debug!(target: "acai", "{request_url}");
-        debug!(target: "acai", "{request_body:#?}");
+    async fn send_api_request(
+        &self,
+        request_body: Value,
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        let api_token = env::var("CLAUDE_API_KEY").ok();
+        let request_url = "https://api.anthropic.com/v1/messages".to_string();
 
         let client = reqwest::Client::new();
         let req_base = client
@@ -74,15 +76,47 @@ impl Backend for Anthropic {
             .header("anthropic-version", "2023-06-01")
             .header("x-api-key", api_token.unwrap());
 
-        let req = if self.model == "claude-3-5-sonnet-20240620" {
+        let req = if self.get_model_name() == "claude-3-5-sonnet-20240620" {
             req_base.header("anthropic-beta", "max-tokens-3-5-sonnet-2024-07-15")
         } else {
             req_base
         };
 
-        let test_req = req.try_clone().unwrap();
+        req.send().await
+    }
 
-        let response = req.send().await?;
+    fn parse_response(&self, anth_response: &Response) -> Option<super::open_ai::Message> {
+        debug!(target: "acai", "Anthropic response: {:#?}", anth_response);
+        let anth_message = Message::try_from(anth_response);
+        debug!(target: "acai", "Anthropic message: {:#?}", anth_message);
+        match anth_message {
+            Ok(msg) => match super::open_ai::Message::try_from(&msg) {
+                Ok(final_msg) => Some(final_msg),
+                Err(e) => {
+                    error!("Error parsing message: {e:#?}");
+                    None
+                }
+            },
+            Err(e) => {
+                error!("Error parsing message: {e}");
+                None
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl Backend for Anthropic {
+    async fn chat(
+        &self,
+        request: ChatCompletionRequest,
+        tools: &[&dyn ToolDefinition],
+    ) -> Result<super::open_ai::Message, BackendError> {
+        let request_body = self.build_request_body(&request, tools);
+
+        debug!(target: "acai", "{request_body:#?}");
+
+        let response = self.send_api_request(request_body.clone()).await?;
 
         debug!(target: "acai", "Response status: {:?}", response.status());
 
@@ -94,29 +128,13 @@ impl Backend for Anthropic {
                     None
                 }
             };
-            let message = anth_response.and_then(|anth_response| {
-                debug!(target: "acai", "Anthropic response: {:#?}", anth_response);
-                let anth_message = Message::try_from(&anth_response);
-                debug!(target: "acai", "Anthropic message: {:#?}", anth_message);
-                match anth_message {
-                    Ok(msg) => match super::open_ai::Message::try_from(&msg) {
-                        Ok(final_msg) => Some(final_msg),
-                        Err(e) => {
-                            error!("Error parsing message: {e:#?}");
-                            None
-                        }
-                    },
-                    Err(e) => {
-                        error!("Error parsing message: {e}");
-                        None
-                    }
-                }
-            });
+            let message = anth_response.and_then(|ar| self.parse_response(&ar));
 
             debug!(target: "acai", "{message:#?}");
 
             if message.is_none() {
-                let _ = send_debug_request(test_req).await;
+                let test_req = self.send_api_request(request_body.clone()).await?;
+                let _ = log_debug_response(test_req).await;
             }
 
             message.map_or_else(
@@ -128,7 +146,8 @@ impl Backend for Anthropic {
                 "Service unavailable. Try again.".into(),
             ))
         } else {
-            let _ = send_debug_request(test_req).await;
+            let test_req = self.send_api_request(request_body.clone()).await?;
+            let _ = log_debug_response(test_req).await;
             match response.json::<Value>().await {
                 Ok(resp_json) => match serde_json::to_string_pretty(&resp_json) {
                     Ok(resp_formatted) => Err(BackendError::RequestError(resp_formatted)),

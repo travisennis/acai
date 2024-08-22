@@ -2,7 +2,7 @@ use std::{fmt::Display, str::FromStr};
 
 use async_trait::async_trait;
 use log::{debug, error};
-use reqwest::RequestBuilder;
+use reqwest::{RequestBuilder, Response};
 
 use super::{open_ai::Message, JsonSchema};
 
@@ -101,6 +101,13 @@ pub async fn send_debug_request(
     test_req: RequestBuilder,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let debug_response = test_req.send().await?;
+    log_debug_response(debug_response);
+    Ok(())
+}
+
+pub async fn log_debug_response(
+    debug_response: Response,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     debug!(target: "acai", "{}", debug_response.status());
     debug!(target: "acai", "{:?}", debug_response.text().await?);
     Ok(())
