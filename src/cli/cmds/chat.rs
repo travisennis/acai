@@ -161,7 +161,6 @@ pub struct Cmd {
 }
 
 impl CmdRunner for Cmd {
-    #[allow(clippy::too_many_lines)]
     async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let model = self
             .model
