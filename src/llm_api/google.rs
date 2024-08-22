@@ -49,7 +49,7 @@ impl Backend for Google {
         .unwrap_or_default();
 
         debug!(target: "acai", "{request_url}");
-        debug!(target: "acai", "{request_body}");
+        debug!(target: "acai", "{request_body:#?}");
 
         let client = reqwest::Client::new();
         let req = client

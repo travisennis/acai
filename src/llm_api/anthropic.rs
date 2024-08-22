@@ -64,7 +64,7 @@ impl Backend for Anthropic {
         .unwrap_or_default();
 
         debug!(target: "acai", "{request_url}");
-        debug!(target: "acai", "{request_body}");
+        debug!(target: "acai", "{request_body:#?}");
 
         let client = reqwest::Client::new();
         let req_base = client
@@ -113,7 +113,7 @@ impl Backend for Anthropic {
                 }
             });
 
-            debug!(target: "acai", "{message:?}");
+            debug!(target: "acai", "{message:#?}");
 
             if message.is_none() {
                 let _ = send_debug_request(test_req).await;
