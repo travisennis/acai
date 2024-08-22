@@ -2,9 +2,11 @@ use std::env;
 
 use crate::llm_api::send_debug_request;
 
-use super::{open_ai::Message, Backend, BackendError, ChatCompletionRequest, ToolDefinition};
+use super::{
+    open_ai::Message, Backend, BackendError, ChatCompletionRequest, JsonSchema, ToolDefinition,
+};
 use async_trait::async_trait;
-use log::debug;
+use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -24,7 +26,7 @@ impl Backend for Google {
     async fn chat(
         &self,
         request: ChatCompletionRequest,
-        _tools: &[&dyn ToolDefinition],
+        tools: &[&dyn ToolDefinition],
     ) -> Result<Message, BackendError> {
         let model = match self.model.to_lowercase().as_str() {
             "gemini-flash" => "gemini-1.5-flash-latest".into(),
@@ -40,11 +42,10 @@ impl Backend for Google {
 
         let request_body = serde_json::to_value(Request {
             system_instruction: SystemInstruction {
-                parts: Part {
-                    text: request.system_prompt.clone(),
-                },
+                parts: Part::Text(request.system_prompt.clone()),
             },
             contents: request.messages.iter().map(Instruction::from).collect(),
+            tools: &tools.iter().map(|&t| t.into()).collect::<Box<[Tool]>>(),
         })
         .unwrap_or_default();
 
@@ -64,12 +65,33 @@ impl Backend for Google {
         debug!(target: "acai", "Response status: {:?}", response.status());
 
         if response.status().is_success() {
-            let google_response = response.json::<Response>().await?;
-            let google_instruction = Instruction::try_from(&google_response);
-            let message =
-                google_instruction.map_or(None, |msg| super::open_ai::Message::try_from(&msg).ok());
+            let google_response = match response.json::<Response>().await {
+                Ok(r) => Some(r),
+                Err(e) => {
+                    error!("Error parsing response: {e:#?}");
+                    None
+                }
+            };
+            let message = google_response.and_then(|google_response| {
+                debug!(target: "acai", "Google response: {:#?}", google_response);
+                let google_message = Instruction::try_from(&google_response);
+                debug!(target: "acai", "Google message: {:#?}", google_message);
+                match google_message {
+                    Ok(msg) => match super::open_ai::Message::try_from(&msg) {
+                        Ok(final_msg) => Some(final_msg),
+                        Err(e) => {
+                            error!("Error parsing message: {e:#?}");
+                            None
+                        }
+                    },
+                    Err(e) => {
+                        error!("Error parsing message: {e}");
+                        None
+                    }
+                }
+            });
 
-            debug!(target: "acai", "{message:?}");
+            debug!(target: "acai", "{message:#?}");
 
             if message.is_none() {
                 let _ = send_debug_request(test_req).await;
@@ -101,8 +123,23 @@ impl Backend for Google {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Part {
-    pub text: String,
+pub struct FunctionCall {
+    pub name: String,
+    pub args: Value,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FunctionResponse {
+    pub name: String,
+    pub response: Value,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum Part {
+    Text(String),
+    FunctionCall(FunctionCall),
+    FunctionResponse(FunctionResponse),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -115,7 +152,7 @@ pub struct SystemInstruction {
 #[serde(tag = "role")]
 pub enum Instruction {
     System { parts: Vec<Part> },
-    Assistant { parts: Vec<Part> },
+    Model { parts: Vec<Part> },
     User { parts: Vec<Part> },
 }
 
@@ -123,23 +160,17 @@ impl From<&Message> for Instruction {
     fn from(value: &Message) -> Self {
         match value {
             Message::System { content, name: _ } => Self::System {
-                parts: vec![Part {
-                    text: content.to_string(),
-                }],
+                parts: vec![Part::Text(content.to_string())],
             },
             Message::User { content, name: _ } => Self::User {
-                parts: vec![Part {
-                    text: content.to_string(),
-                }],
+                parts: vec![Part::Text(content.to_string())],
             },
             Message::Assistant {
                 content,
                 name: _,
                 tool_calls: _,
-            } => Self::Assistant {
-                parts: vec![Part {
-                    text: content.clone().unwrap_or_default(),
-                }],
+            } => Self::Model {
+                parts: vec![Part::Text(content.clone().unwrap_or_default())],
             },
             Message::Tool {
                 content: _,
@@ -149,11 +180,36 @@ impl From<&Message> for Instruction {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Request {
+#[derive(Serialize, Debug)]
+pub struct Request<'a> {
     #[serde(rename = "systemInstruction")]
     pub system_instruction: SystemInstruction,
     pub contents: Vec<Instruction>,
+    pub tools: &'a [Tool],
+}
+
+#[derive(Serialize, Debug)]
+pub struct Tool {
+    pub function_declarations: Vec<FunctionDeclaration>,
+}
+
+#[derive(Serialize, Debug)]
+pub struct FunctionDeclaration {
+    pub name: String,
+    pub description: String,
+    pub parameters: JsonSchema,
+}
+
+impl From<&dyn ToolDefinition> for Tool {
+    fn from(tool: &dyn ToolDefinition) -> Self {
+        Self {
+            function_declarations: vec![FunctionDeclaration {
+                description: tool.description().to_owned(),
+                name: tool.name().to_owned(),
+                parameters: tool.get_parameters(),
+            }],
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -177,11 +233,23 @@ impl TryFrom<&Response> for Instruction {
     fn try_from(value: &Response) -> Result<Self, Self::Error> {
         if let Some(candidate) = value.candidates.first() {
             if let Some(part) = candidate.content.parts.first() {
-                return Ok(Self::Assistant {
-                    parts: vec![Part {
-                        text: part.text.clone(),
-                    }],
-                });
+                return match part {
+                    Part::Text(text) => Ok(Self::Model {
+                        parts: vec![Part::Text(text.clone())],
+                    }),
+                    Part::FunctionCall(function_call) => Ok(Self::Model {
+                        parts: vec![Part::FunctionCall(FunctionCall {
+                            name: function_call.name.clone(),
+                            args: function_call.args.clone(),
+                        })],
+                    }),
+                    Part::FunctionResponse(function_response) => Ok(Self::Model {
+                        parts: vec![Part::FunctionResponse(FunctionResponse {
+                            name: function_response.name.clone(),
+                            response: function_response.response.clone(),
+                        })],
+                    }),
+                };
             }
         }
         Err("No message in response.".to_string())

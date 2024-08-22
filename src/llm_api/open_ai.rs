@@ -250,14 +250,29 @@ impl TryFrom<&super::google::Instruction> for Message {
             super::google::Instruction::System { parts: _ } => {
                 Err("System instruction not implemented")
             }
-            super::google::Instruction::Assistant { parts } => parts
-                .first()
-                .map(|part| Self::Assistant {
-                    content: Some(part.text.clone()),
+            super::google::Instruction::Model { parts } => match parts.first().unwrap() {
+                super::google::Part::Text(text) => Ok(Self::Assistant {
+                    content: Some(text.clone()),
                     name: None,
                     tool_calls: None,
-                })
-                .ok_or("Assistant instruction has no parts"),
+                }),
+                super::google::Part::FunctionCall(fc) => {
+                    let arguments = serde_json::to_string(&fc.args).map_err(|_| "invalid args")?;
+                    Ok(Self::Assistant {
+                        content: None,
+                        name: None,
+                        tool_calls: Some(vec![ToolCall {
+                            id: String::new(),
+                            r#type: "function".to_string(),
+                            function: FunctionCall {
+                                name: fc.name.to_string(),
+                                arguments,
+                            },
+                        }]),
+                    })
+                }
+                super::google::Part::FunctionResponse(_) => todo!(),
+            },
             super::google::Instruction::User { parts: _ } => {
                 Err("User instruction not implemented")
             }
