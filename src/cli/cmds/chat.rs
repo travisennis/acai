@@ -107,6 +107,7 @@ Provide answers in markdown format unless instructed otherwise.
 // Our tool definitions
 const TOOLS: [&dyn ToolDefinition; 1] = [&GenerateEdits];
 
+const ADD_COMMAND: &str = "/add";
 const EXIT_COMMAND: &str = "/exit";
 const SAVE_COMMAND: &str = "/save";
 const RESET_COMMAND: &str = "/reset";
@@ -211,6 +212,7 @@ impl ChatState {
 |:-:|:-:|
 |**command**|**description**|
 |:-|:-|
+| /add | Add files to the chat. |
 | /reset | Saves the chat history and then resets it.|
 | /save | Saves the chat history.|
 | /exit | Exits and saves the chat history.|
@@ -265,7 +267,36 @@ impl ChatState {
                     continue;
                 }
                 Ok(line) if line.trim() == RESET_COMMAND => {
+                    self.project_context.file_objects.clear();
+                    self.project_context.content_blocks.clear();
                     self.reset_chat(skin);
+                    continue;
+                }
+                Ok(line) if line.starts_with(ADD_COMMAND) => {
+                    let include = parse_patterns(&Some(
+                        line.trim_start_matches(ADD_COMMAND).trim().to_string(),
+                    ));
+
+                    let file_objects =
+                        self.project_context
+                            .project_path
+                            .clone()
+                            .map_or(Vec::new(), |path| {
+                                get_file_info(path.as_path(), &include, &[])
+                                    .map_or(Vec::new(), |files| files)
+                            });
+
+                    let content_blocks = get_content_blocks(&file_objects);
+
+                    let joined_vec = [
+                        self.project_context.content_blocks.as_slice(),
+                        content_blocks.as_slice(),
+                    ]
+                    .concat();
+
+                    self.prompt_builder
+                        .add_vec_variable("files".to_string(), &joined_vec);
+
                     continue;
                 }
                 Ok(line) => {
@@ -336,6 +367,7 @@ impl ChatState {
         }
 
         println!("\n");
+
         self.prompt_builder.clear_variables();
 
         Ok(())
@@ -420,8 +452,7 @@ impl Cmd {
             .clone()
             .map_or_else(|| std::env::current_dir().ok(), Some);
 
-        let file_tree = self
-            .path
+        let file_tree = current_path
             .clone()
             .and_then(|path| get_file_tree(&path, &include_patterns, &exclude_patterns).ok());
 
