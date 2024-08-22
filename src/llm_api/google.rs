@@ -75,7 +75,10 @@ impl Backend for Google {
                 let _ = send_debug_request(test_req).await;
             }
 
-            Ok(message.expect("bad message"))
+            message.map_or_else(
+                || Err(BackendError::RequestError("No message. Try again.".into())),
+                Ok,
+            )
         } else if response.status().is_server_error() {
             Err(BackendError::RequestError(
                 "Service unavailable. Try again.".into(),
