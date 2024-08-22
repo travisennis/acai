@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::Args;
 use log::debug;
 use rustyline::{error::ReadlineError, DefaultEditor};
-use termimad::MadSkin;
+use termimad::{ansi, Alignment, MadSkin, StyledChar};
 
 use crate::{
     cli::CmdRunner,
@@ -355,9 +355,15 @@ impl Cmd {
 }
 
 fn make_skin() -> MadSkin {
-    match terminal_light::luma() {
+    let mut skin = match terminal_light::luma() {
         Ok(luma) if luma > 0.6 => MadSkin::default_light(),
         Ok(_) => MadSkin::default_dark(),
-        Err(_) => MadSkin::default(), // this skin works in both light and dark
-    }
+        Err(_) => MadSkin::default(),
+    };
+
+    skin.bullet = StyledChar::from_fg_char(ansi(178), '•');
+
+    skin.code_block.align = Alignment::Left;
+
+    skin
 }
