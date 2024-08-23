@@ -1,6 +1,6 @@
 use std::env;
 
-use crate::llm_api::{log_debug_response, send_debug_request};
+use crate::llm_api::log_debug_response;
 
 use super::{Backend, BackendError, ChatCompletionRequest, JsonSchema, ToolDefinition};
 use async_trait::async_trait;
