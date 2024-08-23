@@ -11,7 +11,7 @@ use crate::{
     config::DataDir,
     files::{get_content_blocks, get_file_info, get_file_tree, parse_patterns},
     llm_api::{open_ai::Message, ChatCompletionRequest, Provider, ToolDefinition},
-    tools::generate_edits::GenerateEdits,
+    tools::{generate_edits::GenerateEdits, lint_code::LintCode},
 };
 
 const SYSTEM_PROMPT: &str = r"
@@ -105,7 +105,7 @@ Provide answers in markdown format unless instructed otherwise.
 ";
 
 // Our tool definitions
-const TOOLS: [&dyn ToolDefinition; 1] = [&GenerateEdits];
+const TOOLS: [&dyn ToolDefinition; 2] = [&GenerateEdits, &LintCode];
 
 const ADD_COMMAND: &str = "/add";
 const EXIT_COMMAND: &str = "/exit";
@@ -393,7 +393,9 @@ impl ChatState {
             };
 
             debug!(target: "acai", "Function name {:#?}", tool_call.function.name);
+
             let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
+
             debug!(target: "acai", "Function args {:#?}", args.clone());
 
             let fn_result = match tool_call.function.name.as_str() {
@@ -405,6 +407,7 @@ impl ChatState {
                 )
                 .await
                 .unwrap_or_default(),
+                "lint_code" => crate::tools::lint_code::callable_func().unwrap_or_default(),
                 _ => serde_json::Value::String(String::new()),
             };
 
