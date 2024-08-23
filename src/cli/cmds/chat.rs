@@ -251,6 +251,27 @@ impl ChatState {
         }
     }
 
+    fn add_files(&mut self, include: &[String]) {
+        let file_objects = self
+            .project_context
+            .project_path
+            .clone()
+            .map_or(Vec::new(), |path| {
+                get_file_info(path.as_path(), include, &[]).map_or(Vec::new(), |files| files)
+            });
+
+        let new_content_blocks = get_content_blocks(&file_objects);
+
+        self.project_context
+            .content_blocks
+            .extend(new_content_blocks);
+
+        self.project_context.file_objects.extend(file_objects);
+
+        self.prompt_builder
+            .add_vec_variable("files".to_string(), &self.project_context.content_blocks);
+    }
+
     async fn chat_loop(
         &mut self,
         rl: &mut DefaultEditor,
@@ -277,25 +298,7 @@ impl ChatState {
                         line.trim_start_matches(ADD_COMMAND).trim().to_string(),
                     ));
 
-                    let file_objects =
-                        self.project_context
-                            .project_path
-                            .clone()
-                            .map_or(Vec::new(), |path| {
-                                get_file_info(path.as_path(), &include, &[])
-                                    .map_or(Vec::new(), |files| files)
-                            });
-
-                    let content_blocks = get_content_blocks(&file_objects);
-
-                    let joined_vec = [
-                        self.project_context.content_blocks.as_slice(),
-                        content_blocks.as_slice(),
-                    ]
-                    .concat();
-
-                    self.prompt_builder
-                        .add_vec_variable("files".to_string(), &joined_vec);
+                    self.add_files(&include);
 
                     continue;
                 }
