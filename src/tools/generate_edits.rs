@@ -128,6 +128,10 @@ pub async fn callable_func(
     content_blocks: &Vec<Value>,
     skin: &MadSkin,
 ) -> Result<Value, Error> {
+    if content_blocks.is_empty() {
+        return Err(Error::PromptConstruction);
+    }
+
     let mut rl = DefaultEditor::new().map_err(|_| Error::Readline)?;
     let mut prompt_builder = crate::prompts::Builder::new_from_string(PROMPT_TEMPLATE.to_owned())
         .map_err(|_| Error::PromptBuilder)?;
@@ -137,7 +141,6 @@ pub async fn callable_func(
     }
 
     prompt_builder.add_vec_variable("files".to_string(), content_blocks);
-
     if let Value::String(text) = &arguments["instructions"] {
         prompt_builder.add_variable("prompt".to_string(), text.to_string());
         let provider =
