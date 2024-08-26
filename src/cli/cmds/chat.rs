@@ -230,6 +230,9 @@ impl ChatState {
     }
 
     fn reset_chat(&mut self, skin: &MadSkin) {
+        self.project_context.file_objects.clear();
+        self.project_context.content_blocks.clear();
+
         let save_file = DataDir::global().save_messages(&self.messages);
         if let Some(sf) = save_file {
             self.messages.clear();
@@ -288,8 +291,6 @@ impl ChatState {
                     continue;
                 }
                 Ok(line) if line.trim() == RESET_COMMAND => {
-                    self.project_context.file_objects.clear();
-                    self.project_context.content_blocks.clear();
                     self.reset_chat(skin);
                     continue;
                 }
