@@ -21,7 +21,7 @@ impl Anthropic {
     fn get_model_name(&self) -> String {
         match self.model.to_lowercase().as_str() {
             "opus" => "claude-3-opus-20240229".into(),
-            "sonnet" => "claude-3-5-sonnet-20240620".into(),
+            "sonnet" => "claude-3-5-sonnet-20241022".into(),
             "sonnet3" => "claude-3-sonnet-20240229".into(),
             "haiku" => "claude-3-haiku-20240307".into(),
             _ => self.model.clone(),
@@ -34,7 +34,7 @@ impl Anthropic {
         tools: &[&dyn ToolDefinition],
     ) -> Value {
         let model = self.get_model_name();
-        let max_tokens = if model == "claude-3-5-sonnet-20240620" {
+        let max_tokens = if model == "claude-3-5-sonnet-20241022" {
             8192
         } else {
             4096
@@ -76,7 +76,7 @@ impl Anthropic {
             .header("anthropic-version", "2023-06-01")
             .header("x-api-key", api_token.unwrap());
 
-        let req = if self.get_model_name() == "claude-3-5-sonnet-20240620" {
+        let req = if self.get_model_name() == "claude-3-5-sonnet-20241022" {
             req_base.header("anthropic-beta", "max-tokens-3-5-sonnet-2024-07-15")
         } else {
             req_base

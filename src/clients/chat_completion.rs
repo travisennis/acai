@@ -37,10 +37,10 @@ pub struct ChatCompletion {
 impl ChatCompletion {
     pub fn new(provider: Provider, model: String, system_prompt: &str) -> Self {
         let token = match provider {
-            Provider::Anthropic => env::var("CLAUDE_API_KEY"),
+            Provider::Anthropic => env::var("ANTHROPIC_API_KEY"),
             Provider::OpenAI => env::var("OPENAI_API_KEY"),
             Provider::Mistral => env::var("MISTRAL_API_KEY"),
-            Provider::Google => env::var("GOOGLE_API_KEY"),
+            Provider::Google => env::var("GOOGLE_GENERATIVE_AI_API_KEY"),
             Provider::Ollama => Ok(String::new()),
         }
         .unwrap_or_else(|_error| panic!("Error: Environment variable not set."));
@@ -143,7 +143,7 @@ impl ChatCompletion {
 
         let default_max_token = match &self.provider {
             Provider::Anthropic => {
-                if &self.model == "claude-3-5-sonnet-20240620" {
+                if &self.model == "claude-3-5-sonnet-20241022" {
                     8192
                 } else {
                     4096
@@ -216,7 +216,7 @@ impl ChatCompletion {
             Provider::Google | Provider::Ollama => req_base,
         };
 
-        let req = if &self.model == "claude-3-5-sonnet-20240620" {
+        let req = if &self.model == "claude-3-5-sonnet-20241022" {
             req.header("anthropic-beta", "max-tokens-3-5-sonnet-2024-07-15")
         } else {
             req

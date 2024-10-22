@@ -57,7 +57,7 @@ impl ModelConfig {
             "gpt-4" | "gtp4" => "gpt-4-0314".into(),
             "gpt-3.5-turbo" | "gpt35turbo" => "gpt-3.5-turbo".into(),
             "opus" => "claude-3-opus-20240229".into(),
-            "sonnet" => "claude-3-5-sonnet-20240620".into(),
+            "sonnet" => "claude-3-5-sonnet-20241022".into(),
             "sonnet3" => "claude-3-sonnet-20240229".into(),
             "haiku" => "claude-3-haiku-20240307".into(),
             "codestral" => "codestral-latest".into(),
