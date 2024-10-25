@@ -246,13 +246,16 @@ impl Backend {
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
-        self.client
-            .log_message(
-                MessageType::INFO,
-                format!("Initializing {:?}", params.root_uri.unwrap().path()),
-            )
-            .await;
+    async fn initialize(&self, _params: InitializeParams) -> Result<InitializeResult> {
+        // self.client
+        //     .log_message(
+        //         MessageType::INFO,
+        //         format!(
+        //             "Initializing {:?}",
+        //             params.root_uri.unwrap_or_default().path()
+        //         ),
+        //     )
+        //     .await;
 
         // Text Document Sync Configuration
         let text_document_sync = TextDocumentSyncCapability::Options(TextDocumentSyncOptions {
