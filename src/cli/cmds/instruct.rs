@@ -5,19 +5,16 @@ use clap::Args;
 
 use crate::{
     cli::CmdRunner,
-    clients::{
-        providers::{ModelConfig, Provider},
-        ChatCompletion,
-    },
+    clients::Responses,
     config::DataDir,
     models::{Message, Role},
 };
 
 #[derive(Clone, Args)]
 pub struct Cmd {
-    /// Sets the model to use
-    #[arg(long)]
-    pub model: Option<String>,
+    /// Sets the model to use (e.g., "minimax/minimax-m2.5")
+    #[arg(long, default_value = "minimax/minimax-m2.5")]
+    pub model: String,
 
     /// Sets the temperature value
     #[arg(long)]
@@ -40,26 +37,19 @@ const SYSTEM_PROMPT: &str = "You are acai, an AI coding assistant. You specializ
 
 impl CmdRunner for Cmd {
     async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let context: Option<String> = {
-            if atty::is(atty::Stream::Stdin) {
-                None
-            } else {
-                std::io::read_to_string(std::io::stdin()).ok()
-            }
+        // Only read from stdin if a prompt is not provided
+        let context: Option<String> = if self.prompt.is_some() {
+            None
+        } else if atty::is(atty::Stream::Stdin) {
+            None
+        } else {
+            std::io::read_to_string(std::io::stdin()).ok()
         };
 
-        let model_provider = ModelConfig::get_or_default(
-            self.model.clone().unwrap_or_default().as_str(),
-            (Provider::Anthropic, "sonnet"),
-        );
-
-        let provider = model_provider.provider;
-        let model = model_provider.model;
-
-        let mut client = ChatCompletion::new(provider, model, SYSTEM_PROMPT)
+        let mut client = Responses::new(self.model.clone(), SYSTEM_PROMPT)
             .temperature(self.temperature)
             .top_p(self.top_p)
-            .max_tokens(self.max_tokens);
+            .max_output_tokens(self.max_tokens);
 
         // Build content from prompt and optional stdin context
         let content = match (&self.prompt, &context) {
@@ -74,7 +64,7 @@ impl CmdRunner for Cmd {
             content,
         };
 
-        let response = client.send_message(msg).await?;
+        let response = client.send(msg).await?;
 
         DataDir::global().save_messages(&client.get_message_history());
 
