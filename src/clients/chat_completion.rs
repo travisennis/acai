@@ -6,15 +6,13 @@ use serde_json::{json, Value};
 
 use crate::models::{IntoMessage, Message, Role};
 
-use super::{
-    anthropic::{Request as AnthropicRequest, Response as AnthropicResponse},
-    google::{
-        Instruction, Part, Request as GoogleRequest, Response as GoogleResponse, SystemInstruction,
-    },
-    mistral::Response as MistralResponse,
-    open_ai::Response as OpenAIResponse,
-    providers::Provider,
+use super::anthropic::{Request as AnthropicRequest, Response as AnthropicResponse};
+use super::google::{
+    Instruction, Part, Request as GoogleRequest, Response as GoogleResponse, SystemInstruction,
 };
+use super::mistral::Response as MistralResponse;
+use super::open_ai::Response as OpenAIResponse;
+use super::providers::Provider;
 
 pub struct ChatCompletion {
     provider: Provider,
@@ -266,10 +264,6 @@ impl ChatCompletion {
             }
             Provider::OpenAI | Provider::Mistral | Provider::Ollama => msgs,
         }
-    }
-
-    pub fn clear_message_history(&mut self) {
-        self.messages.clear();
     }
 
     fn get_request_url(&self) -> String {

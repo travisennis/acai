@@ -1,18 +1,13 @@
 # acai
 
-Acai is a versatile AI-powered coding assistant that integrates with your development workflow. It provides intelligent code suggestions, documentation generation, and interactive chat capabilities to enhance your coding experience.
+Acai is an AI-powered coding assistant that integrates with your development workflow. It provides intelligent code suggestions and documentation generation to enhance your coding experience.
 
 ## Features
 
-- Interactive chat mode for coding assistance
-- Code completion and suggestions
-- Code optimization suggestions
-- Automatic documentation generation
-- Bug fixing and code improvement suggestions
+- Send instructions to AI for code generation or documentation
+- Codebase analysis with file filtering
 - Support for multiple AI providers (OpenAI, Anthropic, Mistral, Google, Ollama)
-- Language Server Protocol (LSP) integration
 - Customizable prompts and templates
-- File filtering for codebase analysis
 
 ## Installation
 
@@ -33,42 +28,25 @@ To install Acai, you'll need Rust and Cargo installed on your system. Then, foll
 
 ## Usage
 
-Acai provides several subcommands for different functionalities:
-
-- `chat`: Start an interactive chat session with the AI assistant
-- `instruct`: Send a single instruction to the AI
-- `lsp`: Start the Language Server Protocol server
-
-### Chat Mode
-
-Start an interactive chat session with the AI:
-
-```bash
-acai chat --model anthropic/claude-3-sonnet-20240229 --path /path/to/your/codebase
-```
-
 ### Instruct Mode
 
 Generate code or documentation based on instructions:
 
 ```bash
-acai instruct --model openai/gpt-4 --prompt "Implement a binary search tree in Rust" --path /path/to/your/codebase
-```
+# Basic usage with a prompt
+acai instruct --prompt "Implement a binary search tree in Rust"
 
-### Prompt Generator
+# With a codebase path for context
+acai instruct --path /path/to/your/codebase --prompt "Add unit tests for the auth module"
 
-Generate prompts based on your codebase:
+# With specific file patterns
+acai instruct --path /path/to/your/codebase --include "**/*.rs" --exclude "target/**" --prompt "Review this code"
 
-```bash
-acai prompt-generator --path /path/to/your/codebase --include "**/*.rs" --exclude "target/**"
-```
+# Using a specific model
+acai instruct --model openai/gpt-4o --prompt "Write a hello world program"
 
-### LSP Mode
-
-Start Acai as a Language Server:
-
-```bash
-acai lsp
+# With custom template
+acai instruct --template /path/to/template.hbs --prompt "Your prompt here"
 ```
 
 ## Configuration
@@ -76,20 +54,32 @@ acai lsp
 Acai uses environment variables for API keys:
 
 - `OPENAI_API_KEY`: For OpenAI models
-- `CLAUDE_API_KEY`: For Anthropic models
+- `ANTHROPIC_API_KEY`: For Anthropic models
 - `MISTRAL_API_KEY`: For Mistral models
-- `GOOGLE_API_KEY`: For Google models
+- `GOOGLE_GENERATIVE_AI_API_KEY`: For Google models
 
-You can also customize the behavior using command-line options. Refer to the help command for each subcommand for more details:
+You can also customize the behavior using command-line options:
 
 ```bash
-acai <subcommand> --help
+acai instruct --help
 ```
+
+### Options
+
+- `--model` - Set the model to use (e.g., `anthropic/sonnet`, `openai/gpt-4o`)
+- `--temperature` - Set the temperature (0.0 to 1.0)
+- `--max-tokens` - Set maximum tokens in response
+- `--top-p` - Set top-p value
+- `--path` - Path to codebase directory
+- `--include` - File patterns to include (comma-separated)
+- `--exclude` - File patterns to exclude (comma-separated)
+- `--template` - Path to Handlebars template
+- `--prompt` ( `-p`) - Your instruction prompt
 
 ### Example
 
 ```bash
-acai chat --model openai/gpt-4 --temperature 0.7
+acai instruct --model anthropic/sonnet --temperature 0.7 --path ./src --prompt "Explain what this code does"
 ```
 
 ## Contributing

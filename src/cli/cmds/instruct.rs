@@ -1,7 +1,7 @@
 use std::{error::Error, path::PathBuf};
 
 use anyhow::Result;
-use clap::{arg, Args};
+use clap::Args;
 
 use crate::{
     cli::CmdRunner,

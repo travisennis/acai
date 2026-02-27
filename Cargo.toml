@@ -10,8 +10,6 @@ anyhow = "1.0.86"
 async-trait = "0.1.81"
 atty = "0.2.14"
 clap = { version = "4.5.15", features = ["derive"] }
-codespan = "0.11.1"
-codespan-lsp = "0.11.1"
 dashmap = "6.0.1"
 dirs = "5.0"
 glob = "0.3.1"
@@ -20,19 +18,12 @@ ignore = "0.4"
 log = "0.4.22"
 log4rs = "1.3.0"
 once_cell = "1.19.0"
-readability = "0.3.0"
 regex = "1.10.6"
 reqwest = { version = "0.12.5", features = ["json"] }
-ropey = "1.6.1"
-rustyline = { version = "14.0.0", features = ["with-file-history"] }
 serde = { version = "1.0.207", features = ["derive"] }
 serde_json = "1.0.124"
 similar = "2.6.0"
-termimad = "0.30.0"
-terminal-light = "1.5.0"
 termtree = "0.5.1"
 text-splitter = "0.14"
 thiserror = "1.0.63"
-tiktoken-rs = "0.5.9"
 tokio = { version = "1.39.2", features = ["full"] }
-tower-lsp = "0.20.0"
