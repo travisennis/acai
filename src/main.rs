@@ -1,10 +1,8 @@
 mod cli;
 mod clients;
 mod config;
-mod files;
 mod logger;
 mod models;
-mod prompts;
 
 use std::error::Error;
 
