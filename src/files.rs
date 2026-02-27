@@ -50,7 +50,7 @@ pub fn get_content_blocks(files: &[FileInfo]) -> Vec<Value> {
     blocks
 }
 
-pub fn parse_patterns(patterns: &Option<String>) -> Vec<String> {
+pub fn parse_patterns(patterns: Option<&String>) -> Vec<String> {
     match patterns {
         Some(patterns) if !patterns.is_empty() => {
             patterns.split(',').map(|s| s.trim().to_string()).collect()
@@ -67,7 +67,7 @@ pub fn should_include_file(
     let canonical_path = match fs::canonicalize(path) {
         Ok(path) => path,
         Err(e) => {
-            error!("Failed to canonicalize path: {}", e);
+            error!("Failed to canonicalize path: {e}");
             return false;
         }
     };

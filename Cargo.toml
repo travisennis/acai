@@ -6,24 +6,24 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.86"
-async-trait = "0.1.81"
+anyhow = "1.0.102"
+async-trait = "0.1.89"
 atty = "0.2.14"
-clap = { version = "4.5.15", features = ["derive"] }
-dashmap = "6.0.1"
-dirs = "5.0"
-glob = "0.3.1"
-handlebars = "5.1.2"
+clap = { version = "4.5.60", features = ["derive"] }
+dashmap = "6.1.0"
+dirs = "6.0"
+glob = "0.3.3"
+handlebars = "6.4.0"
 ignore = "0.4"
-log = "0.4.22"
-log4rs = "1.3.0"
-once_cell = "1.19.0"
-regex = "1.10.6"
-reqwest = { version = "0.12.5", features = ["json"] }
-serde = { version = "1.0.207", features = ["derive"] }
-serde_json = "1.0.124"
-similar = "2.6.0"
-termtree = "0.5.1"
-text-splitter = "0.14"
-thiserror = "1.0.63"
-tokio = { version = "1.39.2", features = ["full"] }
+log = "0.4.29"
+log4rs = "1.4.0"
+once_cell = "1.21.3"
+regex = "1.12.3"
+reqwest = { version = "0.13.2", features = ["json"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+similar = "2.7.0"
+termtree = "1.0.0"
+text-splitter = "0.29"
+thiserror = "2.0.18"
+tokio = { version = "1.49.0", features = ["full"] }

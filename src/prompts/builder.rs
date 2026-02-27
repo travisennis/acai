@@ -19,7 +19,7 @@ pub struct Builder<'a> {
 }
 
 impl Builder<'_> {
-    pub fn new(path: &Option<PathBuf>) -> anyhow::Result<Self> {
+    pub fn new(path: Option<&PathBuf>) -> anyhow::Result<Self> {
         let template = get_template(path)?;
 
         let mut reg = Handlebars::new();
@@ -96,7 +96,7 @@ File: {{path}}
 {{/if}}
 "#;
 
-fn get_template(path: &Option<PathBuf>) -> anyhow::Result<(String, String)> {
+fn get_template(path: Option<&PathBuf>) -> anyhow::Result<(String, String)> {
     if let Some(template_path) = path {
         let content = std::fs::read_to_string(template_path)?;
         Ok((content, "custom".to_string()))

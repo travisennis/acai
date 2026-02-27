@@ -209,8 +209,8 @@ impl ChatCompletion {
         let req = match &self.provider {
             Provider::Anthropic => req_base
                 .header("anthropic-version", "2023-06-01")
-                .header("x-api-key", self.token.to_string()),
-            Provider::OpenAI | Provider::Mistral => req_base.bearer_auth(self.token.to_string()),
+                .header("x-api-key", self.token.clone()),
+            Provider::OpenAI | Provider::Mistral => req_base.bearer_auth(self.token.clone()),
             Provider::Google | Provider::Ollama => req_base,
         };
 
@@ -257,7 +257,7 @@ impl ChatCompletion {
             Provider::Anthropic | Provider::Google => {
                 let mut result = vec![Message {
                     role: Role::System,
-                    content: self.system.to_string(),
+                    content: self.system.clone(),
                 }];
                 result.append(&mut msgs);
                 result

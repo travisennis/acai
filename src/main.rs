@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             data_dir.clone().get_cache_dir().display()
         ),
         Err(e) => panic!("data dir could not be set: {e:?}"),
-    };
+    }
 
     let _ = logger::configure(&data_dir.get_cache_dir());
 
@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     match args.cmd {
         CodingAssistantCmd::Instruct(instruct_cmd) => instruct_cmd.run().await?,
-    };
+    }
 
     Ok(())
 }

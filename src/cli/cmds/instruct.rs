@@ -61,16 +61,13 @@ impl CmdRunner for Cmd {
             if atty::is(atty::Stream::Stdin) {
                 None
             } else {
-                match std::io::read_to_string(std::io::stdin()) {
-                    Ok(result) => Some(result),
-                    Err(_error) => None,
-                }
+                std::io::read_to_string(std::io::stdin()).ok()
             }
         };
 
         // Parse Patterns
-        let include_patterns = parse_patterns(&self.include);
-        let exclude_patterns = parse_patterns(&self.exclude);
+        let include_patterns = parse_patterns(self.include.as_ref());
+        let exclude_patterns = parse_patterns(self.exclude.as_ref());
 
         let content_blocks = self.path.as_ref().and_then(|path| {
             let file_objects = get_file_info(path.as_path(), &include_patterns, &exclude_patterns);
@@ -78,16 +75,16 @@ impl CmdRunner for Cmd {
             file_objects.map_or(None, |files| Some(get_content_blocks(&files)))
         });
 
-        let mut prompt_builder = crate::prompts::Builder::new(&self.template)?;
+        let mut prompt_builder = crate::prompts::Builder::new(self.template.as_ref())?;
 
         if let Some(files) = &content_blocks {
             prompt_builder.add_vec_variable("files".to_string(), files);
         }
         if let Some(prompt) = &self.prompt {
-            prompt_builder.add_variable("prompt".to_string(), prompt.to_string());
+            prompt_builder.add_variable("prompt".to_string(), prompt.clone());
         }
         if let Some(context) = &context {
-            prompt_builder.add_variable("context".to_string(), context.to_string());
+            prompt_builder.add_variable("context".to_string(), context.clone());
         }
 
         let model_provider = ModelConfig::get_or_default(

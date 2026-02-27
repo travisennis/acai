@@ -38,7 +38,7 @@ impl IntoMessage for Response {
         if let Some(content) = self.content.first() {
             let msg = Message {
                 role: self.role,
-                content: content.text.to_string(),
+                content: content.text.clone(),
             };
             return Some(msg);
         }
