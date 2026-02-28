@@ -8,6 +8,38 @@ use crate::models::{Message, Role};
 const BASE_URL: &str = "https://openrouter.ai/api/v1/responses";
 
 // =============================================================================
+// Conversation Item Enum (for Responses API input/output)
+// =============================================================================
+
+/// Represents a single item in the conversation history, mapping directly to
+/// the Responses API input/output array format.
+#[derive(Debug, Clone)]
+enum ConversationItem {
+    Message {
+        role: Role,
+        content: String,
+        /// Assistant message ID (required for assistant messages in input)
+        id: Option<String>,
+        /// "completed" or "incomplete" (required for assistant messages in input)
+        status: Option<String>,
+    },
+    FunctionCall {
+        id: String,
+        call_id: String,
+        name: String,
+        arguments: String,
+    },
+    FunctionCallOutput {
+        call_id: String,
+        output: String,
+    },
+    Reasoning {
+        id: String,
+        summary: Vec<String>,
+    },
+}
+
+// =============================================================================
 // Tool Types
 // =============================================================================
 
@@ -20,21 +52,6 @@ pub(crate) struct Tool {
     description: String,
     parameters: serde_json::Value,
 }
-
-
-
-/// Function call output from API response
-#[derive(Deserialize, Debug, Clone)]
-struct FunctionCall {
-    #[serde(rename = "type")]
-    _msg_type: String,
-    _id: String,
-    #[serde(rename = "call_id")]
-    call_id: String,
-    name: String,
-    arguments: String,
-}
-
 
 
 // =============================================================================
@@ -137,12 +154,11 @@ pub struct Responses {
     max_output_tokens: Option<u32>,
     #[allow(dead_code)]
     system: String,
-    messages: Vec<Message>,
+    /// Conversation history using typed items (Responses API format)
+    history: Vec<ConversationItem>,
     #[allow(dead_code)]
     stream: bool,
     tools: Vec<Tool>,
-    /// Pending tool calls from the last assistant response
-    pending_tool_calls: Vec<FunctionCall>,
 }
 
 impl Responses {
@@ -157,13 +173,14 @@ impl Responses {
             top_p: None,
             max_output_tokens: None,
             system: system_prompt.to_string(),
-            messages: vec![Message {
+            history: vec![ConversationItem::Message {
                 role: Role::System,
                 content: system_prompt.to_string(),
+                id: None,
+                status: None,
             }],
             stream: false,
             tools: vec![shell_tool()],
-            pending_tool_calls: vec![],
         }
     }
 
@@ -206,14 +223,21 @@ impl Responses {
         &mut self,
         message: Message,
     ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
-        self.messages.push(message);
+        // Add user message to history
+        self.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: message.content,
+            id: None,
+            status: None,
+        });
+
         let client = reqwest::Client::new();
 
         // Agent loop: continue until model stops making tool calls
         loop {
             let prompt = Request {
                 model: self.model.clone(),
-                input: build_input(&self.messages, &self.pending_tool_calls),
+                input: build_input(&self.history),
                 temperature: self.temperature,
                 top_p: self.top_p,
                 max_output_tokens: self.max_output_tokens,
@@ -237,48 +261,45 @@ impl Responses {
                 let api_response = response.json::<ApiResponse>().await?;
                 debug!(target: "acai", "{:?}", api_response);
 
-                // Check for function calls
-                let function_calls = parse_function_calls(api_response.output.clone());
+                // Parse ALL output items (reasoning, function_calls, messages)
+                let items = parse_output_items(&api_response);
+
+                // Add all output items to history
+                self.history.extend(items.clone());
+
+                // Collect function calls from the items
+                let function_calls: Vec<_> = items.iter()
+                    .filter_map(|item| {
+                        if let ConversationItem::FunctionCall { id, call_id, name, arguments } = item {
+                            Some((id.clone(), call_id.clone(), name.clone(), arguments.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
 
                 if function_calls.is_empty() {
-                    // No tool calls, we're done - return the assistant message
-                    let message = parse_response(api_response);
-
-                    if let Some(ref msg) = message {
-                        self.messages.push(msg.clone());
-                    }
-
-                    return Ok(message);
+                    // No tool calls, we're done - extract assistant message text
+                    let msg = items.iter().find_map(|item| {
+                        if let ConversationItem::Message { role: Role::Assistant, content, .. } = item {
+                            Some(Message { role: Role::Assistant, content: content.clone() })
+                        } else {
+                            None
+                        }
+                    });
+                    return Ok(msg);
                 }
 
-                // Store tool calls for next request
-                self.pending_tool_calls = function_calls.clone();
-
-                // Add assistant message with tool_calls to history
-                // Use empty content - tool_calls will be sent separately
-                self.messages.push(Message {
-                    role: Role::Assistant,
-                    content: String::new(),
-                });
-
-                // Execute each tool call and store results (NOT as messages)
-                for call in &function_calls {
-                    // Execute the tool
-                    let result = execute_tool(&call.name, &call.arguments);
-
-                    let tool_result = match result {
+                // Execute each tool call and add function_call_output to history
+                for (_id, call_id, name, arguments) in &function_calls {
+                    let tool_result = match execute_tool(name, arguments) {
                         Ok(r) => r.output,
                         Err(e) => format!("Error: {}", e),
                     };
 
-                    // The function_call_output approach is rejected by OpenAI's API.
-                    // Use user message workaround with structured content
-                    self.messages.push(Message {
-                        role: Role::User,
-                        content: format!(
-                            "[Tool Result for call_id: {}]\nOutput: {}",
-                            call.call_id, tool_result
-                        ),
+                    self.history.push(ConversationItem::FunctionCallOutput {
+                        call_id: call_id.clone(),
+                        output: tool_result,
                     });
                 }
 
@@ -303,149 +324,133 @@ impl Responses {
     }
 
     pub fn get_message_history(&self) -> Vec<Message> {
-        self.messages.clone()
+        // Only return user/assistant/system messages for backward compatibility
+        self.history.iter().filter_map(|item| {
+            match item {
+                ConversationItem::Message { role, content, .. } => {
+                    // Skip Tool role if it exists (shouldn't in our case)
+                    Some(Message {
+                        role: role.clone(),
+                        content: content.clone(),
+                    })
+                }
+                _ => None,
+            }
+        }).collect()
     }
 }
 
-fn build_input(messages: &[Message], tool_calls: &[FunctionCall]) -> Vec<serde_json::Value> {
-    let mut inputs = Vec::new();
-    let mut last_assistant_idx: Option<usize> = None;
-    
-    // First, find the last assistant message (which should have tool_calls_summary)
-    for (i, msg) in messages.iter().enumerate() {
-        if msg.role == Role::Assistant {
-            last_assistant_idx = Some(i);
-        }
-    }
+/// Build the input array for the Responses API from conversation history
+fn build_input(history: &[ConversationItem]) -> Vec<serde_json::Value> {
+    history.iter().map(|item| {
+        match item {
+            ConversationItem::Message { role, content, id, status } => {
+                let use_output_format = matches!(role, Role::Assistant);
 
-    for (i, msg) in messages.iter().enumerate() {
-        // Skip tool role messages - they're handled separately as function_call_output
-        if msg.role == Role::Tool {
-            continue;
-        }
-
-        match msg.role {
-            Role::Tool => {
-                // Tool results are now sent as user messages, so this shouldn't happen
-                // But handle it just in case
-                continue;
-            }
-            Role::Assistant => {
-                // If this is the last assistant message and we have tool_calls, include them
-                let is_last_assistant = last_assistant_idx == Some(i);
-                
-                if is_last_assistant && !tool_calls.is_empty() {
-                    // Assistant message with tool_calls
-                    let tool_calls_json: Vec<serde_json::Value> = tool_calls
-                        .iter()
-                        .map(|tc| {
-                            serde_json::json!({
-                                "id": tc.call_id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.name,
-                                    "arguments": tc.arguments
-                                }
-                            })
-                        })
-                        .collect();
-
-                    // Assistant message with tool_calls - always include content field (even if empty)
-                    // This is required by the API
-                    if msg.content.is_empty() {
-                        inputs.push(serde_json::json!({
-                            "type": "message",
-                            "role": "assistant",
-                            "content": "",
-                            "tool_calls": tool_calls_json
-                        }));
-                    } else {
-                        inputs.push(serde_json::json!({
-                            "type": "message",
-                            "role": "assistant",
-                            "content": [{
-                                "type": "input_text",
-                                "text": msg.content.clone()
-                            }],
-                            "tool_calls": tool_calls_json
-                        }));
-                    }
-                } else {
-                    // Regular assistant message
-                    inputs.push(serde_json::json!({
-                        "type": "message",
-                        "role": "assistant",
-                        "content": [{
-                            "type": "input_text",
-                            "text": msg.content.clone()
-                        }]
-                    }));
-                }
-            }
-            _ => {
-                // System or User messages
-                inputs.push(serde_json::json!({
+                let mut msg = serde_json::json!({
                     "type": "message",
-                    "role": match msg.role {
+                    "role": match role {
                         Role::System => "system",
                         Role::User => "user",
-                        _ => "assistant",
+                        Role::Assistant => "assistant",
+                        _ => "user",
                     },
-                    "content": [{
+                });
+
+                // Content format depends on role
+                if use_output_format {
+                    msg["content"] = serde_json::json!([{
+                        "type": "output_text",
+                        "text": content,
+                        "annotations": []
+                    }]);
+                } else {
+                    msg["content"] = serde_json::json!([{
                         "type": "input_text",
-                        "text": msg.content.clone()
-                    }]
-                }));
+                        "text": content
+                    }]);
+                }
+
+                // Include id and status for assistant messages
+                if let Some(id) = id {
+                    msg["id"] = serde_json::json!(id);
+                }
+                if let Some(status) = status {
+                    msg["status"] = serde_json::json!(status);
+                }
+
+                msg
+            }
+            ConversationItem::FunctionCall { id, call_id, name, arguments } => {
+                serde_json::json!({
+                    "type": "function_call",
+                    "id": id,
+                    "call_id": call_id,
+                    "name": name,
+                    "arguments": arguments
+                })
+            }
+            ConversationItem::FunctionCallOutput { call_id, output } => {
+                serde_json::json!({
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": output
+                })
+            }
+            ConversationItem::Reasoning { id, summary } => {
+                serde_json::json!({
+                    "type": "reasoning",
+                    "id": id,
+                    "summary": summary.iter().map(|s| {
+                        serde_json::json!({"type": "summary_text", "text": s})
+                    }).collect::<Vec<_>>()
+                })
             }
         }
-    }
-
-    // Note: Tool results are now sent as user messages instead of function_call_output
-    // because OpenAI's API rejects function_call_output with the error:
-    // "messages with role 'tool' must be a response to a preceding message with 'tool_calls'"
-    // The workaround is to include the tool result as a user message with structured content.
-
-    inputs
+    }).collect()
 }
 
-fn parse_function_calls(output: Vec<OutputMessage>) -> Vec<FunctionCall> {
-    output
-        .into_iter()
-        .filter(|o| o.msg_type == "function_call")
-        .map(|o| FunctionCall {
-            _msg_type: o.msg_type,
-            _id: o.id.unwrap_or_default(),
-            call_id: o.call_id.unwrap_or_default(),
-            name: o.name.unwrap_or_default(),
-            arguments: o.arguments.unwrap_or_default(),
-        })
-        .collect()
-}
-
-fn parse_response(api_response: ApiResponse) -> Option<Message> {
-    // Find the message output (skip reasoning blocks)
-    // Note: When there are function calls, there might still be a message output
-    // but it may not have content (the function call is the main output)
-    let output = api_response.output.into_iter().find(|o| o.msg_type == "message")?;
-
-    // Check if there's content - when there are function calls, the message might not have content
-    let content_vec = match output.content {
-        Some(c) => c,
-        None => return None, // No content when there are function calls
-    };
-    let content = match content_vec.into_iter().next() {
-        Some(c) => c,
-        None => return None, // Empty content
-    };
-
-    if content.content_type == "output_text" {
-        Some(Message {
-            role: Role::Assistant,
-            content: content.text.unwrap_or_default(),
-        })
-    } else {
-        None
+/// Parse all output items from API response into ConversationItems
+fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
+    let mut items = Vec::new();
+    
+    for output in &api_response.output {
+        match output.msg_type.as_str() {
+            "reasoning" => {
+                if let (Some(id), Some(summary)) = (&output.id, &output.summary) {
+                    items.push(ConversationItem::Reasoning {
+                        id: id.clone(),
+                        summary: summary.iter().map(|s| s.text.clone()).collect(),
+                    });
+                }
+            }
+            "function_call" => {
+                items.push(ConversationItem::FunctionCall {
+                    id: output.id.clone().unwrap_or_default(),
+                    call_id: output.call_id.clone().unwrap_or_default(),
+                    name: output.name.clone().unwrap_or_default(),
+                    arguments: output.arguments.clone().unwrap_or_default(),
+                });
+            }
+            "message" => {
+                // Extract text content
+                let text = output.content.as_ref()
+                    .and_then(|c| c.iter().find(|item| item.content_type == "output_text"))
+                    .and_then(|item| item.text.clone())
+                    .unwrap_or_default();
+                
+                items.push(ConversationItem::Message {
+                    role: Role::Assistant,
+                    content: text,
+                    id: output.id.clone(),
+                    status: output.status.clone(),
+                });
+            }
+            _ => {} // ignore unknown types
+        }
     }
+    
+    items
 }
 
 #[derive(Serialize)]
@@ -476,7 +481,6 @@ struct ApiResponse {
 struct OutputMessage {
     #[serde(rename = "type")]
     msg_type: String,
-    #[allow(dead_code)]
     id: Option<String>,
     #[serde(rename = "call_id")]
     call_id: Option<String>,
@@ -484,9 +488,19 @@ struct OutputMessage {
     arguments: Option<String>,
     #[allow(dead_code)]
     role: Option<String>,
-    #[allow(dead_code)]
     status: Option<String>,
     content: Option<Vec<OutputContent>>,
+    /// Reasoning summary from reasoning blocks
+    summary: Option<Vec<SummaryItem>>,
+}
+
+/// Summary item within reasoning blocks
+#[derive(Deserialize, Debug, Clone)]
+struct SummaryItem {
+    #[serde(rename = "type")]
+    #[allow(dead_code)]
+    summary_type: String,
+    text: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
