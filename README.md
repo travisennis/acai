@@ -5,9 +5,8 @@ Acai is an AI-powered coding assistant that integrates with your development wor
 ## Features
 
 - Send instructions to AI for code generation or documentation
-- Codebase analysis with file filtering
-- Support for multiple AI providers (OpenAI, Anthropic, Mistral, Google, Ollama)
-- Customizable prompts and templates
+- Uses OpenRouter's Responses API for multi-provider access
+- Default model: MiniMax MiniMax-M2.5
 
 ## Installation
 
@@ -36,50 +35,34 @@ Generate code or documentation based on instructions:
 # Basic usage with a prompt
 acai instruct --prompt "Implement a binary search tree in Rust"
 
-# With a codebase path for context
-acai instruct --path /path/to/your/codebase --prompt "Add unit tests for the auth module"
-
-# With specific file patterns
-acai instruct --path /path/to/your/codebase --include "**/*.rs" --exclude "target/**" --prompt "Review this code"
-
 # Using a specific model
-acai instruct --model openai/gpt-4o --prompt "Write a hello world program"
+acai instruct --model anthropic/sonnet-3-5 --prompt "Write a hello world program"
 
-# With custom template
-acai instruct --template /path/to/template.hbs --prompt "Your prompt here"
+# With temperature
+acai instruct --model openai/gpt-4o --temperature 0.7 --prompt "Your prompt here"
 ```
 
 ## Configuration
 
-Acai uses environment variables for API keys:
+Acai uses OpenRouter for AI access. Set your API key as an environment variable:
 
-- `OPENAI_API_KEY`: For OpenAI models
-- `ANTHROPIC_API_KEY`: For Anthropic models
-- `MISTRAL_API_KEY`: For Mistral models
-- `GOOGLE_GENERATIVE_AI_API_KEY`: For Google models
+- `OPENROUTER_API_KEY`: Your OpenRouter API key
 
-You can also customize the behavior using command-line options:
-
-```bash
-acai instruct --help
-```
+Get your free API key at [openrouter.ai](https://openrouter.ai).
 
 ### Options
 
-- `--model` - Set the model to use (e.g., `anthropic/sonnet`, `openai/gpt-4o`)
+- `--model` - Set the model to use (default: `minimax/minimax-m2.5`)
 - `--temperature` - Set the temperature (0.0 to 1.0)
 - `--max-tokens` - Set maximum tokens in response
 - `--top-p` - Set top-p value
-- `--path` - Path to codebase directory
-- `--include` - File patterns to include (comma-separated)
-- `--exclude` - File patterns to exclude (comma-separated)
-- `--template` - Path to Handlebars template
-- `--prompt` ( `-p`) - Your instruction prompt
+- `--prompt` (`-p`) - Your instruction prompt
 
 ### Example
 
 ```bash
-acai instruct --model anthropic/sonnet --temperature 0.7 --path ./src --prompt "Explain what this code does"
+export OPENROUTER_API_KEY=your_api_key_here
+acai instruct --model anthropic/sonnet-3-5 --temperature 0.7 --prompt "Explain what this code does"
 ```
 
 ## Contributing
@@ -116,5 +99,5 @@ Acai is licensed under the MIT License. See the [LICENSE](LICENSE) file for deta
 Acai uses several open-source libraries and AI models. We're grateful to the developers and organizations behind these technologies:
 
 - Rust and the Rust community for providing excellent tools and libraries that make projects like this possible.
-- OpenAI, Anthropic, Mistral, and Google for their AI models.
+- OpenRouter for providing unified access to multiple AI providers.
 - The developers of crates used in this project (tokio, clap, reqwest, and others). Please see the `Cargo.toml` file for a full list of dependencies.
