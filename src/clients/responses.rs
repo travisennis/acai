@@ -13,7 +13,7 @@ const BASE_URL: &str = "https://openrouter.ai/api/v1/responses";
 
 /// Tool definition sent in API requests
 #[derive(Serialize, Clone, Debug)]
-struct Tool {
+pub(crate) struct Tool {
     #[serde(rename = "type")]
     tool_type: String,
     name: String,
@@ -21,42 +21,21 @@ struct Tool {
     parameters: serde_json::Value,
 }
 
-/// Tool choice configuration
-#[derive(Serialize, Clone, Debug)]
-struct ToolChoice {
-    #[serde(rename = "type")]
-    tool_type: String,
-    name: String,
-}
+
 
 /// Function call output from API response
 #[derive(Deserialize, Debug, Clone)]
 struct FunctionCall {
     #[serde(rename = "type")]
-    msg_type: String,
-    id: String,
+    _msg_type: String,
+    _id: String,
     #[serde(rename = "call_id")]
     call_id: String,
     name: String,
     arguments: String,
 }
 
-/// Tool output to include in conversation
-#[derive(Serialize, Clone)]
-struct FunctionCallOutput {
-    #[serde(rename = "type")]
-    msg_type: String,
-    #[serde(rename = "call_id")]
-    call_id: String,
-    output: String,
-}
 
-/// Tool output result (stored separately from messages)
-#[derive(Clone, Debug)]
-struct ToolOutput {
-    call_id: String,
-    output: String,
-}
 
 // =============================================================================
 // Shell Tool Definition
@@ -94,6 +73,7 @@ fn shell_tool() -> Tool {
 /// Result of executing a tool
 #[derive(Debug)]
 pub struct ToolResult {
+    #[allow(dead_code)]
     pub call_id: String,
     pub output: String,
 }
@@ -110,11 +90,14 @@ fn execute_shell(arguments: &str) -> Result<ToolResult, String> {
     #[derive(Deserialize)]
     struct ShellArgs {
         command: String,
+        #[allow(dead_code)]
         timeout: Option<u64>,
     }
 
     let args: ShellArgs = serde_json::from_str(arguments)
         .map_err(|e| format!("Invalid shell arguments: {}", e))?;
+
+    let _timeout = args.timeout;
 
     let output = std::process::Command::new("bash")
         .arg("-c")
@@ -152,14 +135,14 @@ pub struct Responses {
     temperature: Option<f32>,
     top_p: Option<f32>,
     max_output_tokens: Option<u32>,
+    #[allow(dead_code)]
     system: String,
     messages: Vec<Message>,
+    #[allow(dead_code)]
     stream: bool,
     tools: Vec<Tool>,
     /// Pending tool calls from the last assistant response
     pending_tool_calls: Vec<FunctionCall>,
-    /// Pending tool outputs to send in next request
-    pending_tool_outputs: Vec<ToolOutput>,
 }
 
 impl Responses {
@@ -181,11 +164,11 @@ impl Responses {
             stream: false,
             tools: vec![shell_tool()],
             pending_tool_calls: vec![],
-            pending_tool_outputs: vec![],
         }
     }
 
     /// Add custom tools or override defaults
+    #[allow(dead_code)]
     pub fn with_tools(mut self, tools: Vec<Tool>) -> Self {
         self.tools = tools;
         self
@@ -212,11 +195,13 @@ impl Responses {
         self
     }
 
+    #[allow(dead_code)]
     pub fn stream(mut self, stream: bool) -> Self {
         self.stream = stream;
         self
     }
 
+    #[allow(dead_code)]
     pub async fn send(
         &mut self,
         message: Message,
@@ -275,9 +260,6 @@ impl Responses {
                     role: Role::Assistant,
                     content: String::new(),
                 });
-
-                // Clear previous tool outputs and add new ones
-                self.pending_tool_outputs.clear();
 
                 // Execute each tool call and store results (NOT as messages)
                 for call in &function_calls {
@@ -426,42 +408,13 @@ fn build_input(messages: &[Message], tool_calls: &[FunctionCall]) -> Vec<serde_j
     inputs
 }
 
-fn extract_call_id_and_output(content: &str) -> (String, String) {
-    // Content format: "call_id: xxx\noutput: yyy"
-    let mut call_id = String::new();
-    let mut output = String::new();
-
-    for line in content.split('\n') {
-        if line.starts_with("call_id: ") {
-            call_id = line[9..].to_string();
-        } else if line.starts_with("output: ") {
-            output = line[8..].to_string();
-        }
-    }
-
-    (call_id, output)
-}
-
-fn extract_call_id(content: &str) -> String {
-    // Extract call_id from content like "[Tool Call: shell id=xxx call_id=yyy]\nArguments: ..."
-    if let Some(start) = content.find("call_id=") {
-        let rest = &content[start + 8..];
-        if let Some(end) = rest.find(|c: char| !c.is_alphanumeric() && c != '-') {
-            return rest[..end].to_string();
-        }
-        return rest.to_string();
-    }
-    // If no call_id found, return empty string (API might reject this)
-    "".to_string()
-}
-
 fn parse_function_calls(output: Vec<OutputMessage>) -> Vec<FunctionCall> {
     output
         .into_iter()
         .filter(|o| o.msg_type == "function_call")
         .map(|o| FunctionCall {
-            msg_type: o.msg_type,
-            id: o.id.unwrap_or_default(),
+            _msg_type: o.msg_type,
+            _id: o.id.unwrap_or_default(),
             call_id: o.call_id.unwrap_or_default(),
             name: o.name.unwrap_or_default(),
             arguments: o.arguments.unwrap_or_default(),
@@ -506,27 +459,16 @@ struct Request {
     tool_choice: Option<String>,
 }
 
-#[derive(Serialize)]
-struct InputMessage {
-    #[serde(rename = "type")]
-    msg_type: String,
-    role: String,
-    content: Vec<ContentBlock>,
-}
-
-#[derive(Serialize)]
-struct ContentBlock {
-    #[serde(rename = "type")]
-    content_type: String,
-    text: String,
-}
-
 #[derive(Deserialize, Debug)]
 struct ApiResponse {
+    #[allow(dead_code)]
     id: Option<String>,
     output: Vec<OutputMessage>,
+    #[allow(dead_code)]
     usage: Option<Usage>,
+    #[allow(dead_code)]
     status: Option<String>,
+    #[allow(dead_code)]
     error: Option<ApiError>,
 }
 
@@ -534,12 +476,15 @@ struct ApiResponse {
 struct OutputMessage {
     #[serde(rename = "type")]
     msg_type: String,
+    #[allow(dead_code)]
     id: Option<String>,
     #[serde(rename = "call_id")]
     call_id: Option<String>,
     name: Option<String>,
     arguments: Option<String>,
+    #[allow(dead_code)]
     role: Option<String>,
+    #[allow(dead_code)]
     status: Option<String>,
     content: Option<Vec<OutputContent>>,
 }
@@ -554,16 +499,22 @@ struct OutputContent {
 #[derive(Deserialize, Debug)]
 struct Usage {
     #[serde(rename = "input_tokens")]
+    #[allow(dead_code)]
     input_tokens: Option<u32>,
     #[serde(rename = "output_tokens")]
+    #[allow(dead_code)]
     output_tokens: Option<u32>,
     #[serde(rename = "total_tokens")]
+    #[allow(dead_code)]
     total_tokens: Option<u32>,
 }
 
 #[derive(Deserialize, Debug)]
 struct ApiError {
+    #[allow(dead_code)]
     code: Option<String>,
+    #[allow(dead_code)]
     message: String,
+    #[allow(dead_code)]
     metadata: Option<serde_json::Value>,
 }

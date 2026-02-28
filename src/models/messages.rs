@@ -15,6 +15,7 @@ pub struct Message {
 }
 
 /// Define a trait named `IntoMessage`.
+#[allow(dead_code)]
 pub trait IntoMessage {
     /// Define a method `into_message` that returns an optional `Message`.
     fn into_message(self) -> Option<Message>;
