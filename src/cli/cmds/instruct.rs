@@ -33,7 +33,7 @@ pub struct Cmd {
     prompt: Option<String>,
 }
 
-const SYSTEM_PROMPT: &str = "You are acai, an AI coding assistant. You specialize in helping software developers with the tasks that help them write better software. Pay close attention to the instructions given to you by the user and always follow those instructions. Return your reponse as markdown unless the user indicates a different return format. It is very important that you format your response according to the user instructions as that formatting will be used to accomplish specific tasks.";
+const SYSTEM_PROMPT: &str = "You are a helpful AI CLI assistant that runs on the user's computer and follows their instructions.";
 
 impl CmdRunner for Cmd {
     async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
