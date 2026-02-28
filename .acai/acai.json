@@ -1,0 +1,26 @@
+{
+	"loop": {
+		"maxIterations": 200
+	},
+	"logs": {
+		"path": "~/.cache/acai/acai.log"
+	},
+	"tools": {
+		"maxTokens": 30000,
+		"maxResults": 30,
+		"dynamicTools": {
+			"enabled": true,
+			"maxTools": 10
+		}
+	},
+	"notify": true,
+	"readOnlyFiles": [],
+	"skills": {
+		"enabled": true
+	},
+	"devtools": {
+		"enabled": false
+	},
+	"autoGenerateRules": false,
+	"env": {}
+}
