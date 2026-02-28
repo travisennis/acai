@@ -13,8 +13,8 @@ const BASE_URL: &str = "https://openrouter.ai/api/v1/responses";
 
 /// Represents a single item in the conversation history, mapping directly to
 /// the Responses API input/output array format.
-#[derive(Debug, Clone)]
-enum ConversationItem {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ConversationItem {
     Message {
         role: Role,
         content: String,
@@ -323,20 +323,8 @@ impl Responses {
         }
     }
 
-    pub fn get_message_history(&self) -> Vec<Message> {
-        // Only return user/assistant/system messages for backward compatibility
-        self.history.iter().filter_map(|item| {
-            match item {
-                ConversationItem::Message { role, content, .. } => {
-                    // Skip Tool role if it exists (shouldn't in our case)
-                    Some(Message {
-                        role: role.clone(),
-                        content: content.clone(),
-                    })
-                }
-                _ => None,
-            }
-        }).collect()
+    pub fn get_message_history(&self) -> Vec<ConversationItem> {
+        self.history.clone()
     }
 }
 
@@ -417,10 +405,15 @@ fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
     for output in &api_response.output {
         match output.msg_type.as_str() {
             "reasoning" => {
-                if let (Some(id), Some(summary)) = (&output.id, &output.summary) {
+                // Extract reasoning text from content (content_type: "reasoning_text")
+                let reasoning_text = output.content.as_ref()
+                    .and_then(|c| c.iter().find(|item| item.content_type == "reasoning_text"))
+                    .and_then(|item| item.text.clone());
+
+                if let (Some(id), Some(text)) = (&output.id, reasoning_text) {
                     items.push(ConversationItem::Reasoning {
                         id: id.clone(),
-                        summary: summary.iter().map(|s| s.text.clone()).collect(),
+                        summary: vec![text],
                     });
                 }
             }
@@ -490,17 +483,6 @@ struct OutputMessage {
     role: Option<String>,
     status: Option<String>,
     content: Option<Vec<OutputContent>>,
-    /// Reasoning summary from reasoning blocks
-    summary: Option<Vec<SummaryItem>>,
-}
-
-/// Summary item within reasoning blocks
-#[derive(Deserialize, Debug, Clone)]
-struct SummaryItem {
-    #[serde(rename = "type")]
-    #[allow(dead_code)]
-    summary_type: String,
-    text: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
