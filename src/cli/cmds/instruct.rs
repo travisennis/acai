@@ -31,6 +31,10 @@ pub struct Cmd {
     /// Sets the prompt
     #[arg(short, long)]
     prompt: Option<String>,
+
+    /// Stream each message as JSON as it's received
+    #[arg(long)]
+    pub streaming_json: bool,
 }
 
 const SYSTEM_PROMPT: &str = "You are a helpful AI CLI assistant that runs on the user's computer and follows their instructions.";
@@ -38,16 +42,24 @@ const SYSTEM_PROMPT: &str = "You are a helpful AI CLI assistant that runs on the
 impl CmdRunner for Cmd {
     async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Only read from stdin if a prompt is not provided
-        let input_context: Option<String> = if self.prompt.is_some() || atty::is(atty::Stream::Stdin) {
-            None
-        } else {
-            std::io::read_to_string(std::io::stdin()).ok()
-        };
+        let input_context: Option<String> =
+            if self.prompt.is_some() || atty::is(atty::Stream::Stdin) {
+                None
+            } else {
+                std::io::read_to_string(std::io::stdin()).ok()
+            };
 
         let mut client = Responses::new(self.model.clone(), SYSTEM_PROMPT)
             .temperature(self.temperature)
             .top_p(self.top_p)
             .max_output_tokens(self.max_tokens);
+
+        // Enable streaming JSON output if flag is set
+        if self.streaming_json {
+            client = client.with_streaming_json(|json| {
+                println!("{json}");
+            });
+        }
 
         // Build content from prompt and optional stdin context
         let content = match (&self.prompt, &input_context) {
@@ -66,10 +78,14 @@ impl CmdRunner for Cmd {
 
         DataDir::global().save_messages(&client.get_message_history());
 
-        if let Some(response_msg) = response {
-            println!("{}", response_msg.content);
-        } else {
-            eprintln!("{response:?}");
+        // Only print final response if NOT using streaming-json mode
+        // (streaming mode already prints each message as JSON)
+        if !self.streaming_json {
+            if let Some(response_msg) = response {
+                println!("{}", response_msg.content);
+            } else {
+                eprintln!("{response:?}");
+            }
         }
 
         Ok(())

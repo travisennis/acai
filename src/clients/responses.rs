@@ -55,7 +55,6 @@ pub struct Tool {
     parameters: serde_json::Value,
 }
 
-
 // =============================================================================
 // Shell Tool Definition
 // =============================================================================
@@ -67,7 +66,8 @@ fn shell_tool() -> Tool {
         name: "shell".to_string(),
         description: "Execute a shell command in the host machine's terminal. \
             Returns the stdout/stderr output. Use for running build commands, \
-            git operations, file manipulation, etc. Does not support interactive commands.".to_string(),
+            git operations, file manipulation, etc. Does not support interactive commands."
+            .to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -112,8 +112,8 @@ async fn execute_shell(arguments: &str) -> Result<ToolResult, String> {
         timeout: Option<u64>,
     }
 
-    let args: ShellArgs = serde_json::from_str(arguments)
-        .map_err(|e| format!("Invalid shell arguments: {e}"))?;
+    let args: ShellArgs =
+        serde_json::from_str(arguments).map_err(|e| format!("Invalid shell arguments: {e}"))?;
 
     // Use default timeout of 60 seconds if not specified
     let timeout_secs = args.timeout.unwrap_or(60);
@@ -172,6 +172,9 @@ pub struct Responses {
     #[allow(dead_code)]
     stream: bool,
     tools: Vec<Tool>,
+    /// Callback for streaming JSON output
+    #[allow(clippy::type_complexity)]
+    streaming_callback: Option<Box<dyn Fn(&str) + Send + Sync>>,
 }
 
 impl Responses {
@@ -194,6 +197,7 @@ impl Responses {
             }],
             stream: false,
             tools: vec![shell_tool()],
+            streaming_callback: None,
         }
     }
 
@@ -201,6 +205,12 @@ impl Responses {
     #[allow(dead_code)]
     pub fn with_tools(mut self, tools: Vec<Tool>) -> Self {
         self.tools = tools;
+        self
+    }
+
+    /// Enable streaming JSON output - callback receives JSON string for each message
+    pub fn with_streaming_json(mut self, callback: impl Fn(&str) + Send + Sync + 'static) -> Self {
+        self.streaming_callback = Some(Box::new(callback));
         self
     }
 
@@ -240,13 +250,42 @@ impl Responses {
         &mut self,
         message: Message,
     ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
+        // Stream system message if not already done
+        if let Some(ref callback) = self.streaming_callback {
+            if let Some(system_item) = self.history.first() {
+                if let ConversationItem::Message { role: Role::System, content, .. } = system_item {
+                    let json = serde_json::json!({
+                        "type": "message",
+                        "role": "system",
+                        "content": content
+                    });
+                    if let Ok(json_str) = serde_json::to_string(&json) {
+                        callback(&json_str);
+                    }
+                }
+            }
+        }
+
         // Add user message to history
+        let user_content = message.content.clone();
         self.history.push(ConversationItem::Message {
             role: Role::User,
-            content: message.content,
+            content: user_content.clone(),
             id: None,
             status: None,
         });
+
+        // Stream user message
+        if let Some(ref callback) = self.streaming_callback {
+            let json = serde_json::json!({
+                "type": "message",
+                "role": "user",
+                "content": user_content
+            });
+            if let Ok(json_str) = serde_json::to_string(&json) {
+                callback(&json_str);
+            }
+        }
 
         let client = reqwest::Client::new();
 
@@ -281,13 +320,29 @@ impl Responses {
                 // Parse ALL output items (reasoning, function_calls, messages)
                 let items = parse_output_items(&api_response);
 
+                // Stream each item as JSON if callback is set
+                if let Some(ref callback) = self.streaming_callback {
+                    for item in &items {
+                        if let Ok(json) = serde_json::to_string(&conversation_item_to_json(item)) {
+                            callback(&json);
+                        }
+                    }
+                }
+
                 // Add all output items to history
                 self.history.extend(items.clone());
 
                 // Collect function calls from the items
-                let function_calls: Vec<_> = items.iter()
+                let function_calls: Vec<_> = items
+                    .iter()
                     .filter_map(|item| {
-                        if let ConversationItem::FunctionCall { id, call_id, name, arguments } = item {
+                        if let ConversationItem::FunctionCall {
+                            id,
+                            call_id,
+                            name,
+                            arguments,
+                        } = item
+                        {
                             Some((id.clone(), call_id.clone(), name.clone(), arguments.clone()))
                         } else {
                             None
@@ -298,8 +353,16 @@ impl Responses {
                 if function_calls.is_empty() {
                     // No tool calls, we're done - extract assistant message text
                     let msg = items.iter().find_map(|item| {
-                        if let ConversationItem::Message { role: Role::Assistant, content, .. } = item {
-                            Some(Message { role: Role::Assistant, content: content.clone() })
+                        if let ConversationItem::Message {
+                            role: Role::Assistant,
+                            content,
+                            ..
+                        } = item
+                        {
+                            Some(Message {
+                                role: Role::Assistant,
+                                content: content.clone(),
+                            })
                         } else {
                             None
                         }
@@ -326,14 +389,12 @@ impl Responses {
                 debug!(target: "acai", "{error_text}");
 
                 return match serde_json::from_str::<serde_json::Value>(&error_text) {
-                    Ok(resp_json) => {
-                        match serde_json::to_string_pretty(&resp_json) {
-                            Ok(resp_formatted) => {
-                                Err(format!("{}\n\n{}", self.model, resp_formatted).into())
-                            }
-                            Err(e) => Err(format!("Failed to format response JSON: {e}").into()),
+                    Ok(resp_json) => match serde_json::to_string_pretty(&resp_json) {
+                        Ok(resp_formatted) => {
+                            Err(format!("{}\n\n{}", self.model, resp_formatted).into())
                         }
-                    }
+                        Err(e) => Err(format!("Failed to format response JSON: {e}").into()),
+                    },
                     Err(_) => Err(format!("{}\n\n{}", self.model, error_text).into()),
                 };
             }
@@ -347,83 +408,98 @@ impl Responses {
 
 /// Build the input array for the Responses API from conversation history
 fn build_input(history: &[ConversationItem]) -> Vec<serde_json::Value> {
-    history.iter().map(|item| {
-        match item {
-            ConversationItem::Message { role, content, id, status } => {
-                let use_output_format = matches!(role, Role::Assistant);
+    history
+        .iter()
+        .map(|item| {
+            match item {
+                ConversationItem::Message {
+                    role,
+                    content,
+                    id,
+                    status,
+                } => {
+                    let use_output_format = matches!(role, Role::Assistant);
 
-                let mut msg = serde_json::json!({
-                    "type": "message",
-                    "role": match role {
-                        Role::System => "system",
-                        Role::User => "user",
-                        Role::Assistant => "assistant",
-                        Role::Tool => "tool",
-                    },
-                });
+                    let mut msg = serde_json::json!({
+                        "type": "message",
+                        "role": match role {
+                            Role::System => "system",
+                            Role::User => "user",
+                            Role::Assistant => "assistant",
+                            Role::Tool => "tool",
+                        },
+                    });
 
-                // Content format depends on role
-                if use_output_format {
-                    msg["content"] = serde_json::json!([{
-                        "type": "output_text",
-                        "text": content,
-                        "annotations": []
-                    }]);
-                } else {
-                    msg["content"] = serde_json::json!([{
-                        "type": "input_text",
-                        "text": content
-                    }]);
+                    // Content format depends on role
+                    if use_output_format {
+                        msg["content"] = serde_json::json!([{
+                            "type": "output_text",
+                            "text": content,
+                            "annotations": []
+                        }]);
+                    } else {
+                        msg["content"] = serde_json::json!([{
+                            "type": "input_text",
+                            "text": content
+                        }]);
+                    }
+
+                    // Include id and status for assistant messages
+                    if let Some(id) = id {
+                        msg["id"] = serde_json::json!(id);
+                    }
+                    if let Some(status) = status {
+                        msg["status"] = serde_json::json!(status);
+                    }
+
+                    msg
                 }
-
-                // Include id and status for assistant messages
-                if let Some(id) = id {
-                    msg["id"] = serde_json::json!(id);
+                ConversationItem::FunctionCall {
+                    id,
+                    call_id,
+                    name,
+                    arguments,
+                } => {
+                    serde_json::json!({
+                        "type": "function_call",
+                        "id": id,
+                        "call_id": call_id,
+                        "name": name,
+                        "arguments": arguments
+                    })
                 }
-                if let Some(status) = status {
-                    msg["status"] = serde_json::json!(status);
+                ConversationItem::FunctionCallOutput { call_id, output } => {
+                    serde_json::json!({
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": output
+                    })
                 }
-
-                msg
+                ConversationItem::Reasoning { id, summary } => {
+                    serde_json::json!({
+                        "type": "reasoning",
+                        "id": id,
+                        "summary": summary.iter().map(|s| {
+                            serde_json::json!({"type": "summary_text", "text": s})
+                        }).collect::<Vec<_>>()
+                    })
+                }
             }
-            ConversationItem::FunctionCall { id, call_id, name, arguments } => {
-                serde_json::json!({
-                    "type": "function_call",
-                    "id": id,
-                    "call_id": call_id,
-                    "name": name,
-                    "arguments": arguments
-                })
-            }
-            ConversationItem::FunctionCallOutput { call_id, output } => {
-                serde_json::json!({
-                    "type": "function_call_output",
-                    "call_id": call_id,
-                    "output": output
-                })
-            }
-            ConversationItem::Reasoning { id, summary } => {
-                serde_json::json!({
-                    "type": "reasoning",
-                    "id": id,
-                    "summary": summary.iter().map(|s| {
-                        serde_json::json!({"type": "summary_text", "text": s})
-                    }).collect::<Vec<_>>()
-                })
-            }
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 /// Parse all output items from API response into `ConversationItems`
 fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
     let mut items = Vec::new();
-    
+
     for output in &api_response.output {
         match output.msg_type.as_str() {
             "reasoning" => {
                 // Extract reasoning text from content (content_type: "reasoning_text")
-                let reasoning_text = output.content.as_ref()
+                let reasoning_text = output
+                    .content
+                    .as_ref()
                     .and_then(|c| c.iter().find(|item| item.content_type == "reasoning_text"))
                     .and_then(|item| item.text.clone());
 
@@ -444,11 +520,13 @@ fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
             }
             "message" => {
                 // Extract text content
-                let text = output.content.as_ref()
+                let text = output
+                    .content
+                    .as_ref()
                     .and_then(|c| c.iter().find(|item| item.content_type == "output_text"))
                     .and_then(|item| item.text.clone())
                     .unwrap_or_default();
-                
+
                 items.push(ConversationItem::Message {
                     role: Role::Assistant,
                     content: text,
@@ -459,8 +537,68 @@ fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
             _ => {} // ignore unknown types
         }
     }
-    
+
     items
+}
+
+/// Convert a `ConversationItem` to a JSON-compatible `serde_json::Value` for streaming output
+#[allow(clippy::type_complexity)]
+fn conversation_item_to_json(item: &ConversationItem) -> serde_json::Value {
+    match item {
+        ConversationItem::Message {
+            role,
+            content,
+            id,
+            status,
+        } => {
+            let role_str = match role {
+                Role::System => "system",
+                Role::User => "user",
+                Role::Assistant => "assistant",
+                Role::Tool => "tool",
+            };
+            let mut obj = serde_json::json!({
+                "type": "message",
+                "role": role_str,
+            });
+            obj["content"] = serde_json::json!(content);
+            if let Some(id) = id {
+                obj["id"] = serde_json::json!(id);
+            }
+            if let Some(status) = status {
+                obj["status"] = serde_json::json!(status);
+            }
+            obj
+        }
+        ConversationItem::FunctionCall {
+            id,
+            call_id,
+            name,
+            arguments,
+        } => {
+            serde_json::json!({
+                "type": "function_call",
+                "id": id,
+                "call_id": call_id,
+                "name": name,
+                "arguments": arguments
+            })
+        }
+        ConversationItem::FunctionCallOutput { call_id, output } => {
+            serde_json::json!({
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": output
+            })
+        }
+        ConversationItem::Reasoning { id, summary } => {
+            serde_json::json!({
+                "type": "reasoning",
+                "id": id,
+                "summary": summary
+            })
+        }
+    }
 }
 
 #[derive(Serialize)]
