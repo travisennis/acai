@@ -47,7 +47,7 @@ pub enum ConversationItem {
 
 /// Tool definition sent in API requests
 #[derive(Serialize, Clone, Debug)]
-pub(crate) struct Tool {
+pub struct Tool {
     #[serde(rename = "type")]
     type_: String,
     name: String,
@@ -132,7 +132,7 @@ async fn execute_shell(arguments: &str) -> Result<ToolResult, String> {
     {
         Ok(Ok(output)) => output,
         Ok(Err(e)) => return Err(format!("Failed to execute command: {e}")),
-        Err(_) => return Err(format!("Command timed out after {} seconds", timeout_secs)),
+        Err(_) => return Err(format!("Command timed out after {timeout_secs} seconds")),
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -204,6 +204,7 @@ impl Responses {
         self
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn temperature(mut self, temperature: Option<f32>) -> Self {
         if let Some(temperature) = temperature {
             self.temperature = Some(temperature);
@@ -211,6 +212,7 @@ impl Responses {
         self
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn top_p(mut self, top_p: Option<f32>) -> Self {
         if let Some(top_p) = top_p {
             self.top_p = Some(top_p);
@@ -218,6 +220,7 @@ impl Responses {
         self
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn max_output_tokens(mut self, max_output_tokens: Option<u32>) -> Self {
         if let Some(max_output_tokens) = max_output_tokens {
             self.max_output_tokens = Some(max_output_tokens);
@@ -225,6 +228,7 @@ impl Responses {
         self
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     #[allow(dead_code)]
     pub fn stream(mut self, stream: bool) -> Self {
         self.stream = stream;

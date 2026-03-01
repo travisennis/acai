@@ -54,6 +54,11 @@ impl DataDir {
         }
     }
 
+    /// Returns the global singleton instance.
+    ///
+    /// # Panics
+    /// Panics if the global instance has not been initialized.
+    #[allow(clippy::expect_used)]
     pub fn global() -> &'static Self {
         DATA_DIR_INSTANCE
             .get()
@@ -65,15 +70,19 @@ impl DataDir {
     }
 
     pub fn save_messages<T: Serialize>(&self, messages: &[T]) -> Option<PathBuf> {
-        let in_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_millis();
+        let Ok(in_ms) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+            error!("Time went backwards");
+            return None;
+        };
+        let in_ms = in_ms.as_millis();
 
         let output_path = self.data_dir.join("history").join(format!("{in_ms}.json"));
 
         if let Some(p) = output_path.parent() {
-            fs::create_dir_all(p).expect("Directory not created.");
+            if let Err(e) = fs::create_dir_all(p) {
+                error!("Failed to create directory: {e}");
+                return None;
+            }
         }
 
         match serde_json::to_string_pretty(&messages) {
