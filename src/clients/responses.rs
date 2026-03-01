@@ -13,7 +13,7 @@ const BASE_URL: &str = "https://openrouter.ai/api/v1/responses";
 
 /// Represents a single item in the conversation history, mapping directly to
 /// the Responses API input/output array format.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum ConversationItem {
     Message {
         role: Role,
@@ -323,8 +323,8 @@ impl Responses {
         }
     }
 
-    pub fn get_message_history(&self) -> Vec<ConversationItem> {
-        self.history.clone()
+    pub fn get_message_history(&self) -> Vec<serde_json::Value> {
+        build_input(&self.history)
     }
 }
 
