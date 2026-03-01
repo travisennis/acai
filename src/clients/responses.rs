@@ -47,7 +47,7 @@ pub enum ConversationItem {
 #[derive(Serialize, Clone, Debug)]
 pub(crate) struct Tool {
     #[serde(rename = "type")]
-    tool_type: String,
+    type_: String,
     name: String,
     description: String,
     parameters: serde_json::Value,
@@ -61,7 +61,7 @@ pub(crate) struct Tool {
 /// Returns the Shell tool definition
 fn shell_tool() -> Tool {
     Tool {
-        tool_type: "function".to_string(),
+        type_: "function".to_string(),
         name: "shell".to_string(),
         description: "Execute a shell command in the host machine's terminal. \
             Returns the stdout/stderr output. Use for running build commands, \
@@ -99,7 +99,7 @@ pub struct ToolResult {
 fn execute_tool(name: &str, arguments: &str) -> Result<ToolResult, String> {
     match name {
         "shell" => execute_shell(arguments),
-        _ => Err(format!("Unknown tool: {}", name)),
+        _ => Err(format!("Unknown tool: {name}")),
     }
 }
 
@@ -112,15 +112,14 @@ fn execute_shell(arguments: &str) -> Result<ToolResult, String> {
     }
 
     let args: ShellArgs = serde_json::from_str(arguments)
-        .map_err(|e| format!("Invalid shell arguments: {}", e))?;
+        .map_err(|e| format!("Invalid shell arguments: {e}"))?;
 
-    let _timeout = args.timeout;
 
     let output = std::process::Command::new("bash")
         .arg("-c")
         .arg(&args.command)
         .output()
-        .map_err(|e| format!("Failed to execute command: {}", e))?;
+        .map_err(|e| format!("Failed to execute command: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -245,9 +244,9 @@ impl Responses {
                 tool_choice: Some("auto".to_string()),
             };
 
-            debug!(target: "acai", "{}", BASE_URL);
+            debug!(target: "acai", "{BASE_URL}");
             let prompt_json = serde_json::to_string(&prompt)?;
-            debug!(target: "acai", "{}", prompt_json);
+            debug!(target: "acai", "{prompt_json}");
 
             let response = client
                 .post(BASE_URL)
@@ -259,7 +258,7 @@ impl Responses {
 
             if response.status().is_success() {
                 let api_response = response.json::<ApiResponse>().await?;
-                debug!(target: "acai", "{:?}", api_response);
+                debug!(target: "acai", "{api_response:?}");
 
                 // Parse ALL output items (reasoning, function_calls, messages)
                 let items = parse_output_items(&api_response);
@@ -294,7 +293,7 @@ impl Responses {
                 for (_id, call_id, name, arguments) in &function_calls {
                     let tool_result = match execute_tool(name, arguments) {
                         Ok(r) => r.output,
-                        Err(e) => format!("Error: {}", e),
+                        Err(e) => format!("Error: {e}"),
                     };
 
                     self.history.push(ConversationItem::FunctionCallOutput {
@@ -341,7 +340,7 @@ fn build_input(history: &[ConversationItem]) -> Vec<serde_json::Value> {
                         Role::System => "system",
                         Role::User => "user",
                         Role::Assistant => "assistant",
-                        _ => "user",
+                        Role::Tool => "tool",
                     },
                 });
 
@@ -398,7 +397,7 @@ fn build_input(history: &[ConversationItem]) -> Vec<serde_json::Value> {
     }).collect()
 }
 
-/// Parse all output items from API response into ConversationItems
+/// Parse all output items from API response into `ConversationItems`
 fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
     let mut items = Vec::new();
     
@@ -493,6 +492,7 @@ struct OutputContent {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(clippy::struct_field_names)]
 struct Usage {
     #[serde(rename = "input_tokens")]
     #[allow(dead_code)]

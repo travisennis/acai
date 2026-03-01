@@ -38,9 +38,7 @@ const SYSTEM_PROMPT: &str = "You are a helpful AI CLI assistant that runs on the
 impl CmdRunner for Cmd {
     async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Only read from stdin if a prompt is not provided
-        let context: Option<String> = if self.prompt.is_some() {
-            None
-        } else if atty::is(atty::Stream::Stdin) {
+        let input_context: Option<String> = if self.prompt.is_some() || atty::is(atty::Stream::Stdin) {
             None
         } else {
             std::io::read_to_string(std::io::stdin()).ok()
@@ -52,8 +50,8 @@ impl CmdRunner for Cmd {
             .max_output_tokens(self.max_tokens);
 
         // Build content from prompt and optional stdin context
-        let content = match (&self.prompt, &context) {
-            (Some(prompt), Some(ctx)) => format!("{}\n\n{}", prompt, ctx),
+        let content = match (&self.prompt, &input_context) {
+            (Some(prompt), Some(ctx)) => format!("{prompt}\n\n{ctx}"),
             (Some(prompt), None) => prompt.clone(),
             (None, Some(ctx)) => ctx.clone(),
             (None, None) => String::new(),
