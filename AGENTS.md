@@ -5,7 +5,7 @@
 **Acai** is an AI-powered coding assistant written in Rust that integrates with OpenRouter's Responses API for multi-provider AI access. Default model: MiniMax MiniMax-M2.5.
 
 ### Tech Stack
-- **Language**: Rust (2021 edition)
+- **Language**: Rust (2024 edition)
 - **Async Runtime**: Tokio with full features
 - **CLI**: Clap with derive macros
 - **HTTP**: Reqwest with JSON support
