@@ -56,6 +56,7 @@ Get your free API key at [openrouter.ai](https://openrouter.ai).
 - `--temperature` - Set the temperature (0.0 to 1.0)
 - `--max-tokens` - Set maximum tokens in response
 - `--top-p` - Set top-p value
+- `--stream-json` - Stream each message as JSON as it's received
 - `--prompt` (`-p`) - Your instruction prompt
 
 ### Example
