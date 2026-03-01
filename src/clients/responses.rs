@@ -185,9 +185,9 @@ impl Responses {
         Self {
             model,
             token,
-            temperature: Some(0.0),
+            temperature: Some(0.8),
             top_p: None,
-            max_output_tokens: None,
+            max_output_tokens: Some(8000),
             system: system_prompt.to_string(),
             history: vec![ConversationItem::Message {
                 role: Role::System,
