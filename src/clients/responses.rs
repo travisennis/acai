@@ -1,3 +1,5 @@
+use tokio::time::{timeout, Duration};
+
 use std::{env, error::Error};
 
 use log::debug;
@@ -96,30 +98,42 @@ pub struct ToolResult {
 }
 
 /// Execute a tool call
-fn execute_tool(name: &str, arguments: &str) -> Result<ToolResult, String> {
+async fn execute_tool(name: &str, arguments: &str) -> Result<ToolResult, String> {
     match name {
-        "shell" => execute_shell(arguments),
+        "shell" => execute_shell(arguments).await,
         _ => Err(format!("Unknown tool: {name}")),
     }
 }
 
-fn execute_shell(arguments: &str) -> Result<ToolResult, String> {
+async fn execute_shell(arguments: &str) -> Result<ToolResult, String> {
     #[derive(Deserialize)]
     struct ShellArgs {
         command: String,
-        #[allow(dead_code)]
         timeout: Option<u64>,
     }
 
     let args: ShellArgs = serde_json::from_str(arguments)
         .map_err(|e| format!("Invalid shell arguments: {e}"))?;
 
+    // Use default timeout of 60 seconds if not specified
+    let timeout_secs = args.timeout.unwrap_or(60);
 
-    let output = std::process::Command::new("bash")
-        .arg("-c")
-        .arg(&args.command)
-        .output()
-        .map_err(|e| format!("Failed to execute command: {e}"))?;
+    // Run the shell command with timeout using tokio
+    // timeout() returns Result<Result<Output, io::Error>, Elapsed>
+    let output = match timeout(
+        Duration::from_secs(timeout_secs),
+        tokio::process::Command::new("bash")
+            .arg("-c")
+            .arg(&args.command)
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => return Err(format!("Failed to execute command: {e}")),
+        Err(_) => return Err(format!("Command timed out after {} seconds", timeout_secs)),
+    };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -291,7 +305,7 @@ impl Responses {
 
                 // Execute each tool call and add function_call_output to history
                 for (_id, call_id, name, arguments) in &function_calls {
-                    let tool_result = match execute_tool(name, arguments) {
+                    let tool_result = match execute_tool(name, arguments).await {
                         Ok(r) => r.output,
                         Err(e) => format!("Error: {e}"),
                     };
