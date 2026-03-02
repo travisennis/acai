@@ -18,10 +18,12 @@ acai instruct --streaming-json -p "Your prompt here"
 
 When `--streaming-json` is enabled:
 
-1. **System message** is streamed first as a JSON object
-2. **User message** is streamed as a JSON object  
-3. **Assistant response** (including reasoning, function calls, and content) is streamed as JSON objects as they arrive from the API
-4. **No final output** is printed after completion (the streaming JSON is the only output)
+1. **Init message** is emitted first with session ID, cwd, and tools
+2. **System message** is streamed as a JSON object
+3. **User message** is streamed as a JSON object  
+4. **Assistant response** (including reasoning, function calls, and content) is streamed as JSON objects as they arrive from the API
+5. **Result message** is emitted at the end with success/error status, duration, and usage stats
+6. **No final output** is printed after completion (the streaming JSON is the only output)
 
 When `--streaming-json` is disabled (default):
 
@@ -112,11 +114,88 @@ Represents intermediate reasoning or thought process from the model (supported m
 | `id` | string | Unique identifier for the reasoning |
 | `summary` | array | Array of reasoning text segments |
 
+### 5. Init Object
+
+Emitted at the start of a conversation when streaming is enabled. Contains session information, current working directory, and available tools.
+
+```json
+{
+  "type": "init",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "cwd": "/Users/user/project",
+  "tools": ["shell"]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | Always `"init"` for this type |
+| `session_id` | string | UUID for this conversation session |
+| `cwd` | string | Current working directory when the command started |
+| `tools` | array | Array of tool names (e.g., `["shell"]`) |
+
+### 6. Result Object
+
+Emitted at the end of a conversation when streaming is enabled. Contains success/error status, duration, and usage statistics.
+
+**Success example:**
+```json
+{
+  "type": "result",
+  "success": true,
+  "subtype": "success",
+  "duration_ms": 1523,
+  "turn_count": 2,
+  "usage": {
+    "input_tokens": 150,
+    "input_tokens_details": {"cached_tokens": 50},
+    "output_tokens": 320,
+    "output_tokens_details": {"reasoning_tokens": 120},
+    "total_tokens": 470
+  }
+}
+```
+
+**Error example:**
+```json
+{
+  "type": "result",
+  "success": false,
+  "subtype": "error",
+  "error": "Error: API request failed: rate limit exceeded",
+  "duration_ms": 342,
+  "turn_count": 1,
+  "usage": {
+    "input_tokens": 45,
+    "input_tokens_details": {"cached_tokens": 0},
+    "output_tokens": 0,
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "total_tokens": 45
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | Always `"result"` for this type |
+| `success` | boolean | Whether the request succeeded |
+| `subtype` | string | One of: `"success"`, `"error"` |
+| `error` | string? | Error message if `success` is false |
+| `duration_ms` | number | Total duration in milliseconds |
+| `turn_count` | number | Number of API calls made |
+| `usage` | object | Token usage statistics |
+| `usage.input_tokens` | number | Number of input tokens |
+| `usage.input_tokens_details.cached_tokens` | number | Number of cached tokens |
+| `usage.output_tokens` | number | Number of output tokens |
+| `usage.output_tokens_details.reasoning_tokens` | number | Number of reasoning tokens |
+| `usage.total_tokens` | number | Total tokens used |
+
 ## Example Output
 
 Here's an example of the full streaming JSON output for a request that triggers a function call:
 
 ```json
+{"type":"init","session_id":"550e8400-e29b-41d4-a716-446655440000","cwd":"/Users/user/project","tools":["shell"]}
 {"type":"message","role":"system","content":"You are a helpful AI CLI assistant."}
 {"type":"message","role":"user","content":"List files in the current directory"}
 {"type":"reasoning","id":"reason_001","summary":["The user wants to list files. I'll use the Shell tool to run ls."]}
@@ -124,6 +203,7 @@ Here's an example of the full streaming JSON output for a request that triggers 
 {"type":"message","role":"assistant","content":"Let me list the files for you."}
 {"type":"function_call_output","call_id":"call_001","output":"file1.txt\nfile2.txt\nfile3.txt"}
 {"type":"message","role":"assistant","content":"Here are the files in your current directory:\n- file1.txt\n- file2.txt\n- file3.txt"}
+{"type":"result","success":true,"subtype":"success","duration_ms":1523,"turn_count":2,"usage":{"input_tokens":150,"input_tokens_details":{"cached_tokens":50},"output_tokens":320,"output_tokens_details":{"reasoning_tokens":120},"total_tokens":470}}
 ```
 
 ## Use Cases

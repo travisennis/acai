@@ -1,4 +1,4 @@
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 use std::{env, error::Error};
 
@@ -175,6 +175,12 @@ pub struct Responses {
     /// Callback for streaming JSON output
     #[allow(clippy::type_complexity)]
     streaming_callback: Option<Box<dyn Fn(&str) + Send + Sync>>,
+    /// Session ID for tracking
+    pub session_id: String,
+    /// Accumulated usage across all API calls
+    pub total_usage: Usage,
+    /// Number of API calls made
+    pub turn_count: u32,
 }
 
 impl Responses {
@@ -198,6 +204,9 @@ impl Responses {
             stream: false,
             tools: vec![shell_tool()],
             streaming_callback: None,
+            session_id: uuid::Uuid::new_v4().to_string(),
+            total_usage: Usage::default(),
+            turn_count: 0,
         }
     }
 
@@ -212,6 +221,84 @@ impl Responses {
     pub fn with_streaming_json(mut self, callback: impl Fn(&str) + Send + Sync + 'static) -> Self {
         self.streaming_callback = Some(Box::new(callback));
         self
+    }
+
+    /// Emit the init message with session info, cwd, and tools
+    pub fn emit_init_message(&self) {
+        if let Some(ref callback) = self.streaming_callback {
+            // Get current working directory
+            let cwd = std::env::current_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            // Get tool names only
+            let tools: Vec<String> = self
+                .tools
+                .iter()
+                .map(|tool| tool.name.clone())
+                .collect();
+
+            let json = serde_json::json!({
+                "type": "init",
+                "session_id": self.session_id,
+                "cwd": cwd,
+                "tools": tools
+            });
+
+            if let Ok(json_str) = serde_json::to_string(&json) {
+                callback(&json_str);
+            }
+        }
+    }
+
+    /// Accumulate usage from an API response
+    #[allow(clippy::ref_option)]
+    fn accumulate_usage(&mut self, usage: Option<&ApiUsage>) {
+        if let Some(api_usage) = usage {
+            self.total_usage.input_tokens += api_usage.input_tokens.unwrap_or(0);
+            self.total_usage.input_tokens_details.cached_tokens += api_usage
+                .input_tokens_details
+                .as_ref()
+                .map_or(0, |d| d.cached_tokens.unwrap_or(0));
+            self.total_usage.output_tokens += api_usage.output_tokens.unwrap_or(0);
+            self.total_usage.output_tokens_details.reasoning_tokens += api_usage
+                .output_tokens_details
+                .as_ref()
+                .map_or(0, |d| d.reasoning_tokens.unwrap_or(0));
+            self.total_usage.total_tokens += api_usage.total_tokens.unwrap_or(0);
+            self.turn_count += 1;
+        }
+    }
+
+    /// Emit the result message with success/error, duration, and usage stats
+    pub fn emit_result_message(
+        &self,
+        success: bool,
+        duration_ms: u64,
+        error_message: Option<&str>,
+    ) {
+        if let Some(ref callback) = self.streaming_callback {
+            let mut json = serde_json::json!({
+                "type": "result",
+                "success": success,
+                "duration_ms": duration_ms,
+                "turn_count": self.turn_count,
+                "usage": self.total_usage
+            });
+
+            if success {
+                json["subtype"] = serde_json::json!("success");
+            } else {
+                json["subtype"] = serde_json::json!("error");
+                if let Some(err_msg) = error_message {
+                    json["error"] = serde_json::json!(err_msg);
+                }
+            }
+
+            if let Ok(json_str) = serde_json::to_string(&json) {
+                callback(&json_str);
+            }
+        }
     }
 
     #[allow(clippy::missing_const_for_fn)]
@@ -251,9 +338,17 @@ impl Responses {
         &mut self,
         message: Message,
     ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
+        // Emit init message with session info, cwd, and tools
+        self.emit_init_message();
+
         // Stream system message if not already done
         if let Some(ref callback) = self.streaming_callback {
-            if let Some(ConversationItem::Message { role: Role::System, content, .. }) = self.history.first() {
+            if let Some(ConversationItem::Message {
+                role: Role::System,
+                content,
+                ..
+            }) = self.history.first()
+            {
                 let json = serde_json::json!({
                     "type": "message",
                     "role": "system",
@@ -315,6 +410,9 @@ impl Responses {
             if response.status().is_success() {
                 let api_response = response.json::<ApiResponse>().await?;
                 debug!(target: "acai", "{api_response:?}");
+
+                // Accumulate usage from this API response
+                self.accumulate_usage(api_response.usage.as_ref());
 
                 // Parse ALL output items (reasoning, function_calls, messages)
                 let items = parse_output_items(&api_response);
@@ -617,7 +715,7 @@ struct ApiResponse {
     id: Option<String>,
     output: Vec<OutputMessage>,
     #[allow(dead_code)]
-    usage: Option<Usage>,
+    usage: Option<ApiUsage>,
     #[allow(dead_code)]
     status: Option<String>,
     #[allow(dead_code)]
@@ -646,18 +744,62 @@ struct OutputContent {
     text: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
-#[allow(clippy::struct_field_names)]
-struct Usage {
+/// Details about input tokens
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct InputTokensDetails {
+    #[serde(rename = "cached_tokens")]
+    pub cached_tokens: u32,
+}
+
+/// Details about output tokens
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct OutputTokensDetails {
+    #[serde(rename = "reasoning_tokens")]
+    pub reasoning_tokens: u32,
+}
+
+/// Usage statistics for API calls
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct Usage {
     #[serde(rename = "input_tokens")]
-    #[allow(dead_code)]
-    input_tokens: Option<u32>,
+    pub input_tokens: u32,
+    #[serde(rename = "input_tokens_details")]
+    pub input_tokens_details: InputTokensDetails,
     #[serde(rename = "output_tokens")]
-    #[allow(dead_code)]
-    output_tokens: Option<u32>,
+    pub output_tokens: u32,
+    #[serde(rename = "output_tokens_details")]
+    pub output_tokens_details: OutputTokensDetails,
     #[serde(rename = "total_tokens")]
-    #[allow(dead_code)]
+    pub total_tokens: u32,
+}
+
+/// Internal usage struct for API response deserialization (with optional fields)
+#[derive(Deserialize, Debug, Clone, Default)]
+struct ApiUsage {
+    #[serde(rename = "input_tokens")]
+    input_tokens: Option<u32>,
+    #[serde(rename = "input_tokens_details")]
+    input_tokens_details: Option<ApiInputTokensDetails>,
+    #[serde(rename = "output_tokens")]
+    output_tokens: Option<u32>,
+    #[serde(rename = "output_tokens_details")]
+    output_tokens_details: Option<ApiOutputTokensDetails>,
+    #[serde(rename = "total_tokens")]
     total_tokens: Option<u32>,
+}
+
+/// Internal input tokens details for API response deserialization
+#[derive(Deserialize, Debug, Clone, Default)]
+struct ApiInputTokensDetails {
+    #[serde(rename = "cached_tokens")]
+    cached_tokens: Option<u32>,
+}
+
+/// Internal output tokens details for API response deserialization
+#[derive(Deserialize, Debug, Clone, Default)]
+struct ApiOutputTokensDetails {
+    #[serde(rename = "reasoning_tokens")]
+    reasoning_tokens: Option<u32>,
 }
 
 #[derive(Deserialize, Debug)]

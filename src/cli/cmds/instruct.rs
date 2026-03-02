@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::time::Instant;
 
 use anyhow::Result;
 use clap::Args;
@@ -74,7 +75,30 @@ impl CmdRunner for Cmd {
             content,
         };
 
-        let response = client.send(msg).await?;
+        // Start timing
+        let start = Instant::now();
+
+        // Send message and handle result
+        let result: Result<Option<Message>, Box<dyn Error + Send + Sync>> = client.send(msg).await;
+
+        // Calculate duration
+        #[allow(clippy::cast_possible_truncation)]
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        // Emit result message
+        if self.streaming_json {
+            match &result {
+                Ok(_) => {
+                    client.emit_result_message(true, duration_ms, None);
+                }
+                Err(e) => {
+                    client.emit_result_message(false, duration_ms, Some(e.to_string().as_ref()));
+                }
+            }
+        }
+
+        // Propagate error or continue with response handling
+        let response = result?;
 
         DataDir::global().save_messages(&client.get_message_history());
 
