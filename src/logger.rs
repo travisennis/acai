@@ -3,6 +3,7 @@ use std::path::Path;
 
 use log::{LevelFilter, SetLoggerError};
 use log4rs::{
+    Config,
     append::{
         console::{ConsoleAppender, Target},
         file::FileAppender,
@@ -10,7 +11,6 @@ use log4rs::{
     config::{Appender, Logger, Root},
     encode::pattern::PatternEncoder,
     filter::threshold::ThresholdFilter,
-    Config,
 };
 
 #[derive(Debug)]

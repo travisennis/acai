@@ -10,8 +10,8 @@ use crate::cli::CmdRunner;
 use clap::Parser;
 use clap::Subcommand;
 use cli::instruct;
-use config::DataDir;
 use config::DATA_DIR_INSTANCE;
+use config::DataDir;
 use log::info;
 
 /// coding assistant commands
