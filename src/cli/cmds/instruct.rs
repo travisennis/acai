@@ -43,8 +43,10 @@ const SYSTEM_PROMPT: &str = "You are a helpful AI CLI assistant that runs on the
 impl CmdRunner for Cmd {
     async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Only read from stdin if a prompt is not provided
+        // Note: We always attempt to read stdin unless --prompt is explicitly provided.
+        // If stdin is a TTY (interactive terminal), it will be empty anyway.
         let input_context: Option<String> =
-            if self.prompt.is_some() || atty::is(atty::Stream::Stdin) {
+            if self.prompt.is_some() {
                 None
             } else {
                 std::io::read_to_string(std::io::stdin()).ok()
@@ -63,11 +65,17 @@ impl CmdRunner for Cmd {
         }
 
         // Build content from prompt and optional stdin context
+        // Error if neither prompt nor stdin input is provided
         let content = match (&self.prompt, &input_context) {
             (Some(prompt), Some(ctx)) => format!("{prompt}\n\n{ctx}"),
             (Some(prompt), None) => prompt.clone(),
             (None, Some(ctx)) => ctx.clone(),
-            (None, None) => String::new(),
+            (None, None) => {
+                return Err(anyhow::anyhow!(
+                    "No input provided. Use --prompt \"your message\" or pipe input to stdin."
+                )
+                .into());
+            }
         };
 
         let msg = Message {
