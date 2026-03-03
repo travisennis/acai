@@ -342,21 +342,20 @@ impl Responses {
         self.emit_init_message();
 
         // Stream system message if not already done
-        if let Some(ref callback) = self.streaming_callback {
-            if let Some(ConversationItem::Message {
+        if let Some(ref callback) = self.streaming_callback
+            && let Some(ConversationItem::Message {
                 role: Role::System,
                 content,
                 ..
             }) = self.history.first()
-            {
-                let json = serde_json::json!({
-                    "type": "message",
-                    "role": "system",
-                    "content": content
-                });
-                if let Ok(json_str) = serde_json::to_string(&json) {
-                    callback(&json_str);
-                }
+        {
+            let json = serde_json::json!({
+                "type": "message",
+                "role": "system",
+                "content": content
+            });
+            if let Ok(json_str) = serde_json::to_string(&json) {
+                callback(&json_str);
             }
         }
 

@@ -78,11 +78,11 @@ impl DataDir {
 
         let output_path = self.data_dir.join("history").join(format!("{in_ms}.json"));
 
-        if let Some(p) = output_path.parent() {
-            if let Err(e) = fs::create_dir_all(p) {
-                error!("Failed to create directory: {e}");
-                return None;
-            }
+        if let Some(p) = output_path.parent()
+            && let Err(e) = fs::create_dir_all(p)
+        {
+            error!("Failed to create directory: {e}");
+            return None;
         }
 
         match serde_json::to_string_pretty(&messages) {
