@@ -1,22 +1,22 @@
-# `--streaming-json` Flag Documentation
+# `--output-format stream-json` Documentation
 
-The `--streaming-json` flag enables streaming JSON output for the `instruct` command. When enabled, each message, reasoning step, function call, and function call output is emitted as a separate JSON object to stdout in real-time as it's received from the API.
+The `--output-format stream-json` option enables streaming JSON output for the `instruct` command. When enabled, each message, reasoning step, function call, and function call output is emitted as a separate JSON object to stdout in real-time as it's received from the API.
 
 ## Usage
 
 ```bash
-acai instruct --streaming-json --prompt "Your prompt here"
+acai instruct --output-format stream-json --prompt "Your prompt here"
 ```
 
 Or with shorthand:
 
 ```bash
-acai instruct --streaming-json -p "Your prompt here"
+acai instruct --output-format stream-json -p "Your prompt here"
 ```
 
 ## Behavior
 
-When `--streaming-json` is enabled:
+When `--output-format stream-json` is enabled:
 
 1. **Init message** is emitted first with session ID, cwd, and tools
 2. **System message** is streamed as a JSON object
@@ -25,7 +25,7 @@ When `--streaming-json` is enabled:
 5. **Result message** is emitted at the end with success/error status, duration, and usage stats
 6. **No final output** is printed after completion (the streaming JSON is the only output)
 
-When `--streaming-json` is disabled (default):
+When `--output-format text` is used (default):
 
 1. The final assistant response is printed to stdout as plain text
 2. No intermediate JSON is emitted
@@ -218,4 +218,4 @@ Here's an example of the full streaming JSON output for a request that triggers 
 - Each JSON object is printed on its own line (newline-delimited JSON - NDJSON)
 - The output is not guaranteed to be in any particular order beyond the temporal order of receipt
 - Not all response types will appear in every request - only those returned by the model
-- When using this flag, the final plain-text response is not printed (streaming JSON replaces it)
+- When using `--output-format stream-json`, the final plain-text response is not printed (streaming JSON replaces it)
