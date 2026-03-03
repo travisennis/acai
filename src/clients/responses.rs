@@ -56,14 +56,14 @@ pub struct Tool {
 }
 
 // =============================================================================
-// Shell Tool Definition
+// Bash Tool Definition
 // =============================================================================
 
-/// Returns the Shell tool definition
-fn shell_tool() -> Tool {
+/// Returns the Bash tool definition
+fn bash_tool() -> Tool {
     Tool {
         type_: "function".to_string(),
-        name: "shell".to_string(),
+        name: "Bash".to_string(),
         description: "Execute a shell command in the host machine's terminal. \
             Returns the stdout/stderr output. Use for running build commands, \
             git operations, file manipulation, etc. Does not support interactive commands."
@@ -100,20 +100,20 @@ pub struct ToolResult {
 /// Execute a tool call
 async fn execute_tool(name: &str, arguments: &str) -> Result<ToolResult, String> {
     match name {
-        "shell" => execute_shell(arguments).await,
+        "Bash" => execute_bash(arguments).await,
         _ => Err(format!("Unknown tool: {name}")),
     }
 }
 
-async fn execute_shell(arguments: &str) -> Result<ToolResult, String> {
+async fn execute_bash(arguments: &str) -> Result<ToolResult, String> {
     #[derive(Deserialize)]
-    struct ShellArgs {
+    struct BashArgs {
         command: String,
         timeout: Option<u64>,
     }
 
-    let args: ShellArgs =
-        serde_json::from_str(arguments).map_err(|e| format!("Invalid shell arguments: {e}"))?;
+    let args: BashArgs =
+        serde_json::from_str(arguments).map_err(|e| format!("Invalid bash arguments: {e}"))?;
 
     // Use default timeout of 60 seconds if not specified
     let timeout_secs = args.timeout.unwrap_or(60);
@@ -206,7 +206,7 @@ impl Responses {
                 status: None,
             }],
             stream: false,
-            tools: vec![shell_tool()],
+            tools: vec![bash_tool()],
             streaming_callback: None,
             session_id: uuid::Uuid::new_v4().to_string(),
             total_usage: Usage::default(),
