@@ -2,7 +2,7 @@ use std::error::Error;
 use std::time::Instant;
 
 use anyhow::Result;
-use clap::Args;
+use clap::{Args, ValueEnum};
 
 use crate::{
     cli::CmdRunner,
@@ -10,6 +10,16 @@ use crate::{
     config::DataDir,
     models::{Message, Role},
 };
+
+/// Output format for the response
+#[derive(Clone, Copy, Debug, Default, PartialEq, ValueEnum)]
+pub enum OutputFormat {
+    /// Plain text output
+    #[default]
+    Text,
+    /// Stream each message as JSON as it's received
+    StreamJson,
+}
 
 #[derive(Clone, Args)]
 pub struct Cmd {
@@ -33,9 +43,9 @@ pub struct Cmd {
     #[arg(short, long)]
     prompt: Option<String>,
 
-    /// Stream each message as JSON as it's received
-    #[arg(long)]
-    pub streaming_json: bool,
+    /// Output format for the response (text or stream-json)
+    #[arg(long, value_enum, default_value = "text")]
+    pub output_format: OutputFormat,
 }
 
 const SYSTEM_PROMPT: &str = "You are a helpful AI CLI assistant that runs on the user's computer and follows their instructions.";
@@ -58,7 +68,7 @@ impl CmdRunner for Cmd {
             .max_output_tokens(self.max_tokens);
 
         // Enable streaming JSON output if flag is set
-        if self.streaming_json {
+        if self.output_format == OutputFormat::StreamJson {
             client = client.with_streaming_json(|json| {
                 println!("{json}");
             });
@@ -94,7 +104,7 @@ impl CmdRunner for Cmd {
         let duration_ms = start.elapsed().as_millis() as u64;
 
         // Emit result message
-        if self.streaming_json {
+        if self.output_format == OutputFormat::StreamJson {
             match &result {
                 Ok(_) => {
                     client.emit_result_message(true, duration_ms, None);
@@ -112,7 +122,7 @@ impl CmdRunner for Cmd {
 
         // Only print final response if NOT using streaming-json mode
         // (streaming mode already prints each message as JSON)
-        if !self.streaming_json {
+        if self.output_format == OutputFormat::Text {
             if let Some(response_msg) = response {
                 println!("{}", response_msg.content);
             } else {
