@@ -138,8 +138,12 @@ async fn execute_shell(arguments: &str) -> Result<ToolResult, String> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    let result = if output.status.success() {
-        stdout.to_string()
+    // Always include both stdout and stderr in output, since many commands
+    // (like cargo clippy) output to stderr even on success
+    let result = if stdout.is_empty() && stderr.is_empty() {
+        String::new()
+    } else if output.status.success() {
+        format!("{stdout}{stderr}")
     } else {
         format!(
             "Exit code {}:\n{}{}",
