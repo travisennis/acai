@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// Output format for the response
-#[derive(Clone, Copy, Debug, Default, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
     /// Plain text output
     #[default]
