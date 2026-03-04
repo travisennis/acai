@@ -15,7 +15,8 @@ const BASE_URL: &str = "https://openrouter.ai/api/v1/responses";
 
 /// Represents a single item in the conversation history, mapping directly to
 /// the Responses API input/output array format.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConversationItem {
     Message {
         role: Role,
@@ -212,6 +213,23 @@ impl Responses {
             total_usage: Usage::default(),
             turn_count: 0,
         }
+    }
+
+    /// Replace the auto-generated session ID with a restored session's ID.
+    pub fn with_session_id(mut self, id: String) -> Self {
+        self.session_id = id;
+        self
+    }
+
+    /// Replace the conversation history with restored messages.
+    pub fn with_history(mut self, messages: Vec<ConversationItem>) -> Self {
+        self.history = messages;
+        self
+    }
+
+    /// Get a reference to the typed conversation history.
+    pub fn get_history(&self) -> &[ConversationItem] {
+        &self.history
     }
 
     /// Add custom tools or override defaults

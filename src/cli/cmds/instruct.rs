@@ -7,7 +7,7 @@ use clap::{Args, ValueEnum};
 use crate::{
     cli::CmdRunner,
     clients::Responses,
-    config::DataDir,
+    config::{DataDir, Session},
     models::{Message, Role},
 };
 
@@ -46,12 +46,28 @@ pub struct Cmd {
     /// Output format for the response (text or stream-json)
     #[arg(long, value_enum, default_value = "text")]
     pub output_format: OutputFormat,
+
+    /// Continue the most recent session for this directory
+    #[arg(long = "continue")]
+    pub continue_session: bool,
+
+    /// Resume a specific session by UUID
+    #[arg(long, value_name = "UUID")]
+    pub resume: Option<String>,
 }
 
 const SYSTEM_PROMPT: &str = "You are a helpful AI CLI assistant that runs on the user's computer and follows their instructions.";
 
 impl CmdRunner for Cmd {
     async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // Validate mutually exclusive flags
+        if self.continue_session && self.resume.is_some() {
+            return Err(anyhow::anyhow!(
+                "Cannot use both --continue and --resume at the same time"
+            )
+            .into());
+        }
+
         // Only read from stdin if a prompt is not provided
         // Note: We always attempt to read stdin unless --prompt is explicitly provided.
         // If stdin is a TTY (interactive terminal), it will be empty anyway.
@@ -62,10 +78,52 @@ impl CmdRunner for Cmd {
                 std::io::read_to_string(std::io::stdin()).ok()
             };
 
-        let mut client = Responses::new(self.model.clone(), SYSTEM_PROMPT)
-            .temperature(self.temperature)
-            .top_p(self.top_p)
-            .max_output_tokens(self.max_tokens);
+        let current_dir = std::env::current_dir()
+            .map_err(|e| anyhow::anyhow!("Failed to get current directory: {e}"))?;
+
+        let data_dir = DataDir::global();
+
+        // Build client and session, restoring from disk if requested
+        let (mut client, mut session) = if self.continue_session {
+            let restored = data_dir
+                .load_latest_session(&current_dir)?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("No previous session found for this directory")
+                })?;
+            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)
+                .temperature(self.temperature)
+                .top_p(self.top_p)
+                .max_output_tokens(self.max_tokens)
+                .with_session_id(restored.id.clone())
+                .with_history(restored.messages.clone());
+            (c, restored)
+        } else if let Some(ref uuid) = self.resume {
+            uuid::Uuid::parse_str(uuid)
+                .map_err(|e| anyhow::anyhow!("Invalid session UUID '{uuid}': {e}"))?;
+            let restored = data_dir
+                .load_session(&current_dir, uuid)?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Session {uuid} not found in this directory")
+                })?;
+            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)
+                .temperature(self.temperature)
+                .top_p(self.top_p)
+                .max_output_tokens(self.max_tokens)
+                .with_session_id(restored.id.clone())
+                .with_history(restored.messages.clone());
+            (c, restored)
+        } else {
+            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)
+                .temperature(self.temperature)
+                .top_p(self.top_p)
+                .max_output_tokens(self.max_tokens);
+            let s = Session::new(
+                c.session_id.clone(),
+                current_dir,
+                SYSTEM_PROMPT.to_string(),
+            );
+            (c, s)
+        };
 
         // Enable streaming JSON output if flag is set
         if self.output_format == OutputFormat::StreamJson {
@@ -115,10 +173,15 @@ impl CmdRunner for Cmd {
             }
         }
 
-        // Propagate error or continue with response handling
-        let response = result?;
+        // Save session regardless of outcome (Phase 4: save on error)
+        session.messages = client.get_history().to_vec();
+        session.touch();
+        if let Err(e) = data_dir.save_session(&session) {
+            log::error!("Failed to save session: {e}");
+        }
 
-        DataDir::global().save_messages(&client.get_message_history());
+        // Propagate error after saving
+        let response = result?;
 
         // Only print final response if NOT using streaming-json mode
         // (streaming mode already prints each message as JSON)

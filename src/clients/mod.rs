@@ -1,3 +1,3 @@
 pub mod responses;
 
-pub use responses::Responses;
+pub use responses::{ConversationItem, Responses};

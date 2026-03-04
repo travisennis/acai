@@ -21,13 +21,18 @@ atty = "0.2.14"
 clap = { version = "4.5.60", features = ["derive"] }
 dashmap = "6.1.0"
 dirs = "6.0"
+hex = "0.4"
 log = "0.4.29"
 log4rs = "1.4.0"
 once_cell = "1.21.3"
 regex = "1.12.3"
 reqwest = { version = "0.13.2", features = ["json"] }
 serde = { version = "1.0.228", features = ["derive"] }
+sha2 = "0.10"
 serde_json = "1.0.149"
 thiserror = "2.0.18"
 tokio = { version = "1.49.0", features = ["full"] }
 uuid = { version = "1.21", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,14 +1,17 @@
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use log::error;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use once_cell::sync::OnceCell;
+
+use super::Session;
 
 pub static DATA_DIR_INSTANCE: OnceCell<DataDir> = OnceCell::new();
 
@@ -99,5 +102,81 @@ impl DataDir {
                 None
             }
         }
+    }
+
+    /// Returns the sessions directory path: `~/.cache/acai/sessions/`
+    fn sessions_dir(&self) -> PathBuf {
+        self.data_dir.join("sessions")
+    }
+
+    /// Hash a working directory path to a short hex string for directory naming.
+    fn dir_hash(working_dir: &Path) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(working_dir.to_string_lossy().as_bytes());
+        let result = hasher.finalize();
+        // First 16 hex characters (8 bytes)
+        hex::encode(&result[..8])
+    }
+
+    /// Save a session to `sessions/{dir_hash}/{session.id}.json` with atomic write
+    /// and update the `latest` symlink.
+    pub fn save_session(&self, session: &Session) -> anyhow::Result<PathBuf> {
+        uuid::Uuid::parse_str(&session.id)
+            .map_err(|e| anyhow!("Invalid session UUID '{}': {}", session.id, e))?;
+
+        let dir_hash = Self::dir_hash(&session.working_dir);
+        let session_dir = self.sessions_dir().join(&dir_hash);
+        let session_path = session_dir.join(format!("{}.json", session.id));
+
+        session.save(&session_path)?;
+
+        // Update latest symlink atomically
+        let latest_link = session_dir.join("latest");
+        let temp_link = session_dir.join(".latest_tmp");
+        let target = format!("{}.json", session.id);
+
+        // Remove temp symlink if it exists
+        let _ = fs::remove_file(&temp_link);
+        std::os::unix::fs::symlink(&target, &temp_link)
+            .with_context(|| format!("Failed to create temp symlink at {}", temp_link.display()))?;
+        fs::rename(&temp_link, &latest_link)
+            .with_context(|| format!("Failed to rename symlink to {}", latest_link.display()))?;
+
+        Ok(session_path)
+    }
+
+    /// Load the most recent session for a given working directory.
+    pub fn load_latest_session(&self, working_dir: &Path) -> anyhow::Result<Option<Session>> {
+        let dir_hash = Self::dir_hash(working_dir);
+        let latest_link = self.sessions_dir().join(&dir_hash).join("latest");
+
+        if !latest_link.exists() {
+            return Ok(None);
+        }
+
+        let target = fs::read_link(&latest_link)
+            .with_context(|| format!("Failed to read symlink: {}", latest_link.display()))?;
+
+        let session_path = self.sessions_dir().join(&dir_hash).join(target);
+        if !session_path.exists() {
+            return Ok(None);
+        }
+
+        Session::load(&session_path).map(Some)
+    }
+
+    /// Load a specific session by UUID, scoped to a working directory.
+    pub fn load_session(&self, working_dir: &Path, id: &str) -> anyhow::Result<Option<Session>> {
+        uuid::Uuid::parse_str(id)
+            .map_err(|e| anyhow!("Invalid session UUID '{}': {}", id, e))?;
+
+        let dir_hash = Self::dir_hash(working_dir);
+        let session_path = self.sessions_dir().join(&dir_hash).join(format!("{id}.json"));
+
+        if !session_path.exists() {
+            return Ok(None);
+        }
+
+        Session::load(&session_path).map(Some)
     }
 }
