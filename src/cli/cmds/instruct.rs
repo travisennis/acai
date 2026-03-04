@@ -54,6 +54,10 @@ pub struct Cmd {
     /// Resume a specific session by UUID
     #[arg(long, value_name = "UUID")]
     pub resume: Option<String>,
+
+    /// Do not save the session to disk
+    #[arg(long)]
+    pub no_session: bool,
 }
 
 const SYSTEM_PROMPT: &str = "You are a helpful AI CLI assistant that runs on the user's computer and follows their instructions.";
@@ -174,10 +178,12 @@ impl CmdRunner for Cmd {
         }
 
         // Save session regardless of outcome (Phase 4: save on error)
-        session.messages = client.get_history().to_vec();
-        session.touch();
-        if let Err(e) = data_dir.save_session(&session) {
-            log::error!("Failed to save session: {e}");
+        if !self.no_session {
+            session.messages = client.get_history().to_vec();
+            session.touch();
+            if let Err(e) = data_dir.save_session(&session) {
+                log::error!("Failed to save session: {e}");
+            }
         }
 
         // Propagate error after saving

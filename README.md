@@ -79,6 +79,7 @@ For more details, see [Session Management](docs/session-management.md).
 - `--prompt` (`-p`) - Your instruction prompt
 - `--continue` - Continue the most recent session for the current directory
 - `--resume <UUID>` - Resume a specific session by its UUID
+- `--no-session` - Do not save the session to disk
 
 ### Example
 

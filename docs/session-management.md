@@ -35,6 +35,16 @@ acai instruct --resume 550e8400-e29b-41d4-a716-446655440000 --prompt "Continue o
 
 The UUID is scoped to the current directory — you can only resume sessions that were created in the same directory.
 
+### Disabling Session Saving
+
+Use `--no-session` to run a command without saving the session to disk:
+
+```bash
+acai instruct --no-session --prompt "Quick one-off question"
+```
+
+This is useful for ephemeral queries where you don't need to continue the conversation later.
+
 ### Mutually Exclusive Flags
 
 `--continue` and `--resume` cannot be used together. Acai will return an error if both are provided.
@@ -158,5 +168,5 @@ The new session system coexists with the legacy timestamp-based history files in
 
 - **Session struct**: `src/config/session.rs`
 - **Storage and retrieval**: `src/config/data_dir.rs` (`save_session`, `load_latest_session`, `load_session`)
-- **CLI integration**: `src/cli/cmds/instruct.rs` (`--continue`, `--resume` flags)
+- **CLI integration**: `src/cli/cmds/instruct.rs` (`--continue`, `--resume`, `--no-session` flags)
 - **Client builder methods**: `src/clients/responses.rs` (`with_session_id`, `with_history`)
