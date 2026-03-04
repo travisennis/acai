@@ -62,6 +62,55 @@ pub struct Cmd {
 
 const SYSTEM_PROMPT: &str = "You are a helpful AI CLI assistant that runs on the user's computer and follows their instructions.";
 
+impl Cmd {
+    fn build_client_and_session(
+        &self,
+        data_dir: &crate::config::DataDir,
+        current_dir: std::path::PathBuf,
+    ) -> Result<(Responses, crate::config::Session), Box<dyn Error + Send + Sync>> {
+        if self.continue_session {
+            let restored = data_dir
+                .load_latest_session(&current_dir)?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("No previous session found for this directory")
+                })?;
+            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)
+                .temperature(self.temperature)
+                .top_p(self.top_p)
+                .max_output_tokens(self.max_tokens)
+                .with_session_id(restored.id.clone())
+                .with_history(restored.messages.clone());
+            Ok((c, restored))
+        } else if let Some(ref uuid) = self.resume {
+            uuid::Uuid::parse_str(uuid)
+                .map_err(|e| anyhow::anyhow!("Invalid session UUID '{uuid}': {e}"))?;
+            let restored = data_dir
+                .load_session(&current_dir, uuid)?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Session {uuid} not found in this directory")
+                })?;
+            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)
+                .temperature(self.temperature)
+                .top_p(self.top_p)
+                .max_output_tokens(self.max_tokens)
+                .with_session_id(restored.id.clone())
+                .with_history(restored.messages.clone());
+            Ok((c, restored))
+        } else {
+            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)
+                .temperature(self.temperature)
+                .top_p(self.top_p)
+                .max_output_tokens(self.max_tokens);
+            let s = Session::new(
+                c.session_id.clone(),
+                current_dir,
+                SYSTEM_PROMPT.to_string(),
+            );
+            Ok((c, s))
+        }
+    }
+}
+
 impl CmdRunner for Cmd {
     async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Validate mutually exclusive flags
@@ -88,46 +137,7 @@ impl CmdRunner for Cmd {
         let data_dir = DataDir::global();
 
         // Build client and session, restoring from disk if requested
-        let (mut client, mut session) = if self.continue_session {
-            let restored = data_dir
-                .load_latest_session(&current_dir)?
-                .ok_or_else(|| {
-                    anyhow::anyhow!("No previous session found for this directory")
-                })?;
-            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)
-                .temperature(self.temperature)
-                .top_p(self.top_p)
-                .max_output_tokens(self.max_tokens)
-                .with_session_id(restored.id.clone())
-                .with_history(restored.messages.clone());
-            (c, restored)
-        } else if let Some(ref uuid) = self.resume {
-            uuid::Uuid::parse_str(uuid)
-                .map_err(|e| anyhow::anyhow!("Invalid session UUID '{uuid}': {e}"))?;
-            let restored = data_dir
-                .load_session(&current_dir, uuid)?
-                .ok_or_else(|| {
-                    anyhow::anyhow!("Session {uuid} not found in this directory")
-                })?;
-            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)
-                .temperature(self.temperature)
-                .top_p(self.top_p)
-                .max_output_tokens(self.max_tokens)
-                .with_session_id(restored.id.clone())
-                .with_history(restored.messages.clone());
-            (c, restored)
-        } else {
-            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)
-                .temperature(self.temperature)
-                .top_p(self.top_p)
-                .max_output_tokens(self.max_tokens);
-            let s = Session::new(
-                c.session_id.clone(),
-                current_dir,
-                SYSTEM_PROMPT.to_string(),
-            );
-            (c, s)
-        };
+        let (mut client, mut session) = self.build_client_and_session(data_dir, current_dir)?;
 
         // Enable streaming JSON output if flag is set
         if self.output_format == OutputFormat::StreamJson {

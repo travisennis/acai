@@ -519,6 +519,7 @@ impl Responses {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_message_history(&self) -> Vec<serde_json::Value> {
         build_input(&self.history)
     }

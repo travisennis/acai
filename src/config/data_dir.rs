@@ -72,6 +72,7 @@ impl DataDir {
         self.data_dir.clone()
     }
 
+    #[allow(dead_code)]
     pub fn save_messages<T: Serialize>(&self, messages: &[T]) -> Option<PathBuf> {
         let Ok(in_ms) = SystemTime::now().duration_since(UNIX_EPOCH) else {
             error!("Time went backwards");
@@ -122,7 +123,10 @@ impl DataDir {
     /// and update the `latest` symlink.
     pub fn save_session(&self, session: &Session) -> anyhow::Result<PathBuf> {
         uuid::Uuid::parse_str(&session.id)
-            .map_err(|e| anyhow!("Invalid session UUID '{}': {}", session.id, e))?;
+            .map_err(|e| {
+                let id = &session.id;
+                anyhow!("Invalid session UUID '{id}': {e}")
+            })?;
 
         let dir_hash = Self::dir_hash(&session.working_dir);
         let session_dir = self.sessions_dir().join(&dir_hash);
@@ -168,7 +172,7 @@ impl DataDir {
     /// Load a specific session by UUID, scoped to a working directory.
     pub fn load_session(&self, working_dir: &Path, id: &str) -> anyhow::Result<Option<Session>> {
         uuid::Uuid::parse_str(id)
-            .map_err(|e| anyhow!("Invalid session UUID '{}': {}", id, e))?;
+            .map_err(|e| anyhow!("Invalid session UUID '{id}': {e}"))?;
 
         let dir_hash = Self::dir_hash(working_dir);
         let session_path = self.sessions_dir().join(&dir_hash).join(format!("{id}.json"));
