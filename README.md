@@ -50,6 +50,25 @@ Acai uses OpenRouter for AI access. Set your API key as an environment variable:
 
 Get your free API key at [openrouter.ai](https://openrouter.ai).
 
+### Session Management
+
+Acai automatically saves conversation sessions so you can continue conversations across separate invocations. Sessions are tracked per directory.
+
+```bash
+# Start a conversation
+acai instruct --prompt "Remember the number 42"
+
+# Continue the most recent session in the current directory
+acai instruct --continue --prompt "What number did I tell you?"
+
+# Resume a specific session by UUID
+acai instruct --resume 550e8400-e29b-41d4-a716-446655440000 --prompt "Continue our conversation"
+```
+
+Sessions are saved to `~/.cache/acai/sessions/` and include full conversation history with metadata. Sessions are saved on both success and error for crash recovery.
+
+For more details, see [Session Management](docs/session-management.md).
+
 ### Options
 
 - `--model` - Set the model to use (default: `minimax/minimax-m2.5`)
@@ -58,6 +77,8 @@ Get your free API key at [openrouter.ai](https://openrouter.ai).
 - `--top-p` - Set top-p value
 - `--output-format` - Output format: `text` (default) or `stream-json`
 - `--prompt` (`-p`) - Your instruction prompt
+- `--continue` - Continue the most recent session for the current directory
+- `--resume <UUID>` - Resume a specific session by its UUID
 
 ### Example
 
