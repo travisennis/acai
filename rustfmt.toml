@@ -1,0 +1,17 @@
+# Enforce formatting standards
+# Run: cargo fmt -- --check (in CI)
+
+edition = "2024"
+max_width = 100
+use_small_heuristics = "Default"
+
+# Consistent style
+use_field_init_shorthand = true
+use_try_shorthand = true
+
+# Match blocks
+match_arm_leading_pipes = "Preserve"
+match_block_trailing_comma = true
+
+# Force Unix-style line endings
+newline_style = "Unix"

@@ -1,13 +1,26 @@
-# Ultra-strict clippy: deny pedantic, nursery, and unsafe lints
-# -D = deny (error), -W = warn, -A = allow
-# Remove redundant -Dclippy::all since pedantic includes it
+# Check code formatting (use in CI)
+fmt-check:
+    cargo fmt -- --check
+
+# Auto-fix formatting
+fmt:
+    cargo fmt
+
+# Run clippy with workspace lints (configured in Cargo.toml)
+clippy:
+    cargo clippy
+
+# Ultra-strict clippy for CI (deny all warnings, lint all targets)
 clippy-strict:
-    cargo clippy -- \
-        -Dclippy::pedantic \
-        -Dclippy::nursery \
-        -Dclippy::unwrap_used \
-        -Dclippy::expect_used \
-        -Aclippy::missing_docs_in_private_items
+    cargo clippy --all-targets -- -D warnings
+
+# Run tests
+test:
+    cargo test
+
+# Run all checks (use in CI)
+ci: fmt-check clippy-strict test
+    echo "All checks passed!"
 
 update-dependencies:
     cargo upgrade -i allow && cargo update    

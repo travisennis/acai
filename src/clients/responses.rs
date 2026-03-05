@@ -37,8 +37,9 @@ pub struct Responses {
 
 impl Responses {
     pub fn new(model: String, system_prompt: &str) -> anyhow::Result<Self> {
-        let token = env::var("OPENROUTER_API_KEY")
-            .map_err(|_| anyhow::anyhow!("OPENROUTER_API_KEY environment variable is not set"))?;
+        let token = env::var("OPENROUTER_API_KEY").map_err(|e| {
+            anyhow::anyhow!("OPENROUTER_API_KEY environment variable is not set: {e}")
+        })?;
 
         Ok(Self {
             model,
@@ -333,7 +334,7 @@ impl Responses {
                     Ok(resp_json) => match serde_json::to_string_pretty(&resp_json) {
                         Ok(resp_formatted) => {
                             Err(anyhow::anyhow!("{}\n\n{}", self.model, resp_formatted))
-                        }
+                        },
                         Err(e) => Err(anyhow::anyhow!("Failed to format response JSON: {e}")),
                     },
                     Err(_) => Err(anyhow::anyhow!("{}\n\n{}", self.model, error_text)),
@@ -367,7 +368,7 @@ fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
                         summary: vec![text],
                     });
                 }
-            }
+            },
             "function_call" => {
                 items.push(ConversationItem::FunctionCall {
                     id: output.id.clone().unwrap_or_default(),
@@ -375,7 +376,7 @@ fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
                     name: output.name.clone().unwrap_or_default(),
                     arguments: output.arguments.clone().unwrap_or_default(),
                 });
-            }
+            },
             "message" => {
                 // Extract text content
                 let text = output
@@ -391,8 +392,8 @@ fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
                     id: output.id.clone(),
                     status: output.status.clone(),
                 });
-            }
-            _ => {} // ignore unknown types
+            },
+            _ => {}, // ignore unknown types
         }
     }
 

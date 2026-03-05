@@ -138,20 +138,20 @@ impl Cmd {
                 if let Err(e) = worktree::remove(original_dir, &wt.name, false) {
                     log::warn!("Failed to clean up worktree '{}': {e}", wt.name);
                 }
-            }
+            },
             Ok(true) => {
                 eprintln!(
                     "Worktree '{}' has changes, keeping at {}",
                     wt.name,
                     wt.path.display()
                 );
-            }
+            },
             Err(e) => {
                 log::warn!(
                     "Could not check worktree '{}' for changes, keeping it: {e}",
                     wt.name
                 );
-            }
+            },
         }
     }
 }
@@ -202,7 +202,7 @@ impl CmdRunner for Cmd {
                 return Err(anyhow::anyhow!(
                     "No input provided. Use --prompt \"your message\" or pipe input to stdin."
                 ));
-            }
+            },
         };
 
         let msg = Message {
@@ -225,10 +225,10 @@ impl CmdRunner for Cmd {
             match &result {
                 Ok(_) => {
                     client.emit_result_message(true, duration_ms, None);
-                }
+                },
                 Err(e) => {
                     client.emit_result_message(false, duration_ms, Some(e.to_string().as_ref()));
-                }
+                },
             }
         }
 

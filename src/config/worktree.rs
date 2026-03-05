@@ -179,7 +179,7 @@ pub fn has_changes(wt_path: &Path) -> anyhow::Result<bool> {
         Ok(output) if output.status.success() => {
             let log_output = String::from_utf8_lossy(&output.stdout);
             Ok(!log_output.trim().is_empty())
-        }
+        },
         _ => Ok(false),
     }
 }
@@ -237,6 +237,7 @@ pub fn remove(from: &Path, name: &str, force: bool) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use tempfile::TempDir;

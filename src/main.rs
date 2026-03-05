@@ -1,3 +1,5 @@
+//! acai - AI coding assistant CLI
+
 mod cli;
 mod clients;
 mod config;

@@ -33,3 +33,31 @@ uuid = { version = "1.21", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"
+
+# Enforce code quality standards across the workspace
+[lints.rust]
+# Require documentation on public APIs
+missing_docs = "warn"
+
+# Catch common mistakes
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.clippy]
+# Error handling - no unwrap/expect in production code
+unwrap_used = "deny"
+expect_used = "deny"
+
+# Pedantic and nursery for strict quality
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+
+# Allow some noisy ones
+missing_docs_in_private_items = "allow"
+missing_errors_doc = "allow"
+
+# Additional quality checks
+enum_glob_use = "deny"
+exit = "deny"
+if_then_some_else_none = "warn"
+map_err_ignore = "warn"
+implicit_clone = "warn"

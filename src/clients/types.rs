@@ -80,7 +80,7 @@ impl ConversationItem {
                 }
 
                 msg
-            }
+            },
             Self::FunctionCall {
                 id,
                 call_id,
@@ -94,14 +94,14 @@ impl ConversationItem {
                     "name": name,
                     "arguments": arguments
                 })
-            }
+            },
             Self::FunctionCallOutput { call_id, output } => {
                 serde_json::json!({
                     "type": "function_call_output",
                     "call_id": call_id,
                     "output": output
                 })
-            }
+            },
             Self::Reasoning { id, summary } => {
                 serde_json::json!({
                     "type": "reasoning",
@@ -110,7 +110,7 @@ impl ConversationItem {
                         serde_json::json!({"type": "summary_text", "text": s})
                     }).collect::<Vec<_>>()
                 })
-            }
+            },
         }
     }
 
@@ -141,7 +141,7 @@ impl ConversationItem {
                     obj["status"] = serde_json::json!(status);
                 }
                 obj
-            }
+            },
             Self::FunctionCall {
                 id,
                 call_id,
@@ -155,21 +155,21 @@ impl ConversationItem {
                     "name": name,
                     "arguments": arguments
                 })
-            }
+            },
             Self::FunctionCallOutput { call_id, output } => {
                 serde_json::json!({
                     "type": "function_call_output",
                     "call_id": call_id,
                     "output": output
                 })
-            }
+            },
             Self::Reasoning { id, summary } => {
                 serde_json::json!({
                     "type": "reasoning",
                     "id": id,
                     "summary": summary
                 })
-            }
+            },
         }
     }
 }
