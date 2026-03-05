@@ -1,3 +1,5 @@
+use crate::config::DataDir;
+
 /// A trait representing a command runner.
 ///
 /// This trait defines a single method, `run`, which is responsible for executing the logic of a specific command.
@@ -11,7 +13,7 @@
 /// struct MyCommand;
 ///
 /// impl CmdRunner for MyCommand {
-///     async fn run(&self) -> anyhow::Result<()> {
+///     async fn run(&self, data_dir: &DataDir) -> anyhow::Result<()> {
 ///         println!("Running MyCommand!");
 ///         Ok(())
 ///     }
@@ -26,5 +28,5 @@ pub trait CmdRunner {
     /// # Returns
     ///
     /// Returns a `Result` indicating whether the command execution was successful.
-    async fn run(&self) -> anyhow::Result<()>;
+    async fn run(&self, data_dir: &DataDir) -> anyhow::Result<()>;
 }

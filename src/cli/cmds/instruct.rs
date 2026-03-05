@@ -5,7 +5,7 @@ use clap::{Args, ValueEnum};
 use crate::{
     cli::CmdRunner,
     clients::Responses,
-    config::{worktree, DataDir, Session},
+    config::{DataDir, Session, worktree},
     models::{Message, Role},
 };
 
@@ -73,9 +73,7 @@ impl Cmd {
         if self.continue_session {
             let restored = data_dir
                 .load_latest_session(&current_dir)?
-                .ok_or_else(|| {
-                    anyhow::anyhow!("No previous session found for this directory")
-                })?;
+                .ok_or_else(|| anyhow::anyhow!("No previous session found for this directory"))?;
             let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)?
                 .temperature(self.temperature)
                 .top_p(self.top_p)
@@ -88,9 +86,7 @@ impl Cmd {
                 .map_err(|e| anyhow::anyhow!("Invalid session UUID '{uuid}': {e}"))?;
             let restored = data_dir
                 .load_session(&current_dir, uuid)?
-                .ok_or_else(|| {
-                    anyhow::anyhow!("Session {uuid} not found in this directory")
-                })?;
+                .ok_or_else(|| anyhow::anyhow!("Session {uuid} not found in this directory"))?;
             let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)?
                 .temperature(self.temperature)
                 .top_p(self.top_p)
@@ -103,11 +99,7 @@ impl Cmd {
                 .temperature(self.temperature)
                 .top_p(self.top_p)
                 .max_output_tokens(self.max_tokens);
-            let s = Session::new(
-                c.session_id.clone(),
-                current_dir,
-                SYSTEM_PROMPT.to_string(),
-            );
+            let s = Session::new(c.session_id.clone(), current_dir, SYSTEM_PROMPT.to_string());
             Ok((c, s))
         }
     }
@@ -165,7 +157,7 @@ impl Cmd {
 }
 
 impl CmdRunner for Cmd {
-    async fn run(&self) -> anyhow::Result<()> {
+    async fn run(&self, data_dir: &DataDir) -> anyhow::Result<()> {
         // Validate mutually exclusive flags
         if self.continue_session && self.resume.is_some() {
             return Err(anyhow::anyhow!(
@@ -176,12 +168,11 @@ impl CmdRunner for Cmd {
         // Only read from stdin if a prompt is not provided
         // Note: We always attempt to read stdin unless --prompt is explicitly provided.
         // If stdin is a TTY (interactive terminal), it will be empty anyway.
-        let input_context: Option<String> =
-            if self.prompt.is_some() {
-                None
-            } else {
-                std::io::read_to_string(std::io::stdin()).ok()
-            };
+        let input_context: Option<String> = if self.prompt.is_some() {
+            None
+        } else {
+            std::io::read_to_string(std::io::stdin()).ok()
+        };
 
         let original_dir = std::env::current_dir()
             .map_err(|e| anyhow::anyhow!("Failed to get current directory: {e}"))?;
@@ -190,8 +181,6 @@ impl CmdRunner for Cmd {
 
         let current_dir = std::env::current_dir()
             .map_err(|e| anyhow::anyhow!("Failed to get current directory: {e}"))?;
-
-        let data_dir = DataDir::global();
 
         // Build client and session, restoring from disk if requested
         let (mut client, mut session) = self.build_client_and_session(data_dir, current_dir)?;
