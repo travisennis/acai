@@ -5,6 +5,11 @@ use std::{env, error::Error};
 use log::debug;
 use serde::{Deserialize, Serialize};
 
+/// Maximum number of bytes the Bash tool will return inline.
+/// Output exceeding this limit is written to a temporary file and the agent
+/// receives a truncated message with a path to the full output.
+const BASH_OUTPUT_MAX_BYTES: usize = 50_000;
+
 use crate::models::{Message, Role};
 
 const BASE_URL: &str = "https://openrouter.ai/api/v1/responses";
@@ -154,10 +159,66 @@ async fn execute_bash(arguments: &str) -> Result<ToolResult, String> {
         )
     };
 
+    let result = truncate_output(&result);
+
     Ok(ToolResult {
         call_id: String::new(),
         output: result,
     })
+}
+
+/// If `output` exceeds [`BASH_OUTPUT_MAX_BYTES`], write the full text to a
+/// temporary file and return a summary pointing to that file. Otherwise return
+/// the output unchanged.
+fn truncate_output(output: &str) -> String {
+    if output.len() <= BASH_OUTPUT_MAX_BYTES {
+        return output.to_string();
+    }
+
+    let total_bytes = output.len();
+    let total_lines = output.lines().count();
+
+    // Try to write the full output to a temp file so the agent can search it.
+    let tmp_dir = std::env::temp_dir().join("acai");
+    let _ = std::fs::create_dir_all(&tmp_dir);
+    let file_name = format!("bash_output_{}.txt", uuid::Uuid::new_v4());
+    let tmp_path = tmp_dir.join(&file_name);
+
+    if let Err(e) = std::fs::write(&tmp_path, output) {
+        // Could not write — fall back to a truncated inline result.
+        debug!(
+            "Failed to write overflow output to {}: {e}",
+            tmp_path.display()
+        );
+
+        let half = BASH_OUTPUT_MAX_BYTES / 2;
+        let head_end = output.floor_char_boundary(half);
+        let tail_start = output.ceil_char_boundary(total_bytes - half);
+        return format!(
+            "[Output too long — {total_bytes} bytes, {total_lines} lines. \
+             The command was too verbose; reformulate with less output \
+             (e.g. pipe through `head`, `tail`, or `grep`).]\n\n\
+             --- first ~{half} bytes ---\n{head}\n\n\
+             --- last ~{half} bytes ---\n{tail}",
+            head = &output[..head_end],
+            tail = &output[tail_start..],
+        );
+    }
+
+    let preview = BASH_OUTPUT_MAX_BYTES / 4;
+    let head_end = output.floor_char_boundary(preview);
+    let tail_start = output.ceil_char_boundary(total_bytes - preview);
+    format!(
+        "[Output too long — {total_bytes} bytes, {total_lines} lines.]\n\
+         Full output saved to: {path}\n\
+         You can search it with `grep` or view portions with `head`/`tail`.\n\
+         Consider reformulating the command to produce less output.\n\n\
+         --- first ~{preview} bytes ---\n{head}\n\n\
+         --- last ~{preview} bytes ---\n{tail}",
+        path = tmp_path.display(),
+        head = &output[..head_end],
+        tail = &output[tail_start..],
+    )
 }
 
 // =============================================================================
@@ -832,4 +893,40 @@ struct ApiError {
     message: String,
     #[allow(dead_code)]
     metadata: Option<serde_json::Value>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_output_passes_through_small_output() {
+        let small = "hello world";
+        assert_eq!(truncate_output(small), small);
+    }
+
+    #[test]
+    fn truncate_output_passes_through_at_limit() {
+        let exact = "a".repeat(BASH_OUTPUT_MAX_BYTES);
+        assert_eq!(truncate_output(&exact), exact);
+    }
+
+    #[test]
+    fn truncate_output_truncates_large_output() {
+        let large = "x".repeat(BASH_OUTPUT_MAX_BYTES + 1000);
+        let result = truncate_output(&large);
+        assert!(result.len() < large.len());
+        assert!(result.contains("[Output too long"));
+        assert!(result.contains("Full output saved to:"));
+    }
+
+    #[test]
+    fn truncate_output_handles_multibyte_chars() {
+        // Create output with multi-byte UTF-8 characters that exceeds the limit
+        let large = "é".repeat(BASH_OUTPUT_MAX_BYTES); // each 'é' is 2 bytes
+        let result = truncate_output(&large);
+        assert!(result.contains("[Output too long"));
+        // Verify the result is valid UTF-8 (would panic if not)
+        let _ = result.as_bytes();
+    }
 }
