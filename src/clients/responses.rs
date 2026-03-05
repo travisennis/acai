@@ -300,11 +300,7 @@ impl Responses {
                 .unwrap_or_default();
 
             // Get tool names only
-            let tools: Vec<String> = self
-                .tools
-                .iter()
-                .map(|tool| tool.name.clone())
-                .collect();
+            let tools: Vec<String> = self.tools.iter().map(|tool| tool.name.clone()).collect();
 
             let json = serde_json::json!({
                 "type": "init",
@@ -394,10 +390,7 @@ impl Responses {
     }
 
     #[allow(clippy::too_many_lines)]
-    pub async fn send(
-        &mut self,
-        message: Message,
-    ) -> anyhow::Result<Option<Message>> {
+    pub async fn send(&mut self, message: Message) -> anyhow::Result<Option<Message>> {
         // Emit init message with session info, cwd, and tools
         self.emit_init_message();
 
@@ -456,7 +449,8 @@ impl Responses {
             let prompt_json = serde_json::to_string(&prompt)?;
             debug!(target: "acai", "{prompt_json}");
 
-            let response = self.client
+            let response = self
+                .client
                 .post(BASE_URL)
                 .json(&prompt)
                 .header("content-type", "application/json")
@@ -554,7 +548,6 @@ impl Responses {
             }
         }
     }
-
 }
 
 /// Build the input array for the Responses API from conversation history

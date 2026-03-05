@@ -3,19 +3,19 @@ use std::{
     process::Command,
 };
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use log::info;
 
 /// Adjectives for random worktree name generation.
 const ADJECTIVES: &[&str] = &[
-    "bright", "calm", "cool", "dark", "fast", "keen", "pure", "soft", "warm", "wild",
-    "bold", "crisp", "fair", "glad", "kind", "neat", "rare", "safe", "tall", "vast",
+    "bright", "calm", "cool", "dark", "fast", "keen", "pure", "soft", "warm", "wild", "bold",
+    "crisp", "fair", "glad", "kind", "neat", "rare", "safe", "tall", "vast",
 ];
 
 /// Nouns for random worktree name generation.
 const NOUNS: &[&str] = &[
-    "arch", "beam", "core", "dart", "edge", "flux", "gate", "hive", "iris", "jade",
-    "kite", "leaf", "mesa", "node", "opal", "pine", "quay", "reef", "sage", "tide",
+    "arch", "beam", "core", "dart", "edge", "flux", "gate", "hive", "iris", "jade", "kite", "leaf",
+    "mesa", "node", "opal", "pine", "quay", "reef", "sage", "tide",
 ];
 
 /// Represents an active git worktree managed by acai.

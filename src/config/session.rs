@@ -4,7 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use serde::{Deserialize, Serialize};
 
 use crate::clients::ConversationItem;
@@ -75,16 +75,17 @@ impl Session {
     /// Save session atomically (write to temp file, then rename).
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create session directory: {}", parent.display()))?;
+            fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create session directory: {}", parent.display())
+            })?;
         }
 
-        let json = serde_json::to_string_pretty(self)
-            .context("Failed to serialize session")?;
+        let json = serde_json::to_string_pretty(self).context("Failed to serialize session")?;
 
         let temp_path = path.with_extension("tmp");
-        fs::write(&temp_path, json)
-            .with_context(|| format!("Failed to write temp session file: {}", temp_path.display()))?;
+        fs::write(&temp_path, json).with_context(|| {
+            format!("Failed to write temp session file: {}", temp_path.display())
+        })?;
         fs::rename(&temp_path, path)
             .with_context(|| format!("Failed to rename temp file to: {}", path.display()))?;
 
@@ -163,6 +164,11 @@ mod tests {
 
         let result = Session::load(&path);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unsupported session format version"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unsupported session format version")
+        );
     }
 }
