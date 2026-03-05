@@ -9,11 +9,11 @@ use log::error;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 
 use super::Session;
 
-pub static DATA_DIR_INSTANCE: OnceCell<DataDir> = OnceCell::new();
+pub static DATA_DIR_INSTANCE: OnceLock<DataDir> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 /// Represents a data directory structure.
