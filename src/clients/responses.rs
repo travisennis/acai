@@ -238,6 +238,8 @@ pub struct Responses {
     pub total_usage: Usage,
     /// Number of API calls made
     pub turn_count: u32,
+    /// Reusable HTTP client for connection pooling
+    client: reqwest::Client,
 }
 
 impl Responses {
@@ -262,6 +264,7 @@ impl Responses {
             session_id: uuid::Uuid::new_v4().to_string(),
             total_usage: Usage::default(),
             turn_count: 0,
+            client: reqwest::Client::new(),
         })
     }
 
@@ -437,8 +440,6 @@ impl Responses {
             }
         }
 
-        let client = reqwest::Client::new();
-
         // Agent loop: continue until model stops making tool calls
         loop {
             let prompt = Request {
@@ -455,7 +456,7 @@ impl Responses {
             let prompt_json = serde_json::to_string(&prompt)?;
             debug!(target: "acai", "{prompt_json}");
 
-            let response = client
+            let response = self.client
                 .post(BASE_URL)
                 .json(&prompt)
                 .header("content-type", "application/json")
