@@ -98,8 +98,6 @@ fn bash_tool() -> Tool {
 /// Result of executing a tool
 #[derive(Debug)]
 pub struct ToolResult {
-    #[allow(dead_code)]
-    pub call_id: String,
     pub output: String,
 }
 
@@ -161,10 +159,7 @@ async fn execute_bash(arguments: &str) -> Result<ToolResult, String> {
 
     let result = truncate_output(&result);
 
-    Ok(ToolResult {
-        call_id: String::new(),
-        output: result,
-    })
+    Ok(ToolResult { output: result })
 }
 
 /// If `output` exceeds [`BASH_OUTPUT_MAX_BYTES`], write the full text to a
@@ -231,12 +226,8 @@ pub struct Responses {
     temperature: Option<f32>,
     top_p: Option<f32>,
     max_output_tokens: Option<u32>,
-    #[allow(dead_code)]
-    system: String,
     /// Conversation history using typed items (Responses API format)
     history: Vec<ConversationItem>,
-    #[allow(dead_code)]
-    stream: bool,
     tools: Vec<Tool>,
     /// Callback for streaming JSON output
     #[allow(clippy::type_complexity)]
@@ -260,14 +251,12 @@ impl Responses {
             temperature: Some(0.8),
             top_p: None,
             max_output_tokens: Some(8000),
-            system: system_prompt.to_string(),
             history: vec![ConversationItem::Message {
                 role: Role::System,
                 content: system_prompt.to_string(),
                 id: None,
                 status: None,
             }],
-            stream: false,
             tools: vec![bash_tool()],
             streaming_callback: None,
             session_id: uuid::Uuid::new_v4().to_string(),
@@ -291,13 +280,6 @@ impl Responses {
     /// Get a reference to the typed conversation history.
     pub fn get_history(&self) -> &[ConversationItem] {
         &self.history
-    }
-
-    /// Add custom tools or override defaults
-    #[allow(dead_code)]
-    pub fn with_tools(mut self, tools: Vec<Tool>) -> Self {
-        self.tools = tools;
-        self
     }
 
     /// Enable streaming JSON output - callback receives JSON string for each message
@@ -408,15 +390,7 @@ impl Responses {
         self
     }
 
-    #[allow(clippy::missing_const_for_fn)]
-    #[allow(dead_code)]
-    pub fn stream(mut self, stream: bool) -> Self {
-        self.stream = stream;
-        self
-    }
-
     #[allow(clippy::too_many_lines)]
-    #[allow(dead_code)]
     pub async fn send(
         &mut self,
         message: Message,
@@ -580,10 +554,6 @@ impl Responses {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn get_message_history(&self) -> Vec<serde_json::Value> {
-        build_input(&self.history)
-    }
 }
 
 /// Build the input array for the Responses API from conversation history
@@ -794,14 +764,13 @@ struct Request {
 
 #[derive(Deserialize, Debug)]
 struct ApiResponse {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     id: Option<String>,
     output: Vec<OutputMessage>,
-    #[allow(dead_code)]
     usage: Option<ApiUsage>,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     status: Option<String>,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     error: Option<ApiError>,
 }
 
@@ -814,7 +783,7 @@ struct OutputMessage {
     call_id: Option<String>,
     name: Option<String>,
     arguments: Option<String>,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     role: Option<String>,
     status: Option<String>,
     content: Option<Vec<OutputContent>>,
@@ -885,13 +854,11 @@ struct ApiOutputTokensDetails {
     reasoning_tokens: Option<u32>,
 }
 
+#[expect(dead_code)]
 #[derive(Deserialize, Debug)]
 struct ApiError {
-    #[allow(dead_code)]
     code: Option<String>,
-    #[allow(dead_code)]
     message: String,
-    #[allow(dead_code)]
     metadata: Option<serde_json::Value>,
 }
 

@@ -1,12 +1,9 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{anyhow, Context};
-use log::error;
-use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use std::sync::OnceLock;
@@ -70,39 +67,6 @@ impl DataDir {
 
     pub fn get_cache_dir(&self) -> PathBuf {
         self.data_dir.clone()
-    }
-
-    #[allow(dead_code)]
-    pub fn save_messages<T: Serialize>(&self, messages: &[T]) -> Option<PathBuf> {
-        let Ok(in_ms) = SystemTime::now().duration_since(UNIX_EPOCH) else {
-            error!("Time went backwards");
-            return None;
-        };
-        let in_ms = in_ms.as_millis();
-
-        let output_path = self.data_dir.join("history").join(format!("{in_ms}.json"));
-
-        if let Some(p) = output_path.parent()
-            && let Err(e) = fs::create_dir_all(p)
-        {
-            error!("Failed to create directory: {e}");
-            return None;
-        }
-
-        match serde_json::to_string_pretty(&messages) {
-            Ok(json_string) => {
-                if let Err(e) = std::fs::write(output_path.clone(), json_string) {
-                    error!("Failed to write to file: {e}");
-                    None
-                } else {
-                    Some(output_path)
-                }
-            }
-            Err(e) => {
-                error!("Failed to serialize messages: {e}");
-                None
-            }
-        }
     }
 
     /// Returns the sessions directory path: `~/.cache/acai/sessions/`
