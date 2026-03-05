@@ -53,7 +53,7 @@ nursery = { level = "warn", priority = -1 }
 
 # Allow some noisy ones
 missing_docs_in_private_items = "allow"
-missing_errors_doc = "allow"
+missing_errors_doc = "deny"
 
 # Additional quality checks
 enum_glob_use = "deny"
