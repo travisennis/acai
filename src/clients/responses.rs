@@ -1,6 +1,6 @@
 use tokio::time::{Duration, timeout};
 
-use std::{env, error::Error};
+use std::env;
 
 use log::debug;
 use serde::{Deserialize, Serialize};
@@ -250,11 +250,11 @@ pub struct Responses {
 }
 
 impl Responses {
-    pub fn new(model: String, system_prompt: &str) -> Self {
+    pub fn new(model: String, system_prompt: &str) -> anyhow::Result<Self> {
         let token = env::var("OPENROUTER_API_KEY")
-            .unwrap_or_else(|_error| panic!("Error: OPENROUTER_API_KEY not set."));
+            .map_err(|_| anyhow::anyhow!("OPENROUTER_API_KEY environment variable is not set"))?;
 
-        Self {
+        Ok(Self {
             model,
             token,
             temperature: Some(0.8),
@@ -273,7 +273,7 @@ impl Responses {
             session_id: uuid::Uuid::new_v4().to_string(),
             total_usage: Usage::default(),
             turn_count: 0,
-        }
+        })
     }
 
     /// Replace the auto-generated session ID with a restored session's ID.
@@ -420,7 +420,7 @@ impl Responses {
     pub async fn send(
         &mut self,
         message: Message,
-    ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
+    ) -> anyhow::Result<Option<Message>> {
         // Emit init message with session info, cwd, and tools
         self.emit_init_message();
 
@@ -570,11 +570,11 @@ impl Responses {
                 return match serde_json::from_str::<serde_json::Value>(&error_text) {
                     Ok(resp_json) => match serde_json::to_string_pretty(&resp_json) {
                         Ok(resp_formatted) => {
-                            Err(format!("{}\n\n{}", self.model, resp_formatted).into())
+                            Err(anyhow::anyhow!("{}\n\n{}", self.model, resp_formatted))
                         }
-                        Err(e) => Err(format!("Failed to format response JSON: {e}").into()),
+                        Err(e) => Err(anyhow::anyhow!("Failed to format response JSON: {e}")),
                     },
-                    Err(_) => Err(format!("{}\n\n{}", self.model, error_text).into()),
+                    Err(_) => Err(anyhow::anyhow!("{}\n\n{}", self.model, error_text)),
                 };
             }
         }

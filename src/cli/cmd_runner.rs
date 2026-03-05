@@ -1,5 +1,3 @@
-use std::error::Error;
-
 /// A trait representing a command runner.
 ///
 /// This trait defines a single method, `run`, which is responsible for executing the logic of a specific command.
@@ -9,13 +7,11 @@ use std::error::Error;
 /// # Example
 ///
 /// ```rust
-/// use std::error::Error;
-///
 /// #[derive(Debug)]
 /// struct MyCommand;
 ///
 /// impl CmdRunner for MyCommand {
-///     async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+///     async fn run(&self) -> anyhow::Result<()> {
 ///         println!("Running MyCommand!");
 ///         Ok(())
 ///     }
@@ -30,5 +26,5 @@ pub trait CmdRunner {
     /// # Returns
     ///
     /// Returns a `Result` indicating whether the command execution was successful.
-    async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn run(&self) -> anyhow::Result<()>;
 }

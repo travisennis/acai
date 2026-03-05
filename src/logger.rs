@@ -1,4 +1,3 @@
-use std::fmt;
 use std::path::Path;
 
 use log::{LevelFilter, SetLoggerError};
@@ -13,35 +12,14 @@ use log4rs::{
     filter::threshold::ThresholdFilter,
 };
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    SetLogger(SetLoggerError),
-    Io(std::io::Error),
+    #[error("Failed to set logger: {0}")]
+    SetLogger(#[from] SetLoggerError),
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Configuration error: {0}")]
     Configuration(String),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::SetLogger(e) => write!(f, "Failed to set logger: {e}"),
-            Self::Io(e) => write!(f, "I/O error: {e}"),
-            Self::Configuration(e) => write!(f, "Configuration error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<SetLoggerError> for Error {
-    fn from(err: SetLoggerError) -> Self {
-        Self::SetLogger(err)
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Self {
-        Self::Io(err)
-    }
 }
 
 // error!("Goes to stderr and file");

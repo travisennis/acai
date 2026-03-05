@@ -4,8 +4,6 @@ mod config;
 mod logger;
 mod models;
 
-use std::error::Error;
-
 use crate::cli::CmdRunner;
 use clap::Parser;
 use clap::Subcommand;
@@ -28,7 +26,7 @@ enum CodingAssistantCmd {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn main() -> anyhow::Result<()> {
     let data_dir = DataDir::new()?;
 
     match DATA_DIR_INSTANCE.set(data_dir.clone()) {

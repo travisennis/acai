@@ -1,7 +1,5 @@
-use std::error::Error;
 use std::time::Instant;
 
-use anyhow::Result;
 use clap::{Args, ValueEnum};
 
 use crate::{
@@ -71,14 +69,14 @@ impl Cmd {
         &self,
         data_dir: &crate::config::DataDir,
         current_dir: std::path::PathBuf,
-    ) -> Result<(Responses, crate::config::Session), Box<dyn Error + Send + Sync>> {
+    ) -> anyhow::Result<(Responses, crate::config::Session)> {
         if self.continue_session {
             let restored = data_dir
                 .load_latest_session(&current_dir)?
                 .ok_or_else(|| {
                     anyhow::anyhow!("No previous session found for this directory")
                 })?;
-            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)
+            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)?
                 .temperature(self.temperature)
                 .top_p(self.top_p)
                 .max_output_tokens(self.max_tokens)
@@ -93,7 +91,7 @@ impl Cmd {
                 .ok_or_else(|| {
                     anyhow::anyhow!("Session {uuid} not found in this directory")
                 })?;
-            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)
+            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)?
                 .temperature(self.temperature)
                 .top_p(self.top_p)
                 .max_output_tokens(self.max_tokens)
@@ -101,7 +99,7 @@ impl Cmd {
                 .with_history(restored.messages.clone());
             Ok((c, restored))
         } else {
-            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)
+            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)?
                 .temperature(self.temperature)
                 .top_p(self.top_p)
                 .max_output_tokens(self.max_tokens);
@@ -119,7 +117,7 @@ impl Cmd {
     fn setup_worktree(
         &self,
         original_dir: &std::path::Path,
-    ) -> Result<Option<worktree::Worktree>, Box<dyn Error + Send + Sync>> {
+    ) -> anyhow::Result<Option<worktree::Worktree>> {
         let Some(ref wt_name) = self.worktree else {
             return Ok(None);
         };
@@ -167,13 +165,12 @@ impl Cmd {
 }
 
 impl CmdRunner for Cmd {
-    async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn run(&self) -> anyhow::Result<()> {
         // Validate mutually exclusive flags
         if self.continue_session && self.resume.is_some() {
             return Err(anyhow::anyhow!(
                 "Cannot use both --continue and --resume at the same time"
-            )
-            .into());
+            ));
         }
 
         // Only read from stdin if a prompt is not provided
@@ -215,8 +212,7 @@ impl CmdRunner for Cmd {
             (None, None) => {
                 return Err(anyhow::anyhow!(
                     "No input provided. Use --prompt \"your message\" or pipe input to stdin."
-                )
-                .into());
+                ));
             }
         };
 
@@ -229,7 +225,7 @@ impl CmdRunner for Cmd {
         let start = Instant::now();
 
         // Send message and handle result
-        let result: Result<Option<Message>, Box<dyn Error + Send + Sync>> = client.send(msg).await;
+        let result: anyhow::Result<Option<Message>> = client.send(msg).await;
 
         // Calculate duration
         #[allow(clippy::cast_possible_truncation)]
