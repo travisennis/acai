@@ -7,7 +7,7 @@ use clap::{Args, ValueEnum};
 use crate::{
     cli::CmdRunner,
     clients::Responses,
-    config::{DataDir, Session},
+    config::{worktree, DataDir, Session},
     models::{Message, Role},
 };
 
@@ -58,6 +58,10 @@ pub struct Cmd {
     /// Do not save the session to disk
     #[arg(long)]
     pub no_session: bool,
+
+    /// Run in an isolated git worktree (optionally provide a name)
+    #[arg(short, long, num_args = 0..=1, default_missing_value = "")]
+    pub worktree: Option<String>,
 }
 
 const SYSTEM_PROMPT: &str = "You are a helpful AI CLI assistant that runs on the user's computer and follows their instructions.";
@@ -109,6 +113,57 @@ impl Cmd {
             Ok((c, s))
         }
     }
+
+    /// Set up a worktree if `--worktree` was provided. Returns the worktree
+    /// handle and changes the process working directory into it.
+    fn setup_worktree(
+        &self,
+        original_dir: &std::path::Path,
+    ) -> Result<Option<worktree::Worktree>, Box<dyn Error + Send + Sync>> {
+        let Some(ref wt_name) = self.worktree else {
+            return Ok(None);
+        };
+
+        let name = if wt_name.is_empty() {
+            None
+        } else {
+            Some(wt_name.as_str())
+        };
+
+        let wt = worktree::create(original_dir, name)?;
+        eprintln!("Working in worktree '{}' ({})", wt.name, wt.path.display());
+        std::env::set_current_dir(&wt.path)
+            .map_err(|e| anyhow::anyhow!("Failed to cd into worktree: {e}"))?;
+        Ok(Some(wt))
+    }
+
+    /// Clean up a worktree after the session ends. Removes it if there are no
+    /// changes; keeps it otherwise.
+    fn cleanup_worktree(wt: &worktree::Worktree, original_dir: &std::path::Path) {
+        std::env::set_current_dir(original_dir).ok();
+
+        match worktree::has_changes(&wt.path) {
+            Ok(false) => {
+                eprintln!("No changes in worktree '{}', removing.", wt.name);
+                if let Err(e) = worktree::remove(original_dir, &wt.name, false) {
+                    log::warn!("Failed to clean up worktree '{}': {e}", wt.name);
+                }
+            }
+            Ok(true) => {
+                eprintln!(
+                    "Worktree '{}' has changes, keeping at {}",
+                    wt.name,
+                    wt.path.display()
+                );
+            }
+            Err(e) => {
+                log::warn!(
+                    "Could not check worktree '{}' for changes, keeping it: {e}",
+                    wt.name
+                );
+            }
+        }
+    }
 }
 
 impl CmdRunner for Cmd {
@@ -130,6 +185,11 @@ impl CmdRunner for Cmd {
             } else {
                 std::io::read_to_string(std::io::stdin()).ok()
             };
+
+        let original_dir = std::env::current_dir()
+            .map_err(|e| anyhow::anyhow!("Failed to get current directory: {e}"))?;
+
+        let wt = self.setup_worktree(&original_dir)?;
 
         let current_dir = std::env::current_dir()
             .map_err(|e| anyhow::anyhow!("Failed to get current directory: {e}"))?;
@@ -207,6 +267,10 @@ impl CmdRunner for Cmd {
             } else {
                 eprintln!("{response:?}");
             }
+        }
+
+        if let Some(ref wt) = wt {
+            Self::cleanup_worktree(wt, &original_dir);
         }
 
         Ok(())

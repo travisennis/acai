@@ -69,6 +69,20 @@ Sessions are saved to `~/.cache/acai/sessions/` and include full conversation hi
 
 For more details, see [Session Management](docs/session-management.md).
 
+### Worktrees
+
+Run a task in an isolated git worktree so changes don't affect your main working directory. The worktree is created at `<repo>/.acai/worktrees/<name>` on a new branch based on the default remote branch.
+
+```bash
+# Named worktree
+acai instruct -w feature-auth -p "Add auth middleware"
+
+# Auto-generated name
+acai instruct -w -p "Fix the bug"
+```
+
+When the task finishes, acai automatically removes the worktree if no changes were made. If there are uncommitted changes or new commits, the worktree is kept so you can return to it later.
+
 ### Options
 
 - `--model` - Set the model to use (default: `minimax/minimax-m2.5`)
@@ -80,6 +94,7 @@ For more details, see [Session Management](docs/session-management.md).
 - `--continue` - Continue the most recent session for the current directory
 - `--resume <UUID>` - Resume a specific session by its UUID
 - `--no-session` - Do not save the session to disk
+- `--worktree` (`-w`) - Run in an isolated git worktree (optionally provide a name)
 
 ### Example
 
