@@ -250,6 +250,17 @@ mod tests {
             .current_dir(dir.path())
             .output()
             .unwrap();
+        // Configure git user for CI environments where global config may not exist
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
         Command::new("git")
             .args(["commit", "--allow-empty", "-m", "initial"])
             .current_dir(dir.path())
