@@ -1,3 +1,7 @@
 .DS_Store
 target/
 .acai/worktrees/
+
+# Coverage output
+lcov.info
+target/llvm-cov/

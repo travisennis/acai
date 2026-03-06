@@ -12,6 +12,12 @@ cargo test
 # Run tests for a specific module
 cargo test <module_name>
 
+# Run tests with coverage
+just coverage
+
+# Run coverage and open HTML report
+just coverage-open
+
 # Formatting
 cargo fmt
 

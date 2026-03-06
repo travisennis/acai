@@ -22,5 +22,16 @@ test:
 ci: fmt-check clippy-strict test
     echo "All checks passed!"
 
+# Run tests with coverage (requires cargo-llvm-cov)
+coverage:
+    cargo llvm-cov --html
+
+# Run coverage and open report
+coverage-open:
+    cargo llvm-cov --html --open
+# Generate coverage in lcov format for CI
+coverage-lcov:
+    cargo llvm-cov --lcov --output-path lcov.info
+
 update-dependencies:
     cargo upgrade -i allow && cargo update    
