@@ -288,3 +288,238 @@ pub(super) struct ApiError {
     pub(super) message: String,
     pub(super) metadata: Option<serde_json::Value>,
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_api_input_user_message() {
+        let item = ConversationItem::Message {
+            role: Role::User,
+            content: "Hello".to_string(),
+            id: None,
+            status: None,
+        };
+        let json = item.to_api_input();
+        assert_eq!(json["type"], "message");
+        assert_eq!(json["role"], "user");
+        assert_eq!(json["content"][0]["type"], "input_text");
+        assert_eq!(json["content"][0]["text"], "Hello");
+    }
+
+    #[test]
+    fn to_api_input_assistant_message_uses_output_text() {
+        let item = ConversationItem::Message {
+            role: Role::Assistant,
+            content: "Hi".to_string(),
+            id: Some("msg-1".to_string()),
+            status: Some("completed".to_string()),
+        };
+        let json = item.to_api_input();
+        assert_eq!(json["role"], "assistant");
+        assert_eq!(json["content"][0]["type"], "output_text");
+        assert_eq!(json["content"][0]["text"], "Hi");
+        assert_eq!(json["id"], "msg-1");
+        assert_eq!(json["status"], "completed");
+    }
+
+    #[test]
+    fn to_api_input_system_message() {
+        let item = ConversationItem::Message {
+            role: Role::System,
+            content: "You are helpful".to_string(),
+            id: None,
+            status: None,
+        };
+        let json = item.to_api_input();
+        assert_eq!(json["role"], "system");
+        assert_eq!(json["content"][0]["type"], "input_text");
+    }
+
+    #[test]
+    fn to_api_input_tool_message() {
+        let item = ConversationItem::Message {
+            role: Role::Tool,
+            content: "tool result".to_string(),
+            id: None,
+            status: None,
+        };
+        let json = item.to_api_input();
+        assert_eq!(json["role"], "tool");
+        assert_eq!(json["content"][0]["type"], "input_text");
+    }
+
+    #[test]
+    fn to_api_input_function_call() {
+        let item = ConversationItem::FunctionCall {
+            id: "fc-1".to_string(),
+            call_id: "call-1".to_string(),
+            name: "bash".to_string(),
+            arguments: r#"{"cmd":"ls"}"#.to_string(),
+        };
+        let json = item.to_api_input();
+        assert_eq!(json["type"], "function_call");
+        assert_eq!(json["id"], "fc-1");
+        assert_eq!(json["call_id"], "call-1");
+        assert_eq!(json["name"], "bash");
+        assert_eq!(json["arguments"], r#"{"cmd":"ls"}"#);
+    }
+
+    #[test]
+    fn to_api_input_function_call_output() {
+        let item = ConversationItem::FunctionCallOutput {
+            call_id: "call-1".to_string(),
+            output: "file.txt".to_string(),
+        };
+        let json = item.to_api_input();
+        assert_eq!(json["type"], "function_call_output");
+        assert_eq!(json["call_id"], "call-1");
+        assert_eq!(json["output"], "file.txt");
+    }
+
+    #[test]
+    fn to_api_input_reasoning() {
+        let item = ConversationItem::Reasoning {
+            id: "r-1".to_string(),
+            summary: vec!["thinking...".to_string()],
+        };
+        let json = item.to_api_input();
+        assert_eq!(json["type"], "reasoning");
+        assert_eq!(json["id"], "r-1");
+        assert_eq!(json["summary"][0]["type"], "summary_text");
+        assert_eq!(json["summary"][0]["text"], "thinking...");
+    }
+
+    #[test]
+    fn to_api_input_reasoning_multiple_summaries() {
+        let item = ConversationItem::Reasoning {
+            id: "r-2".to_string(),
+            summary: vec!["step 1".to_string(), "step 2".to_string()],
+        };
+        let json = item.to_api_input();
+        assert_eq!(json["summary"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn to_streaming_json_message() {
+        let item = ConversationItem::Message {
+            role: Role::User,
+            content: "Hello".to_string(),
+            id: None,
+            status: None,
+        };
+        let json = item.to_streaming_json();
+        assert_eq!(json["type"], "message");
+        assert_eq!(json["content"], "Hello");
+    }
+
+    #[test]
+    fn to_streaming_json_message_with_id_and_status() {
+        let item = ConversationItem::Message {
+            role: Role::Assistant,
+            content: "Response".to_string(),
+            id: Some("msg-123".to_string()),
+            status: Some("completed".to_string()),
+        };
+        let json = item.to_streaming_json();
+        assert_eq!(json["id"], "msg-123");
+        assert_eq!(json["status"], "completed");
+    }
+
+    #[test]
+    fn to_streaming_json_reasoning_uses_plain_summary() {
+        let item = ConversationItem::Reasoning {
+            id: "r-1".to_string(),
+            summary: vec!["step 1".to_string()],
+        };
+        let json = item.to_streaming_json();
+        assert_eq!(json["type"], "reasoning");
+        // Streaming format uses plain strings, not objects
+        assert_eq!(json["summary"][0], "step 1");
+    }
+
+    #[test]
+    fn to_streaming_json_function_call() {
+        let item = ConversationItem::FunctionCall {
+            id: "fc-1".to_string(),
+            call_id: "call-1".to_string(),
+            name: "bash".to_string(),
+            arguments: r#"{"cmd":"ls"}"#.to_string(),
+        };
+        let json = item.to_streaming_json();
+        assert_eq!(json["type"], "function_call");
+        assert_eq!(json["name"], "bash");
+    }
+
+    #[test]
+    fn to_streaming_json_function_call_output() {
+        let item = ConversationItem::FunctionCallOutput {
+            call_id: "call-1".to_string(),
+            output: "result".to_string(),
+        };
+        let json = item.to_streaming_json();
+        assert_eq!(json["type"], "function_call_output");
+        assert_eq!(json["output"], "result");
+    }
+
+    #[test]
+    fn conversation_item_serialization_roundtrip() {
+        let items = vec![
+            ConversationItem::Message {
+                role: Role::User,
+                content: "test".to_string(),
+                id: None,
+                status: None,
+            },
+            ConversationItem::FunctionCall {
+                id: "fc".to_string(),
+                call_id: "call".to_string(),
+                name: "tool".to_string(),
+                arguments: "{}".to_string(),
+            },
+            ConversationItem::FunctionCallOutput {
+                call_id: "call".to_string(),
+                output: "out".to_string(),
+            },
+            ConversationItem::Reasoning {
+                id: "r".to_string(),
+                summary: vec!["s".to_string()],
+            },
+        ];
+
+        for item in items {
+            let json = serde_json::to_string(&item).unwrap();
+            let deserialized: ConversationItem = serde_json::from_str(&json).unwrap();
+            assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
+        }
+    }
+
+    #[test]
+    fn usage_default_values() {
+        let usage = Usage::default();
+        assert_eq!(usage.input_tokens, 0);
+        assert_eq!(usage.output_tokens, 0);
+        assert_eq!(usage.total_tokens, 0);
+        assert_eq!(usage.input_tokens_details.cached_tokens, 0);
+        assert_eq!(usage.output_tokens_details.reasoning_tokens, 0);
+    }
+
+    #[test]
+    fn usage_serialization() {
+        let usage = Usage {
+            input_tokens: 100,
+            output_tokens: 50,
+            total_tokens: 150,
+            input_tokens_details: InputTokensDetails { cached_tokens: 20 },
+            output_tokens_details: OutputTokensDetails {
+                reasoning_tokens: 10,
+            },
+        };
+        let json = serde_json::to_string(&usage).unwrap();
+        assert!(json.contains("\"input_tokens\":100"));
+        assert!(json.contains("\"output_tokens\":50"));
+        assert!(json.contains("\"total_tokens\":150"));
+    }
+}

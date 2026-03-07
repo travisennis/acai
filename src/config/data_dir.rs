@@ -183,3 +183,199 @@ impl DataDir {
         Session::load(&session_path).map(Some)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn test_data_dir() -> (DataDir, TempDir) {
+        let tmp = TempDir::new().unwrap();
+        let dd = DataDir {
+            data_dir: tmp.path().to_path_buf(),
+        };
+        (dd, tmp)
+    }
+
+    #[test]
+    fn dir_hash_deterministic() {
+        let path = PathBuf::from("/test/path");
+        assert_eq!(DataDir::dir_hash(&path), DataDir::dir_hash(&path));
+    }
+
+    #[test]
+    fn dir_hash_different_paths_differ() {
+        let a = DataDir::dir_hash(&PathBuf::from("/a"));
+        let b = DataDir::dir_hash(&PathBuf::from("/b"));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn dir_hash_output_format() {
+        let path = PathBuf::from("/test/path");
+        let hash = DataDir::dir_hash(&path);
+        // Should be 16 hex characters (8 bytes)
+        assert_eq!(hash.len(), 16);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn save_and_load_session_round_trip() {
+        let (dd, _tmp) = test_data_dir();
+        let session = Session::new(
+            uuid::Uuid::new_v4().to_string(),
+            PathBuf::from("/work"),
+            "prompt".to_string(),
+        );
+        dd.save_session(&session).unwrap();
+        let loaded = dd
+            .load_session(&PathBuf::from("/work"), &session.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.id, session.id);
+        assert_eq!(loaded.working_dir, session.working_dir);
+    }
+
+    #[test]
+    fn save_and_load_latest_session() {
+        let (dd, _tmp) = test_data_dir();
+        let session = Session::new(
+            uuid::Uuid::new_v4().to_string(),
+            PathBuf::from("/work"),
+            "prompt".to_string(),
+        );
+        dd.save_session(&session).unwrap();
+        let latest = dd
+            .load_latest_session(&PathBuf::from("/work"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(latest.id, session.id);
+    }
+
+    #[test]
+    fn load_session_missing_returns_none() {
+        let (dd, _tmp) = test_data_dir();
+        let result = dd
+            .load_session(&PathBuf::from("/work"), &uuid::Uuid::new_v4().to_string())
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn load_latest_session_missing_returns_none() {
+        let (dd, _tmp) = test_data_dir();
+        let result = dd
+            .load_latest_session(&PathBuf::from("/nonexistent"))
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn save_session_invalid_uuid_errors() {
+        let (dd, _tmp) = test_data_dir();
+        let mut session = Session::new(
+            "valid".to_string(),
+            PathBuf::from("/work"),
+            "prompt".to_string(),
+        );
+        session.id = "not-a-uuid".to_string();
+        let result = dd.save_session(&session);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid session UUID")
+        );
+    }
+
+    #[test]
+    fn load_session_invalid_uuid_errors() {
+        let (dd, _tmp) = test_data_dir();
+        let result = dd.load_session(&PathBuf::from("/work"), "not-a-uuid");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid session UUID")
+        );
+    }
+
+    #[test]
+    fn sessions_dir_structure() {
+        let (dd, _tmp) = test_data_dir();
+        let sessions_dir = dd.sessions_dir();
+        assert_eq!(sessions_dir, dd.data_dir.join("sessions"));
+    }
+
+    #[test]
+    fn multiple_sessions_same_working_dir() {
+        let (dd, _tmp) = test_data_dir();
+        let working_dir = PathBuf::from("/work");
+
+        let session1 = Session::new(
+            uuid::Uuid::new_v4().to_string(),
+            working_dir.clone(),
+            "prompt1".to_string(),
+        );
+        let session2 = Session::new(
+            uuid::Uuid::new_v4().to_string(),
+            working_dir.clone(),
+            "prompt2".to_string(),
+        );
+
+        dd.save_session(&session1).unwrap();
+        dd.save_session(&session2).unwrap();
+
+        // Both sessions should be loadable
+        let loaded1 = dd
+            .load_session(&working_dir, &session1.id)
+            .unwrap()
+            .unwrap();
+        let loaded2 = dd
+            .load_session(&working_dir, &session2.id)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(loaded1.id, session1.id);
+        assert_eq!(loaded2.id, session2.id);
+
+        // Latest should be session2 (last saved)
+        let latest = dd.load_latest_session(&working_dir).unwrap().unwrap();
+        assert_eq!(latest.id, session2.id);
+    }
+
+    #[test]
+    fn different_working_dirs_isolated() {
+        let (dd, _tmp) = test_data_dir();
+
+        let session1 = Session::new(
+            uuid::Uuid::new_v4().to_string(),
+            PathBuf::from("/work1"),
+            "prompt1".to_string(),
+        );
+        let session2 = Session::new(
+            uuid::Uuid::new_v4().to_string(),
+            PathBuf::from("/work2"),
+            "prompt2".to_string(),
+        );
+
+        dd.save_session(&session1).unwrap();
+        dd.save_session(&session2).unwrap();
+
+        // Each working dir should have its own latest
+        let latest1 = dd
+            .load_latest_session(&PathBuf::from("/work1"))
+            .unwrap()
+            .unwrap();
+        let latest2 = dd
+            .load_latest_session(&PathBuf::from("/work2"))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(latest1.id, session1.id);
+        assert_eq!(latest2.id, session2.id);
+    }
+}

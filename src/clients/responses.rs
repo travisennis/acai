@@ -401,3 +401,387 @@ fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
 
     items
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::super::types::{
+        ApiInputTokensDetails, ApiOutputTokensDetails, OutputContent, OutputMessage,
+    };
+    use super::*;
+
+    fn test_client() -> Responses {
+        Responses {
+            model: "test-model".to_string(),
+            token: "test-token".to_string(),
+            temperature: Some(0.8),
+            top_p: None,
+            max_output_tokens: Some(8000),
+            history: vec![],
+            tools: vec![],
+            streaming_callback: None,
+            session_id: "test-session".to_string(),
+            total_usage: Usage::default(),
+            turn_count: 0,
+            client: reqwest::Client::new(),
+        }
+    }
+
+    #[test]
+    fn accumulate_usage_adds_tokens() {
+        let mut client = test_client();
+        let usage = ApiUsage {
+            input_tokens: Some(100),
+            output_tokens: Some(50),
+            total_tokens: Some(150),
+            input_tokens_details: Some(ApiInputTokensDetails {
+                cached_tokens: Some(10),
+            }),
+            output_tokens_details: Some(ApiOutputTokensDetails {
+                reasoning_tokens: Some(5),
+            }),
+        };
+        client.accumulate_usage(Some(&usage));
+        assert_eq!(client.total_usage.input_tokens, 100);
+        assert_eq!(client.total_usage.output_tokens, 50);
+        assert_eq!(client.total_usage.total_tokens, 150);
+        assert_eq!(client.total_usage.input_tokens_details.cached_tokens, 10);
+        assert_eq!(client.total_usage.output_tokens_details.reasoning_tokens, 5);
+        assert_eq!(client.turn_count, 1);
+    }
+
+    #[test]
+    fn accumulate_usage_none_is_noop() {
+        let mut client = test_client();
+        client.accumulate_usage(None);
+        assert_eq!(client.total_usage.input_tokens, 0);
+        assert_eq!(client.turn_count, 0);
+    }
+
+    #[test]
+    fn accumulate_usage_accumulates_across_calls() {
+        let mut client = test_client();
+        let usage = ApiUsage {
+            input_tokens: Some(100),
+            output_tokens: Some(50),
+            total_tokens: Some(150),
+            input_tokens_details: None,
+            output_tokens_details: None,
+        };
+        client.accumulate_usage(Some(&usage));
+        client.accumulate_usage(Some(&usage));
+        assert_eq!(client.total_usage.input_tokens, 200);
+        assert_eq!(client.total_usage.output_tokens, 100);
+        assert_eq!(client.total_usage.total_tokens, 300);
+        assert_eq!(client.turn_count, 2);
+    }
+
+    #[test]
+    fn accumulate_usage_handles_partial_usage() {
+        let mut client = test_client();
+        let usage = ApiUsage {
+            input_tokens: Some(100),
+            output_tokens: None,
+            total_tokens: None,
+            input_tokens_details: None,
+            output_tokens_details: None,
+        };
+        client.accumulate_usage(Some(&usage));
+        assert_eq!(client.total_usage.input_tokens, 100);
+        assert_eq!(client.total_usage.output_tokens, 0);
+        assert_eq!(client.total_usage.total_tokens, 0);
+    }
+
+    #[test]
+    fn parse_output_items_message() {
+        let response = ApiResponse {
+            id: None,
+            output: vec![OutputMessage {
+                msg_type: "message".to_string(),
+                id: Some("msg-1".to_string()),
+                call_id: None,
+                name: None,
+                arguments: None,
+                role: Some("assistant".to_string()),
+                status: Some("completed".to_string()),
+                content: Some(vec![OutputContent {
+                    content_type: "output_text".to_string(),
+                    text: Some("Hello!".to_string()),
+                }]),
+            }],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert_eq!(items.len(), 1);
+        assert!(matches!(&items[0], ConversationItem::Message {
+            role: Role::Assistant, content, ..
+        } if content == "Hello!"));
+    }
+
+    #[test]
+    fn parse_output_items_function_call() {
+        let response = ApiResponse {
+            id: None,
+            output: vec![OutputMessage {
+                msg_type: "function_call".to_string(),
+                id: Some("fc-1".to_string()),
+                call_id: Some("call-1".to_string()),
+                name: Some("bash".to_string()),
+                arguments: Some(r#"{"cmd":"ls"}"#.to_string()),
+                role: None,
+                status: None,
+                content: None,
+            }],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert_eq!(items.len(), 1);
+        assert!(matches!(&items[0], ConversationItem::FunctionCall {
+            name, ..
+        } if name == "bash"));
+    }
+
+    #[test]
+    fn parse_output_items_reasoning() {
+        let response = ApiResponse {
+            id: None,
+            output: vec![OutputMessage {
+                msg_type: "reasoning".to_string(),
+                id: Some("r-1".to_string()),
+                call_id: None,
+                name: None,
+                arguments: None,
+                role: None,
+                status: None,
+                content: Some(vec![OutputContent {
+                    content_type: "reasoning_text".to_string(),
+                    text: Some("thinking...".to_string()),
+                }]),
+            }],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert_eq!(items.len(), 1);
+        assert!(matches!(&items[0], ConversationItem::Reasoning { .. }));
+    }
+
+    #[test]
+    fn parse_output_items_unknown_type_ignored() {
+        let response = ApiResponse {
+            id: None,
+            output: vec![OutputMessage {
+                msg_type: "unknown_type".to_string(),
+                id: None,
+                call_id: None,
+                name: None,
+                arguments: None,
+                role: None,
+                status: None,
+                content: None,
+            }],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn parse_output_items_multiple_items() {
+        let response = ApiResponse {
+            id: None,
+            output: vec![
+                OutputMessage {
+                    msg_type: "reasoning".to_string(),
+                    id: Some("r-1".to_string()),
+                    call_id: None,
+                    name: None,
+                    arguments: None,
+                    role: None,
+                    status: None,
+                    content: Some(vec![OutputContent {
+                        content_type: "reasoning_text".to_string(),
+                        text: Some("thinking...".to_string()),
+                    }]),
+                },
+                OutputMessage {
+                    msg_type: "message".to_string(),
+                    id: Some("msg-1".to_string()),
+                    call_id: None,
+                    name: None,
+                    arguments: None,
+                    role: None,
+                    status: None,
+                    content: Some(vec![OutputContent {
+                        content_type: "output_text".to_string(),
+                        text: Some("Hello!".to_string()),
+                    }]),
+                },
+            ],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn parse_output_items_message_without_content() {
+        let response = ApiResponse {
+            id: None,
+            output: vec![OutputMessage {
+                msg_type: "message".to_string(),
+                id: Some("msg-1".to_string()),
+                call_id: None,
+                name: None,
+                arguments: None,
+                role: None,
+                status: None,
+                content: None,
+            }],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert_eq!(items.len(), 1);
+        // Should have empty content
+        assert!(matches!(&items[0], ConversationItem::Message {
+            content, ..
+        } if content.is_empty()));
+    }
+
+    #[test]
+    fn builder_with_session_id() {
+        let client = test_client().with_session_id("custom-id".to_string());
+        assert_eq!(client.session_id, "custom-id");
+    }
+
+    #[test]
+    fn builder_with_history() {
+        let history = vec![ConversationItem::Message {
+            role: Role::User,
+            content: "hi".to_string(),
+            id: None,
+            status: None,
+        }];
+        let client = test_client().with_history(history);
+        assert_eq!(client.history.len(), 1);
+    }
+
+    #[test]
+    fn builder_temperature() {
+        let client = test_client().temperature(Some(0.5));
+        assert_eq!(client.temperature, Some(0.5));
+    }
+
+    #[test]
+    fn builder_temperature_none_keeps_default() {
+        let client = test_client().temperature(None);
+        assert_eq!(client.temperature, Some(0.8));
+    }
+
+    #[test]
+    fn builder_top_p() {
+        let client = test_client().top_p(Some(0.9));
+        assert_eq!(client.top_p, Some(0.9));
+    }
+
+    #[test]
+    fn builder_max_output_tokens() {
+        let client = test_client().max_output_tokens(Some(4000));
+        assert_eq!(client.max_output_tokens, Some(4000));
+    }
+
+    #[test]
+    fn build_input_converts_history() {
+        let history = vec![ConversationItem::Message {
+            role: Role::User,
+            content: "hi".to_string(),
+            id: None,
+            status: None,
+        }];
+        let input = build_input(&history);
+        assert_eq!(input.len(), 1);
+        assert_eq!(input[0]["type"], "message");
+    }
+
+    #[test]
+    fn build_input_empty_history() {
+        let history: Vec<ConversationItem> = vec![];
+        let input = build_input(&history);
+        assert!(input.is_empty());
+    }
+
+    #[test]
+    fn emit_result_message_success() {
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let captured_clone = captured.clone();
+        let client = test_client().with_streaming_json(move |json| {
+            *captured_clone.lock().unwrap() = json.to_string();
+        });
+        client.emit_result_message(true, 1000, None);
+        drop(client);
+        let json: serde_json::Value = serde_json::from_str(&captured.lock().unwrap()).unwrap();
+        assert_eq!(json["type"], "result");
+        assert_eq!(json["subtype"], "success");
+        assert_eq!(json["success"], true);
+        assert_eq!(json["duration_ms"], 1000);
+    }
+
+    #[test]
+    fn emit_result_message_error() {
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let captured_clone = captured.clone();
+        let client = test_client().with_streaming_json(move |json| {
+            *captured_clone.lock().unwrap() = json.to_string();
+        });
+        client.emit_result_message(false, 500, Some("boom"));
+        drop(client);
+        let json: serde_json::Value = serde_json::from_str(&captured.lock().unwrap()).unwrap();
+        assert_eq!(json["subtype"], "error");
+        assert_eq!(json["error"], "boom");
+    }
+
+    #[test]
+    fn emit_result_message_no_callback() {
+        let client = test_client();
+        // Should not panic when no callback is set
+        client.emit_result_message(true, 1000, None);
+    }
+
+    #[test]
+    fn emit_init_message() {
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let captured_clone = captured.clone();
+        let client = test_client().with_streaming_json(move |json| {
+            *captured_clone.lock().unwrap() = json.to_string();
+        });
+        client.emit_init_message();
+        drop(client);
+        let json: serde_json::Value = serde_json::from_str(&captured.lock().unwrap()).unwrap();
+        assert_eq!(json["type"], "init");
+        assert_eq!(json["session_id"], "test-session");
+    }
+
+    #[test]
+    fn get_history_returns_reference() {
+        let mut client = test_client();
+        client.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+        });
+        let history = client.get_history();
+        assert_eq!(history.len(), 1);
+    }
+}
