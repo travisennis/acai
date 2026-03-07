@@ -1,11 +1,18 @@
 use log::debug;
 use serde::{Deserialize, Serialize};
+use std::process::Stdio;
+use tokio::io::AsyncReadExt;
+use tokio::process::Command;
 use tokio::time::{Duration, timeout};
 
 /// Maximum number of bytes the Bash tool will return inline.
 /// Output exceeding this limit is written to a temporary file and the agent
 /// receives a truncated message with a path to the full output.
 const BASH_OUTPUT_MAX_BYTES: usize = 50_000;
+
+/// A generous cap: read up to 2× the inline limit so `truncate_output()`
+/// has enough data for a useful head+tail preview and temp-file dump.
+const BASH_READ_CAP: usize = BASH_OUTPUT_MAX_BYTES * 2;
 
 // =============================================================================
 // Tool Types
@@ -64,7 +71,7 @@ pub struct ToolResult {
 /// Execute a tool call
 pub(super) async fn execute_tool(name: &str, arguments: &str) -> Result<ToolResult, String> {
     match name {
-        "Bash" => execute_bash(arguments).await,
+        "Bash" => Box::pin(execute_bash(arguments)).await,
         _ => Err(format!("Unknown tool: {name}")),
     }
 }
@@ -82,39 +89,89 @@ async fn execute_bash(arguments: &str) -> Result<ToolResult, String> {
     // Use default timeout of 60 seconds if not specified
     let timeout_secs = args.timeout.unwrap_or(60);
 
-    // Run the shell command with timeout using tokio
-    // timeout() returns Result<Result<Output, io::Error>, Elapsed>
-    let output = match timeout(
-        Duration::from_secs(timeout_secs),
-        tokio::process::Command::new("bash")
-            .arg("-c")
-            .arg(&args.command)
-            .kill_on_drop(true)
-            .output(),
-    )
-    .await
-    {
-        Ok(Ok(output)) => output,
-        Ok(Err(e)) => return Err(format!("Failed to execute command: {e}")),
+    // Spawn the command with piped stdout/stderr for streaming
+    let mut child = Command::new("bash")
+        .arg("-c")
+        .arg(&args.command)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn command: {e}"))?;
+
+    let mut stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let mut stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    let mut buf = Vec::with_capacity(BASH_OUTPUT_MAX_BYTES);
+    let mut tmp_stdout = [0u8; 8192];
+    let mut tmp_stderr = [0u8; 8192];
+    let mut hit_cap = false;
+
+    // Read both streams concurrently, interleaved, with a timeout.
+    let read_result = timeout(Duration::from_secs(timeout_secs), async {
+        loop {
+            tokio::select! {
+                n = stdout.read(&mut tmp_stdout) => {
+                    let n = n.map_err(|e| format!("stdout read error: {e}"))?;
+                    if n == 0 {
+                        // stdout closed — read remaining stderr
+                        loop {
+                            let n = stderr.read(&mut tmp_stderr).await
+                                .map_err(|e| format!("stderr read error: {e}"))?;
+                            if n == 0 { return Ok::<_, String>(()); }
+                            buf.extend_from_slice(&tmp_stderr[..n]);
+                            if buf.len() >= BASH_READ_CAP { hit_cap = true; return Ok(()); }
+                        }
+                    }
+                    buf.extend_from_slice(&tmp_stdout[..n]);
+                    if buf.len() >= BASH_READ_CAP { hit_cap = true; return Ok(()); }
+                }
+                n = stderr.read(&mut tmp_stderr) => {
+                    let n = n.map_err(|e| format!("stderr read error: {e}"))?;
+                    if n == 0 {
+                        // stderr closed — read remaining stdout
+                        loop {
+                            let n = stdout.read(&mut tmp_stdout).await
+                                .map_err(|e| format!("stdout read error: {e}"))?;
+                            if n == 0 { return Ok(()); }
+                            buf.extend_from_slice(&tmp_stdout[..n]);
+                            if buf.len() >= BASH_READ_CAP { hit_cap = true; return Ok(()); }
+                        }
+                    }
+                    buf.extend_from_slice(&tmp_stderr[..n]);
+                    if buf.len() >= BASH_READ_CAP { hit_cap = true; return Ok(()); }
+                }
+            }
+        }
+    })
+    .await;
+
+    match read_result {
+        Ok(Ok(())) => {},
+        Ok(Err(e)) => return Err(e),
         Err(_) => return Err(format!("Command timed out after {timeout_secs} seconds")),
-    };
+    }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    // If we hit the cap, kill the child explicitly
+    if hit_cap {
+        let _ = child.kill().await;
+    }
+    let status = child.wait().await.ok();
 
-    // Always include both stdout and stderr in output, since many commands
-    // (like cargo clippy) output to stderr even on success
-    let result = if stdout.is_empty() && stderr.is_empty() {
+    let output_str = String::from_utf8_lossy(&buf);
+    let success = status
+        .as_ref()
+        .is_some_and(std::process::ExitStatus::success);
+
+    let result = if output_str.is_empty() {
         String::new()
-    } else if output.status.success() {
-        format!("{stdout}{stderr}")
+    } else if hit_cap {
+        format!("{output_str}\n[... output truncated at {BASH_READ_CAP} bytes ...]")
+    } else if success {
+        output_str.into_owned()
     } else {
-        format!(
-            "Exit code {}:\n{}{}",
-            output.status.code().unwrap_or(-1),
-            stdout,
-            stderr
-        )
+        let code = status.and_then(|s| s.code()).unwrap_or(-1);
+        format!("Exit code {code}:\n{output_str}")
     };
 
     let result = truncate_output(&result);
@@ -210,5 +267,46 @@ mod tests {
         assert!(result.contains("[Output too long"));
         // Verify the result is valid UTF-8 (would panic if not)
         let _ = result.as_bytes();
+    }
+
+    // ===========================================================================
+    // Streaming Tests
+    // ===========================================================================
+
+    #[tokio::test]
+    async fn test_streaming_small_output() {
+        // Command with small output returns it verbatim
+        let args = r#"{"command": "echo hello world"}"#;
+        let result = Box::pin(execute_bash(args)).await.unwrap();
+        assert_eq!(result.output.trim(), "hello world");
+    }
+
+    #[tokio::test]
+    async fn test_streaming_large_output_is_capped() {
+        // Command that produces output beyond BASH_READ_CAP is truncated
+        // Produce ~200KB of output (well over the 100KB cap)
+        let args = r#"{"command": "yes | head -c 200000"}"#;
+        let result = Box::pin(execute_bash(args)).await.unwrap();
+        // Should contain the truncation marker
+        assert!(result.output.contains("[... output truncated at"));
+        // Should still have useful content
+        assert!(!result.output.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_streaming_timeout() {
+        // Command that hangs respects the timeout
+        let args = r#"{"command": "sleep 999", "timeout": 1}"#;
+        let result = Box::pin(execute_bash(args)).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("timed out"));
+    }
+
+    #[tokio::test]
+    async fn test_streaming_stderr_included() {
+        // Command that writes to stderr has it captured
+        let args = r#"{"command": "echo err >&2"}"#;
+        let result = Box::pin(execute_bash(args)).await.unwrap();
+        assert_eq!(result.output.trim(), "err");
     }
 }
