@@ -60,14 +60,22 @@ jobs:
       - name: Check coverage thresholds
         run: |
           # Extract Lines coverage (10th column) from TOTAL line
-          COVERAGE=$(grep "^TOTAL" coverage.txt | awk '{print $10}' | sed 's/%//')
+          # The coverage.txt format has columns: Filename, Regions, Missed Regions, Cover, Functions, Missed Functions, Executed, Lines, Missed Lines, Cover, ...
+          COVERAGE=$(grep "^TOTAL" coverage.txt | awk '{print $10}' | tr -d '%')
+          
+          if [ -z "$COVERAGE" ]; then
+            echo "Error: Could not extract coverage from report"
+            echo "Coverage file content (last 10 lines):"
+            tail -10 coverage.txt
+            exit 1
+          fi
+          
           echo "Current coverage: $COVERAGE%"
           
           # Set minimum coverage threshold (adjust as needed)
-          # Current coverage is ~36%, set threshold below that to pass
           MIN_COVERAGE=30
           
-          if (( $(echo "$COVERAGE < $MIN_COVERAGE" | bc -l) )); then
+          if [ "$(echo "$COVERAGE < $MIN_COVERAGE" | bc -l)" = "1" ]; then
             echo "Coverage ($COVERAGE%) is below minimum threshold ($MIN_COVERAGE%)"
             exit 1
           fi
