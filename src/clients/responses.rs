@@ -248,6 +248,8 @@ impl Responses {
                 .post(BASE_URL)
                 .json(&prompt)
                 .header("content-type", "application/json")
+                .header("HTTP-Referer", "https://github.com/travisennis/acai")
+                .header("X-Title", "acai")
                 .bearer_auth(self.token.clone())
                 .send()
                 .await?;
