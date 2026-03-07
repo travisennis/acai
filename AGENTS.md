@@ -52,9 +52,6 @@ cargo run --release -- instruct --prompt "Your prompt here"
 - **Derives**: Always derive `Debug`, `Clone` for structs; use `Serialize`/`Deserialize` for data models
 - **Error Handling**: Use `thiserror` for custom errors, `anyhow` for application errors
 - **Async**: Prefer `async fn` with Tokio; use `?` for error propagation
-- **Linting**: Must pass `just clippy-strict`
-- **Avoid**: `unwrap()`, `expect()` - use proper error handling instead
-- **Documentation**: Add doc comments (`///`) for public APIs
 
 ## Additional Notes
 
