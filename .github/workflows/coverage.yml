@@ -2,12 +2,13 @@ name: Coverage
 
 on:
   push:
-    branches: [master]
+    branches: [master, main, develop]
   pull_request:
-    branches: [master]
+    branches: [master, main, develop]
 
 jobs:
   coverage:
+    name: Code Coverage
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -18,14 +19,15 @@ jobs:
         with:
           components: llvm-tools-preview
 
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage
         run: cargo llvm-cov --lcov --output-path lcov.info
 
-      # TODO: Set up Codecov token in repository secrets for coverage tracking
-      # The upload will gracefully skip if no token is configured
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
@@ -33,3 +35,49 @@ jobs:
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  coverage-report:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Generate text coverage report
+        run: cargo llvm-cov --text | tee coverage.txt
+
+      - name: Check coverage thresholds
+        run: |
+          # Extract Lines coverage (10th column) from TOTAL line
+          COVERAGE=$(grep "^TOTAL" coverage.txt | awk '{print $10}' | sed 's/%//')
+          echo "Current coverage: $COVERAGE%"
+          
+          # Set minimum coverage threshold (adjust as needed)
+          # Current coverage is ~36%, set threshold below that to pass
+          MIN_COVERAGE=30
+          
+          if (( $(echo "$COVERAGE < $MIN_COVERAGE" | bc -l) )); then
+            echo "Coverage ($COVERAGE%) is below minimum threshold ($MIN_COVERAGE%)"
+            exit 1
+          fi
+          
+          echo "Coverage check passed!"
+        shell: bash
+
+      - name: Upload coverage report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.txt
+          retention-days: 30
