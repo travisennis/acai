@@ -46,7 +46,6 @@ cargo run --release -- instruct --prompt "Your prompt here"
 
 ## Code Style Guidelines
 
-- **Formatting**: Run `cargo fmt` before commits
 - **Imports**: Use absolute paths within crate (`crate::module::Item`)
 - **Types**: Use PascalCase for types, snake_case for functions/variables
 - **Derives**: Always derive `Debug`, `Clone` for structs; use `Serialize`/`Deserialize` for data models

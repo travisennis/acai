@@ -113,11 +113,26 @@ Contributions to Acai are welcome! Please follow these steps:
 4. Write tests for your new functionality
 5. Submit a pull request
 
-Make sure to run tests and linters before submitting:
+### Development Setup
+
+Install [prek](https://github.com/j178/prek) to enable pre-commit hooks:
+
+```bash
+# Install prek (if not already installed)
+cargo install prek
+
+# Install the git hooks
+prek install
+```
+
+Pre-commit hooks will automatically run:
+- `cargo fmt -- --check` - formatting verification
+- `cargo clippy --all-targets -- -D warnings` - linting
+
+Run tests before submitting:
 
 ```bash
 cargo test
-cargo clippy
 ```
 
 ## Testing
