@@ -265,10 +265,7 @@ impl Responses {
                     }
                 }
 
-                // Add all output items to history
-                self.history.extend(items.clone());
-
-                // Collect function calls from the items
+                // Collect function calls from the items (borrowing from items)
                 let function_calls: Vec<_> = items
                     .iter()
                     .filter_map(|item| {
@@ -286,9 +283,13 @@ impl Responses {
                     })
                     .collect();
 
+                // If no function calls, resolve the message before moving items
                 if function_calls.is_empty() {
                     return Ok(Some(resolve_assistant_message(&items)));
                 }
+
+                // Move items into history (no clone needed)
+                self.history.extend(items);
 
                 // Execute each tool call and add function_call_output to history
                 for (_id, call_id, name, arguments) in &function_calls {
