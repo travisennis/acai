@@ -31,9 +31,9 @@ enum CodingAssistantCmd {
 async fn main() -> anyhow::Result<()> {
     let data_dir = DataDir::new()?;
 
-    info!("data dir: {}", data_dir.get_cache_dir().display());
-
     let _ = logger::configure(&data_dir.get_cache_dir());
+
+    info!("data dir: {}", data_dir.get_cache_dir().display());
 
     let args = CodingAssistant::parse();
 
