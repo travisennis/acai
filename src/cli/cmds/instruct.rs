@@ -250,7 +250,9 @@ impl CmdRunner for Cmd {
             if let Some(response_msg) = response {
                 println!("{}", response_msg.content);
             } else {
-                eprintln!("{response:?}");
+                eprintln!(
+                    "Warning: No response received from the model. The task may be incomplete."
+                );
             }
         }
 

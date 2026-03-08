@@ -295,23 +295,7 @@ impl Responses {
                     .collect();
 
                 if function_calls.is_empty() {
-                    // No tool calls, we're done - extract assistant message text
-                    let msg = items.iter().find_map(|item| {
-                        if let ConversationItem::Message {
-                            role: Role::Assistant,
-                            content,
-                            ..
-                        } = item
-                        {
-                            Some(Message {
-                                role: Role::Assistant,
-                                content: content.clone(),
-                            })
-                        } else {
-                            None
-                        }
-                    });
-                    return Ok(msg);
+                    return Ok(Some(resolve_assistant_message(&items)));
                 }
 
                 // Execute each tool call and add function_call_output to history
@@ -349,6 +333,46 @@ impl Responses {
 /// Build the input array for the Responses API from conversation history
 fn build_input(history: &[ConversationItem]) -> Vec<serde_json::Value> {
     history.iter().map(ConversationItem::to_api_input).collect()
+}
+
+/// Extract the assistant message from output items, or return a meaningful
+/// fallback when the response was truncated or empty.
+fn resolve_assistant_message(items: &[ConversationItem]) -> Message {
+    // Look for an assistant message in the output
+    if let Some(msg) = items.iter().find_map(|item| {
+        if let ConversationItem::Message {
+            role: Role::Assistant,
+            content,
+            ..
+        } = item
+        {
+            Some(Message {
+                role: Role::Assistant,
+                content: content.clone(),
+            })
+        } else {
+            None
+        }
+    }) {
+        return msg;
+    }
+
+    // No assistant message — response was incomplete
+    let content = if items.is_empty() {
+        "No response was received from the model.".to_string()
+    } else if items
+        .iter()
+        .any(|item| matches!(item, ConversationItem::Reasoning { .. }))
+    {
+        "The model's response was incomplete. The task may have been partially completed but was cut off during reasoning.".to_string()
+    } else {
+        "The model's response was incomplete. No final message was received.".to_string()
+    };
+
+    Message {
+        role: Role::Assistant,
+        content,
+    }
 }
 
 fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
@@ -783,5 +807,48 @@ mod tests {
         });
         let history = client.get_history();
         assert_eq!(history.len(), 1);
+    }
+    #[test]
+    fn resolve_assistant_message_with_assistant_message() {
+        let items = vec![ConversationItem::Message {
+            role: Role::Assistant,
+            content: "Hello!".to_string(),
+            id: Some("msg-1".to_string()),
+            status: Some("completed".to_string()),
+        }];
+        let msg = resolve_assistant_message(&items);
+        assert_eq!(msg.content, "Hello!");
+    }
+
+    #[test]
+    fn resolve_assistant_message_truncated_with_reasoning() {
+        let items = vec![ConversationItem::Reasoning {
+            id: "r-1".to_string(),
+            summary: vec!["thinking...".to_string()],
+        }];
+        let msg = resolve_assistant_message(&items);
+        assert!(msg.content.contains("cut off during reasoning"));
+    }
+
+    #[test]
+    fn resolve_assistant_message_no_output_items() {
+        let items: Vec<ConversationItem> = vec![];
+        let msg = resolve_assistant_message(&items);
+        assert_eq!(msg.content, "No response was received from the model.");
+    }
+
+    #[test]
+    fn resolve_assistant_message_items_but_no_message_or_reasoning() {
+        let items = vec![ConversationItem::FunctionCall {
+            id: "fc-1".to_string(),
+            call_id: "call-1".to_string(),
+            name: "bash".to_string(),
+            arguments: "{}".to_string(),
+        }];
+        let msg = resolve_assistant_message(&items);
+        assert_eq!(
+            msg.content,
+            "The model's response was incomplete. No final message was received."
+        );
     }
 }
