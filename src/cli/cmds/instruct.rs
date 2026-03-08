@@ -5,8 +5,9 @@ use clap::{Args, ValueEnum};
 use crate::{
     cli::CmdRunner,
     clients::Responses,
-    config::{DataDir, Session, worktree},
+    config::{AgentsFile, DataDir, Session, worktree},
     models::{Message, Role},
+    prompts::build_system_prompt,
 };
 
 /// Output format for the response
@@ -62,19 +63,20 @@ pub struct Cmd {
     pub worktree: Option<String>,
 }
 
-const SYSTEM_PROMPT: &str = "You are a helpful AI CLI assistant that runs on the user's computer and follows their instructions.";
-
 impl Cmd {
     fn build_client_and_session(
         &self,
         data_dir: &crate::config::DataDir,
         current_dir: std::path::PathBuf,
+        agents_files: &[AgentsFile],
     ) -> anyhow::Result<(Responses, crate::config::Session)> {
+        let system_prompt = build_system_prompt(&current_dir, agents_files);
+
         if self.continue_session {
             let restored = data_dir
                 .load_latest_session(&current_dir)?
                 .ok_or_else(|| anyhow::anyhow!("No previous session found for this directory"))?;
-            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)?
+            let c = Responses::new(self.model.clone(), &system_prompt)?
                 .temperature(self.temperature)
                 .top_p(self.top_p)
                 .max_output_tokens(self.max_tokens)
@@ -87,7 +89,7 @@ impl Cmd {
             let restored = data_dir
                 .load_session(&current_dir, uuid)?
                 .ok_or_else(|| anyhow::anyhow!("Session {uuid} not found in this directory"))?;
-            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)?
+            let c = Responses::new(self.model.clone(), &system_prompt)?
                 .temperature(self.temperature)
                 .top_p(self.top_p)
                 .max_output_tokens(self.max_tokens)
@@ -95,11 +97,11 @@ impl Cmd {
                 .with_history(restored.messages.clone());
             Ok((c, restored))
         } else {
-            let c = Responses::new(self.model.clone(), SYSTEM_PROMPT)?
+            let c = Responses::new(self.model.clone(), &system_prompt)?
                 .temperature(self.temperature)
                 .top_p(self.top_p)
                 .max_output_tokens(self.max_tokens);
-            let s = Session::new(c.session_id.clone(), current_dir, SYSTEM_PROMPT.to_string());
+            let s = Session::new(c.session_id.clone(), current_dir, system_prompt);
             Ok((c, s))
         }
     }
@@ -182,8 +184,12 @@ impl CmdRunner for Cmd {
         let current_dir = std::env::current_dir()
             .map_err(|e| anyhow::anyhow!("Failed to get current directory: {e}"))?;
 
+        // Read AGENTS.md files from user-level and project-level
+        let agents_files = data_dir.read_agents_files(&current_dir);
+
         // Build client and session, restoring from disk if requested
-        let (mut client, mut session) = self.build_client_and_session(data_dir, current_dir)?;
+        let (mut client, mut session) =
+            self.build_client_and_session(data_dir, current_dir, &agents_files)?;
 
         // Enable streaming JSON output if flag is set
         if self.output_format == OutputFormat::StreamJson {

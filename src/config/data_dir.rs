@@ -8,6 +8,15 @@ use sha2::{Digest, Sha256};
 
 use super::Session;
 
+/// Represents an AGENTS.md file with its path and content.
+#[derive(Debug, Clone)]
+pub struct AgentsFile {
+    /// Display path (e.g., "~/.acai/AGENTS.md" or "./AGENTS.md")
+    pub path: String,
+    /// Content of the file
+    pub content: String,
+}
+
 #[derive(Debug, Clone)]
 /// Represents a data directory structure.
 pub struct DataDir {
@@ -181,6 +190,39 @@ impl DataDir {
         }
 
         Session::load(&session_path).map(Some)
+    }
+
+    /// Read AGENTS.md files from user-level and project-level locations.
+    ///
+    /// Returns a list of found AGENTS.md files with their paths and content.
+    /// Files that don't exist are silently skipped.
+    pub fn read_agents_files(&self, working_dir: &Path) -> Vec<AgentsFile> {
+        let mut files = Vec::new();
+
+        // User-level AGENTS.md: ~/.acai/AGENTS.md
+        let user_agents_path = self.data_dir.parent()
+            .map(|p| p.join("AGENTS.md")) // ~/.cache/acai -> ~/.acai/AGENTS.md
+            .or_else(|| dirs::home_dir().map(|h| h.join(".acai").join("AGENTS.md")));
+
+        if let Some(ref path) = user_agents_path
+            && let Ok(content) = fs::read_to_string(path)
+        {
+            files.push(AgentsFile {
+                path: "~/.acai/AGENTS.md".to_string(),
+                content,
+            });
+        }
+
+        // Project-level AGENTS.md: ./AGENTS.md
+        let project_agents_path = working_dir.join("AGENTS.md");
+        if let Ok(content) = fs::read_to_string(&project_agents_path) {
+            files.push(AgentsFile {
+                path: "./AGENTS.md".to_string(),
+                content,
+            });
+        }
+
+        files
     }
 }
 

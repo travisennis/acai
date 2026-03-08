@@ -5,6 +5,7 @@ mod clients;
 mod config;
 mod logger;
 mod models;
+mod prompts;
 
 use crate::cli::CmdRunner;
 use clap::Parser;
