@@ -101,7 +101,7 @@ impl Cmd {
                 .temperature(self.temperature)
                 .top_p(self.top_p)
                 .max_output_tokens(self.max_tokens);
-            let s = Session::new(c.session_id.clone(), current_dir, system_prompt);
+            let s = Session::new(c.session_id.clone(), current_dir);
             Ok((c, s))
         }
     }
@@ -240,7 +240,7 @@ impl CmdRunner for Cmd {
 
         // Save session regardless of outcome (Phase 4: save on error)
         if !self.no_session {
-            session.messages = client.get_history().to_vec();
+            session.messages = client.get_history_without_system();
             session.touch();
             if let Err(e) = data_dir.save_session(&session) {
                 log::error!("Failed to save session: {e}");

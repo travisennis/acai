@@ -265,11 +265,7 @@ mod tests {
     #[test]
     fn save_and_load_session_round_trip() {
         let (dd, _tmp) = test_data_dir();
-        let session = Session::new(
-            uuid::Uuid::new_v4().to_string(),
-            PathBuf::from("/work"),
-            "prompt".to_string(),
-        );
+        let session = Session::new(uuid::Uuid::new_v4().to_string(), PathBuf::from("/work"));
         dd.save_session(&session).unwrap();
         let loaded = dd
             .load_session(&PathBuf::from("/work"), &session.id)
@@ -282,11 +278,7 @@ mod tests {
     #[test]
     fn save_and_load_latest_session() {
         let (dd, _tmp) = test_data_dir();
-        let session = Session::new(
-            uuid::Uuid::new_v4().to_string(),
-            PathBuf::from("/work"),
-            "prompt".to_string(),
-        );
+        let session = Session::new(uuid::Uuid::new_v4().to_string(), PathBuf::from("/work"));
         dd.save_session(&session).unwrap();
         let latest = dd
             .load_latest_session(&PathBuf::from("/work"))
@@ -316,11 +308,7 @@ mod tests {
     #[test]
     fn save_session_invalid_uuid_errors() {
         let (dd, _tmp) = test_data_dir();
-        let mut session = Session::new(
-            "valid".to_string(),
-            PathBuf::from("/work"),
-            "prompt".to_string(),
-        );
+        let mut session = Session::new("valid".to_string(), PathBuf::from("/work"));
         session.id = "not-a-uuid".to_string();
         let result = dd.save_session(&session);
         assert!(result.is_err());
@@ -357,16 +345,8 @@ mod tests {
         let (dd, _tmp) = test_data_dir();
         let working_dir = PathBuf::from("/work");
 
-        let session1 = Session::new(
-            uuid::Uuid::new_v4().to_string(),
-            working_dir.clone(),
-            "prompt1".to_string(),
-        );
-        let session2 = Session::new(
-            uuid::Uuid::new_v4().to_string(),
-            working_dir.clone(),
-            "prompt2".to_string(),
-        );
+        let session1 = Session::new(uuid::Uuid::new_v4().to_string(), working_dir.clone());
+        let session2 = Session::new(uuid::Uuid::new_v4().to_string(), working_dir.clone());
 
         dd.save_session(&session1).unwrap();
         dd.save_session(&session2).unwrap();
@@ -393,16 +373,8 @@ mod tests {
     fn different_working_dirs_isolated() {
         let (dd, _tmp) = test_data_dir();
 
-        let session1 = Session::new(
-            uuid::Uuid::new_v4().to_string(),
-            PathBuf::from("/work1"),
-            "prompt1".to_string(),
-        );
-        let session2 = Session::new(
-            uuid::Uuid::new_v4().to_string(),
-            PathBuf::from("/work2"),
-            "prompt2".to_string(),
-        );
+        let session1 = Session::new(uuid::Uuid::new_v4().to_string(), PathBuf::from("/work1"));
+        let session2 = Session::new(uuid::Uuid::new_v4().to_string(), PathBuf::from("/work2"));
 
         dd.save_session(&session1).unwrap();
         dd.save_session(&session2).unwrap();

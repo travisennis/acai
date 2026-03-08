@@ -74,9 +74,19 @@ impl Responses {
         self
     }
 
-    /// Get a reference to the typed conversation history.
-    pub fn get_history(&self) -> &[ConversationItem] {
-        &self.history
+    /// Get conversation history without the system message (for saving to session files).
+    /// Returns all messages except the first one if it's a system message.
+    pub fn get_history_without_system(&self) -> Vec<ConversationItem> {
+        let skip = usize::from(self.history.first().is_some_and(|item| {
+            matches!(
+                item,
+                ConversationItem::Message {
+                    role: Role::System,
+                    ..
+                }
+            )
+        }));
+        self.history.iter().skip(skip).cloned().collect()
     }
 
     /// Enable streaming JSON output - callback receives JSON string for each message
@@ -187,24 +197,6 @@ impl Responses {
     pub async fn send(&mut self, message: Message) -> anyhow::Result<Option<Message>> {
         // Emit init message with session info, cwd, and tools
         self.emit_init_message();
-
-        // Stream system message if not already done
-        if let Some(ref callback) = self.streaming_callback
-            && let Some(ConversationItem::Message {
-                role: Role::System,
-                content,
-                ..
-            }) = self.history.first()
-        {
-            let json = serde_json::json!({
-                "type": "message",
-                "role": "system",
-                "content": content
-            });
-            if let Ok(json_str) = serde_json::to_string(&json) {
-                callback(&json_str);
-            }
-        }
 
         // Add user message to history
         let user_content = message.content.clone();
@@ -797,17 +789,51 @@ mod tests {
     }
 
     #[test]
-    fn get_history_returns_reference() {
+    fn get_history_without_system_excludes_system_message() {
         let mut client = test_client();
         client.history.push(ConversationItem::Message {
-            role: Role::User,
-            content: "test".to_string(),
+            role: Role::System,
+            content: "system prompt".to_string(),
             id: None,
             status: None,
         });
-        let history = client.get_history();
+        client.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "user message".to_string(),
+            id: None,
+            status: None,
+        });
+        let history = client.get_history_without_system();
+        assert_eq!(history.len(), 1);
+        assert!(matches!(
+            &history[0],
+            ConversationItem::Message {
+                role: Role::User,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn get_history_without_system_no_system_message() {
+        let mut client = test_client();
+        client.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "user message".to_string(),
+            id: None,
+            status: None,
+        });
+        let history = client.get_history_without_system();
         assert_eq!(history.len(), 1);
     }
+
+    #[test]
+    fn get_history_without_system_empty_history() {
+        let client = test_client();
+        let history = client.get_history_without_system();
+        assert!(history.is_empty());
+    }
+
     #[test]
     fn resolve_assistant_message_with_assistant_message() {
         let items = vec![ConversationItem::Message {

@@ -74,17 +74,9 @@ Each session is saved as a JSON file with the following structure:
   "format_version": 1,
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "working_dir": "/Users/user/project",
-  "system_prompt": "You are a helpful AI CLI assistant...",
   "created_at": 1709500000000,
   "updated_at": 1709500030000,
   "messages": [
-    {
-      "type": "message",
-      "role": "system",
-      "content": "You are a helpful AI CLI assistant...",
-      "id": null,
-      "status": null
-    },
     {
       "type": "message",
       "role": "user",
@@ -108,16 +100,17 @@ Each session is saved as a JSON file with the following structure:
 | `format_version` | number | Schema version for forward compatibility (currently `1`) |
 | `id` | string | UUID v4 session identifier |
 | `working_dir` | string | Absolute path of the directory where the session was created |
-| `system_prompt` | string | System prompt used for this session |
 | `created_at` | number | Unix timestamp in milliseconds when the session was created |
 | `updated_at` | number | Unix timestamp in milliseconds when the session was last updated |
 | `messages` | array | Conversation history as typed items (see [Responses API docs](responses-api.md)) |
+
+**Note:** The system prompt is not stored in session files. It is built fresh from AGENTS.md files each time a session is started or restored. This ensures that any updates to the system prompt are always reflected.
 
 ### Message Types
 
 The `messages` array contains typed conversation items:
 
-- **`message`**: A text message with a role (`system`, `user`, `assistant`, `tool`)
+- **`message`**: A text message with a role (`user`, `assistant`, `tool`)
 - **`function_call`**: A tool invocation request from the model
 - **`function_call_output`**: The result of a tool execution
 - **`reasoning`**: Intermediate reasoning from models that support it

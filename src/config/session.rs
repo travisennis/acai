@@ -22,8 +22,6 @@ pub struct Session {
     pub id: String,
     /// Working directory where session was created
     pub working_dir: PathBuf,
-    /// System prompt used for this session
-    pub system_prompt: String,
     /// Unix timestamp in milliseconds when session was created
     pub created_at: u64,
     /// Unix timestamp in milliseconds when session was last updated
@@ -41,15 +39,14 @@ fn now_ms() -> u64 {
 }
 
 impl Session {
-    /// Create a new session with the given working directory and system prompt.
+    /// Create a new session with the given working directory.
     /// Sets `created_at` and `updated_at` to now.
-    pub fn new(id: String, working_dir: PathBuf, system_prompt: String) -> Self {
+    pub fn new(id: String, working_dir: PathBuf) -> Self {
         let now = now_ms();
         Self {
             format_version: CURRENT_FORMAT_VERSION,
             id,
             working_dir,
-            system_prompt,
             created_at: now,
             updated_at: now,
             messages: Vec::new(),
@@ -107,15 +104,10 @@ mod tests {
 
     #[test]
     fn test_session_new_defaults() {
-        let session = Session::new(
-            "test-id".to_string(),
-            PathBuf::from("/tmp/test"),
-            "system prompt".to_string(),
-        );
+        let session = Session::new("test-id".to_string(), PathBuf::from("/tmp/test"));
         assert_eq!(session.format_version, CURRENT_FORMAT_VERSION);
         assert_eq!(session.id, "test-id");
         assert_eq!(session.working_dir, PathBuf::from("/tmp/test"));
-        assert_eq!(session.system_prompt, "system prompt");
         assert!(session.created_at > 0);
         assert_eq!(session.created_at, session.updated_at);
         assert!(session.messages.is_empty());
@@ -126,11 +118,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session.json");
 
-        let mut session = Session::new(
-            "abc-123".to_string(),
-            PathBuf::from("/tmp/test"),
-            "test prompt".to_string(),
-        );
+        let mut session = Session::new("abc-123".to_string(), PathBuf::from("/tmp/test"));
         session.messages.push(ConversationItem::Message {
             role: Role::User,
             content: "Hello".to_string(),
@@ -144,7 +132,6 @@ mod tests {
         assert_eq!(loaded.id, session.id);
         assert_eq!(loaded.format_version, session.format_version);
         assert_eq!(loaded.working_dir, session.working_dir);
-        assert_eq!(loaded.system_prompt, session.system_prompt);
         assert_eq!(loaded.messages.len(), 1);
     }
 
@@ -153,11 +140,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session.json");
 
-        let mut session = Session::new(
-            "test".to_string(),
-            PathBuf::from("/tmp"),
-            "prompt".to_string(),
-        );
+        let mut session = Session::new("test".to_string(), PathBuf::from("/tmp"));
         session.format_version = 999;
         // Write directly, bypassing save()
         let json = serde_json::to_string_pretty(&session).unwrap();

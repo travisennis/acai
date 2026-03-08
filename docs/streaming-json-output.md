@@ -19,11 +19,10 @@ acai instruct --output-format stream-json -p "Your prompt here"
 When `--output-format stream-json` is enabled:
 
 1. **Init message** is emitted first with session ID, cwd, and tools
-2. **System message** is streamed as a JSON object
-3. **User message** is streamed as a JSON object  
-4. **Assistant response** (including reasoning, function calls, and content) is streamed as JSON objects as they arrive from the API
-5. **Result message** is emitted at the end with success/error status, duration, and usage stats
-6. **No final output** is printed after completion (the streaming JSON is the only output)
+2. **User message** is streamed as a JSON object  
+3. **Assistant response** (including reasoning, function calls, and content) is streamed as JSON objects as they arrive from the API
+4. **Result message** is emitted at the end with success/error status, duration, and usage stats
+5. **No final output** is printed after completion (the streaming JSON is the only output)
 
 When `--output-format text` is used (default):
 
@@ -36,7 +35,7 @@ The streaming output consists of four possible JSON object types, distinguished 
 
 ### 1. Message Object
 
-Represents a conversation message from any role (system, user, assistant, tool).
+Represents a conversation message from any role (user, assistant, tool).
 
 ```json
 {
@@ -51,7 +50,7 @@ Represents a conversation message from any role (system, user, assistant, tool).
 | Field | Type | Description |
 |-------|------|-------------|
 | `type` | string | Always `"message"` for this type |
-| `role` | string | One of: `"system"`, `"user"`, `"assistant"`, `"tool"` |
+| `role` | string | One of: `"user"`, `"assistant"`, `"tool"` |
 | `content` | string | The text content of the message |
 | `id` | string? | Optional unique message identifier |
 | `status` | string? | Optional message status (e.g., `"completed"`) |
@@ -196,7 +195,6 @@ Here's an example of the full streaming JSON output for a request that triggers 
 
 ```json
 {"type":"init","session_id":"550e8400-e29b-41d4-a716-446655440000","cwd":"/Users/user/project","tools":["shell"]}
-{"type":"message","role":"system","content":"You are a helpful AI CLI assistant."}
 {"type":"message","role":"user","content":"List files in the current directory"}
 {"type":"reasoning","id":"reason_001","summary":["The user wants to list files. I'll use the Shell tool to run ls."]}
 {"type":"function_call","id":"fc_001","call_id":"call_001","name":"Shell","arguments":"{\"command\":\"ls\"}"}
