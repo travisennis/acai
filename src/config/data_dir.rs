@@ -201,7 +201,8 @@ impl DataDir {
 
         // User-level AGENTS.md: ~/.acai/AGENTS.md
         let user_agents_path = self.data_dir.parent()
-            .map(|p| p.join("AGENTS.md")) // ~/.cache/acai -> ~/.acai/AGENTS.md
+            .and_then(|p| p.parent()) // ~/.cache/acai -> ~/.cache -> ~
+            .map(|p| p.join(".acai").join("AGENTS.md"))
             .or_else(|| dirs::home_dir().map(|h| h.join(".acai").join("AGENTS.md")));
 
         if let Some(ref path) = user_agents_path
