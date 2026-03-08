@@ -28,6 +28,10 @@ just clippy-strict
 just update-dependencies
 ```
 
+## Rules
+
+- You must run all checks (build, formatting, linting, and tests) at the completion of coding tasks.
+
 ## Running the App
 
 ```bash
