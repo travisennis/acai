@@ -5,7 +5,7 @@ use log::debug;
 
 use crate::models::{Message, Role};
 
-use super::tools::{Tool, bash_tool, execute_tool};
+use super::tools::{Tool, bash_tool, edit_tool, execute_tool, read_tool, write_tool};
 use super::types::{ApiResponse, ApiUsage, ConversationItem, Request, Usage};
 
 const BASE_URL: &str = "https://openrouter.ai/api/v1/responses";
@@ -54,7 +54,7 @@ impl Responses {
                 id: None,
                 status: None,
             }],
-            tools: vec![bash_tool()],
+            tools: vec![bash_tool(), edit_tool(), read_tool(), write_tool()],
             streaming_callback: None,
             session_id: uuid::Uuid::new_v4().to_string(),
             total_usage: Usage::default(),
