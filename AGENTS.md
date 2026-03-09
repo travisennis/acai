@@ -30,7 +30,11 @@ just update-dependencies
 
 ## Rules
 
+- Always verify changes compile and pass tests before finishing
 - You must run all checks (build, formatting, linting, and tests) at the completion of coding tasks.
+- Always run `cargo check` immediately after making changes to verify syntax
+- If compilation fails, analyze the error output and fix syntax issues
+- If a change causes compilation errors, analyze the error and fix it
 
 ## Running the App
 
