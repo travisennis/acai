@@ -23,7 +23,7 @@ pub enum OutputFormat {
 #[derive(Clone, Args)]
 pub struct Cmd {
     /// Sets the model to use (e.g., "minimax/minimax-m2.5")
-    #[arg(long, default_value = "minimax/minimax-m2.5")]
+    #[arg(long, default_value = "moonshotai/kimi-k2.5")]
     pub model: String,
 
     /// Sets the temperature value
