@@ -131,12 +131,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Rust 2024 edition requires minimum Rust 1.85.0
+      # Rust 2024 edition + round_char_boundary (1.91) + let chains (1.87)
       # Adjust based on your actual MSRV requirements
       - name: Install Rust (MSRV)
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.85.0
+          toolchain: 1.91.0
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@v2

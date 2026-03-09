@@ -59,9 +59,9 @@ jobs:
 
       - name: Check coverage thresholds
         run: |
-          # Extract Lines coverage (10th column) from TOTAL line
-          # The coverage.txt format has columns: Filename, Regions, Missed Regions, Cover, Functions, Missed Functions, Executed, Lines, Missed Lines, Cover, ...
-          COVERAGE=$(grep "^TOTAL" coverage.txt | awk '{print $10}' | tr -d '%')
+          # Extract the last percentage value from the TOTAL line (Lines Cover %)
+          # This is robust against column count changes in cargo-llvm-cov output
+          COVERAGE=$(grep "^TOTAL" coverage.txt | grep -oE '[0-9]+\.[0-9]+%' | tail -1 | tr -d '%')
           
           if [ -z "$COVERAGE" ]; then
             echo "Error: Could not extract coverage from report"
