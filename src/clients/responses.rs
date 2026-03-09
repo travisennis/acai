@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::env;
 
 use log::debug;
@@ -14,7 +15,7 @@ const BASE_URL: &str = "https://openrouter.ai/api/v1/responses";
 // =============================================================================
 
 pub struct Responses {
-    model: String,
+    model: Cow<'static, str>,
     token: String,
     temperature: Option<f32>,
     top_p: Option<f32>,
@@ -36,13 +37,13 @@ pub struct Responses {
 }
 
 impl Responses {
-    pub fn new(model: String, system_prompt: &str) -> anyhow::Result<Self> {
+    pub fn new(model: impl Into<Cow<'static, str>>, system_prompt: &str) -> anyhow::Result<Self> {
         let token = env::var("OPENROUTER_API_KEY").map_err(|e| {
             anyhow::anyhow!("OPENROUTER_API_KEY environment variable is not set: {e}")
         })?;
 
         Ok(Self {
-            model,
+            model: model.into(),
             token,
             temperature: Some(0.8),
             top_p: None,
@@ -222,7 +223,7 @@ impl Responses {
         // Agent loop: continue until model stops making tool calls
         loop {
             let prompt = Request {
-                model: self.model.clone(),
+                model: self.model.as_ref(),
                 input: build_input(&self.history),
                 temperature: self.temperature,
                 top_p: self.top_p,
@@ -311,12 +312,14 @@ impl Responses {
 
                 return match serde_json::from_str::<serde_json::Value>(&error_text) {
                     Ok(resp_json) => match serde_json::to_string_pretty(&resp_json) {
-                        Ok(resp_formatted) => {
-                            Err(anyhow::anyhow!("{}\n\n{}", self.model, resp_formatted))
-                        },
+                        Ok(resp_formatted) => Err(anyhow::anyhow!(
+                            "{}\n\n{}",
+                            self.model.as_ref(),
+                            resp_formatted
+                        )),
                         Err(e) => Err(anyhow::anyhow!("Failed to format response JSON: {e}")),
                     },
-                    Err(_) => Err(anyhow::anyhow!("{}\n\n{}", self.model, error_text)),
+                    Err(_) => Err(anyhow::anyhow!("{}\n\n{}", self.model.as_ref(), error_text)),
                 };
             }
         }
@@ -429,7 +432,7 @@ mod tests {
 
     fn test_client() -> Responses {
         Responses {
-            model: "test-model".to_string(),
+            model: Cow::Owned("test-model".to_string()),
             token: "test-token".to_string(),
             temperature: Some(0.8),
             top_p: None,

@@ -179,8 +179,8 @@ impl ConversationItem {
 // =============================================================================
 
 #[derive(Serialize)]
-pub(super) struct Request {
-    pub(super) model: String,
+pub(super) struct Request<'a> {
+    pub(super) model: &'a str,
     pub(super) input: Vec<serde_json::Value>,
     pub(super) temperature: Option<f32>,
     pub(super) top_p: Option<f32>,
