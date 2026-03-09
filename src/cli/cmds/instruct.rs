@@ -39,8 +39,12 @@ pub struct Cmd {
     pub top_p: Option<f32>,
 
     /// Sets the prompt
-    #[arg(short, long)]
+    #[arg(short, long, conflicts_with = "prompt_file")]
     prompt: Option<String>,
+
+    /// Read the prompt from a file instead of the command line
+    #[arg(long, value_name = "FILE", conflicts_with = "prompt")]
+    prompt_file: Option<String>,
 
     /// Output format for the response (text or stream-json)
     #[arg(long, value_enum, default_value = "text")]
@@ -167,10 +171,17 @@ impl CmdRunner for Cmd {
             ));
         }
 
+        // Read prompt from file if --prompt-file was provided
+        let file_prompt: Option<String> = if let Some(ref path) = self.prompt_file {
+            Some(std::fs::read_to_string(path)?)
+        } else {
+            None
+        };
+
         // Only read from stdin if a prompt is not provided
         // Note: We always attempt to read stdin unless --prompt is explicitly provided.
         // If stdin is a TTY (interactive terminal), it will be empty anyway.
-        let input_context: Option<String> = if self.prompt.is_some() {
+        let input_context: Option<String> = if self.prompt.is_some() || self.prompt_file.is_some() {
             None
         } else {
             std::io::read_to_string(std::io::stdin()).ok()
@@ -200,13 +211,15 @@ impl CmdRunner for Cmd {
 
         // Build content from prompt and optional stdin context
         // Error if neither prompt nor stdin input is provided
-        let content = match (&self.prompt, &input_context) {
-            (Some(prompt), Some(ctx)) => format!("{prompt}\n\n{ctx}"),
-            (Some(prompt), None) => prompt.clone(),
-            (None, Some(ctx)) => ctx.clone(),
-            (None, None) => {
+        let content = match (&self.prompt, &file_prompt, &input_context) {
+            (Some(prompt), _, Some(ctx)) => format!("{prompt}\n\n{ctx}"),
+            (Some(prompt), _, None) => prompt.clone(),
+            (_, Some(file_prompt), Some(ctx)) => format!("{file_prompt}\n\n{ctx}"),
+            (_, Some(file_prompt), None) => file_prompt.clone(),
+            (None, None, Some(ctx)) => ctx.clone(),
+            (None, None, None) => {
                 return Err(anyhow::anyhow!(
-                    "No input provided. Use --prompt \"your message\" or pipe input to stdin."
+                    "No input provided. Use --prompt, --prompt-file, or pipe input to stdin."
                 ));
             },
         };

@@ -35,6 +35,9 @@ Generate code or documentation based on instructions:
 # Basic usage with a prompt
 acai instruct --prompt "Implement a binary search tree in Rust"
 
+# Read prompt from a file (avoids shell escaping issues)
+acai instruct --prompt-file ./my-prompt.txt
+
 # Using a specific model
 acai instruct --model anthropic/sonnet-3-5 --prompt "Write a hello world program"
 
@@ -90,7 +93,8 @@ When the task finishes, acai automatically removes the worktree if no changes we
 - `--max-tokens` - Set maximum tokens in response
 - `--top-p` - Set top-p value
 - `--output-format` - Output format: `text` (default) or `stream-json`
-- `--prompt` (`-p`) - Your instruction prompt
+- `--prompt` (`-p`) - Your instruction prompt (mutually exclusive with `--prompt-file`)
+- `--prompt-file` - Read prompt from a file, avoiding shell escaping issues (mutually exclusive with `--prompt`)
 - `--continue` - Continue the most recent session for the current directory
 - `--resume <UUID>` - Resume a specific session by its UUID
 - `--no-session` - Do not save the session to disk
