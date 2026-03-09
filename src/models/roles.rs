@@ -18,6 +18,18 @@ pub enum Role {
     Tool,
 }
 
+impl Role {
+    /// Returns the string representation of the role.
+    pub const fn as_str(&self) -> &str {
+        match self {
+            Self::System => "system",
+            Self::Assistant => "assistant",
+            Self::User => "user",
+            Self::Tool => "tool",
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -64,5 +76,13 @@ mod tests {
     fn role_debug_format() {
         assert_eq!(format!("{:?}", Role::User), "User");
         assert_eq!(format!("{:?}", Role::Assistant), "Assistant");
+    }
+
+    #[test]
+    fn role_as_str() {
+        assert_eq!(Role::System.as_str(), "system");
+        assert_eq!(Role::Assistant.as_str(), "assistant");
+        assert_eq!(Role::User.as_str(), "user");
+        assert_eq!(Role::Tool.as_str(), "tool");
     }
 }

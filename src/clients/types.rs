@@ -49,12 +49,7 @@ impl ConversationItem {
 
                 let mut msg = serde_json::json!({
                     "type": "message",
-                    "role": match role {
-                        Role::System => "system",
-                        Role::User => "user",
-                        Role::Assistant => "assistant",
-                        Role::Tool => "tool",
-                    },
+                    "role": role.as_str(),
                 });
 
                 // Content format depends on role
@@ -123,12 +118,7 @@ impl ConversationItem {
                 id,
                 status,
             } => {
-                let role_str = match role {
-                    Role::System => "system",
-                    Role::User => "user",
-                    Role::Assistant => "assistant",
-                    Role::Tool => "tool",
-                };
+                let role_str = role.as_str();
                 let mut obj = serde_json::json!({
                     "type": "message",
                     "role": role_str,
