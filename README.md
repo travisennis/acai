@@ -7,6 +7,7 @@ Acai is an AI-powered coding assistant that integrates with your development wor
 - Send instructions to AI for code generation or documentation
 - Uses OpenRouter's Responses API for multi-provider access
 - Default model: MiniMax MiniMax-M2.5
+- OS-level filesystem sandbox for Bash tool commands (macOS sandbox-exec, Linux Landlock)
 
 ## Installation
 
@@ -85,6 +86,17 @@ acai instruct -w -p "Fix the bug"
 ```
 
 When the task finishes, acai automatically removes the worktree if no changes were made. If there are uncommitted changes or new commits, the worktree is kept so you can return to it later.
+
+### Filesystem Sandbox
+
+Commands executed by the Bash tool run inside an OS-level filesystem sandbox that restricts access to only the project directory and essential system paths. This prevents LLM-generated commands from reading or writing files outside the allowed set.
+
+- **macOS**: Uses `sandbox-exec` with a deny-default Seatbelt profile
+- **Linux**: Uses Landlock LSM (kernel 5.13+, requires `--features landlock`)
+
+The sandbox can be disabled by setting `ACAI_SANDBOX=off`.
+
+For more details, see [Filesystem Sandbox](docs/sandbox.md).
 
 ### Options
 
