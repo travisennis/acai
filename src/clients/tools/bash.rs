@@ -14,6 +14,32 @@ pub(super) const BASH_OUTPUT_MAX_BYTES: usize = 50_000;
 /// has enough data for a useful head+tail preview and temp-file dump.
 pub(super) const BASH_READ_CAP: usize = BASH_OUTPUT_MAX_BYTES * 2;
 
+/// Arguments for bash execution, including optional sandboxing
+struct BashExecutionArgs {
+    command: String,
+    timeout: u64,
+    use_sandbox: bool,
+}
+
+impl BashExecutionArgs {
+    fn from_json(arguments: &str) -> Result<Self, String> {
+        #[derive(Deserialize)]
+        struct BashArgs {
+            command: String,
+            timeout: Option<u64>,
+        }
+
+        let args: BashArgs =
+            serde_json::from_str(arguments).map_err(|e| format!("Invalid bash arguments: {e}"))?;
+
+        Ok(Self {
+            command: args.command,
+            timeout: args.timeout.unwrap_or(60),
+            use_sandbox: !super::sandbox::is_sandbox_disabled(),
+        })
+    }
+}
+
 // =============================================================================
 // Bash Tool Definition
 // =============================================================================
@@ -50,25 +76,32 @@ pub(super) fn bash_tool() -> super::Tool {
 
 /// Execute a bash command
 pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, String> {
-    #[derive(Deserialize)]
-    struct BashArgs {
-        command: String,
-        timeout: Option<u64>,
-    }
+    let args = BashExecutionArgs::from_json(arguments)?;
 
-    let args: BashArgs =
-        serde_json::from_str(arguments).map_err(|e| format!("Invalid bash arguments: {e}"))?;
+    // Build sandbox configuration
+    let cwd = std::env::current_dir().map_err(|e| format!("Failed to get cwd: {e}"))?;
+    let sandbox_config = super::sandbox::SandboxConfig::build(&cwd)?;
 
-    // Use default timeout of 60 seconds if not specified
-    let timeout_secs = args.timeout.unwrap_or(60);
-
-    // Spawn the command with piped stdout/stderr for streaming
-    let mut child = Command::new("bash")
+    // Create command with proper stdio configuration
+    let mut command = Command::new("bash");
+    command
         .arg("-c")
         .arg(&args.command)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+
+    // Apply sandbox if enabled
+    if args.use_sandbox {
+        if let Some(strategy) = super::sandbox::detect_platform() {
+            strategy.apply(&mut command, &sandbox_config)?;
+        }
+    } else {
+        log::debug!("Sandbox disabled; running without filesystem restrictions");
+    }
+
+    // Spawn the command with piped stdout/stderr for streaming
+    let mut child = command
         .spawn()
         .map_err(|e| format!("Failed to spawn command: {e}"))?;
 
@@ -81,7 +114,7 @@ pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, S
     let mut hit_cap = false;
 
     // Read both streams concurrently, interleaved, with a timeout.
-    let read_result = timeout(Duration::from_secs(timeout_secs), async {
+    let read_result = timeout(Duration::from_secs(args.timeout), async {
         loop {
             tokio::select! {
                 n = stdout.read(&mut tmp_stdout) => {
@@ -122,7 +155,7 @@ pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, S
     match read_result {
         Ok(Ok(())) => {},
         Ok(Err(e)) => return Err(e),
-        Err(_) => return Err(format!("Command timed out after {timeout_secs} seconds")),
+        Err(_) => return Err(format!("Command timed out after {} seconds", args.timeout)),
     }
 
     // If we hit the cap, kill the child explicitly
@@ -281,5 +314,48 @@ mod tests {
         let args = r#"{"command": "echo err >&2"}"#;
         let result = Box::pin(execute_bash(args)).await.unwrap();
         assert_eq!(result.output.trim(), "err");
+    }
+
+    // ===========================================================================
+    // Sandbox Tests
+    // ===========================================================================
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_sandbox_blocks_write_outside_cwd() {
+        let target = format!("/tmp/acai_sandbox_test_{}", uuid::Uuid::new_v4());
+        let args = format!(r#"{{"command": "touch {target}"}}"#);
+        let result = Box::pin(execute_bash(&args)).await.unwrap();
+        assert!(
+            result.output.contains("Operation not permitted")
+                || result.output.contains("Permission denied"),
+            "Expected sandbox to block write outside cwd, got: {}",
+            result.output
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_sandbox_allows_read_in_cwd() {
+        let args = r#"{"command": "ls Cargo.toml"}"#;
+        let result = Box::pin(execute_bash(args)).await.unwrap();
+        assert!(
+            result.output.contains("Cargo.toml"),
+            "Expected ls in cwd to succeed, got: {}",
+            result.output
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_sandbox_blocks_read_outside_cwd() {
+        let args = r#"{"command": "ls ~/Desktop"}"#;
+        let result = Box::pin(execute_bash(args)).await.unwrap();
+        assert!(
+            result.output.contains("Operation not permitted")
+                || result.output.contains("Permission denied"),
+            "Expected sandbox to block read of ~/Desktop, got: {}",
+            result.output
+        );
     }
 }
