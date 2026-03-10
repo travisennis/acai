@@ -9,6 +9,7 @@ use super::tools::{Tool, bash_tool, edit_tool, execute_tool, read_tool, write_to
 use super::types::{ApiResponse, ApiUsage, ConversationItem, Request, Usage};
 
 const BASE_URL: &str = "https://openrouter.ai/api/v1/responses";
+const DEFAULT_PROVIDERS: &[&str] = &["Fireworks", "Moonshot AI"];
 
 // =============================================================================
 // Responses Client
@@ -20,6 +21,7 @@ pub struct Responses {
     temperature: Option<f32>,
     top_p: Option<f32>,
     max_output_tokens: Option<u32>,
+    providers: Vec<String>,
     /// Conversation history using typed items (Responses API format)
     history: Vec<ConversationItem>,
     tools: Vec<Tool>,
@@ -48,6 +50,7 @@ impl Responses {
             temperature: Some(0.8),
             top_p: None,
             max_output_tokens: Some(8000),
+            providers: DEFAULT_PROVIDERS.iter().map(|s| (*s).to_string()).collect(),
             history: vec![ConversationItem::Message {
                 role: Role::System,
                 content: system_prompt.to_string(),
@@ -194,6 +197,13 @@ impl Responses {
         self
     }
 
+    pub fn providers(mut self, providers: Vec<String>) -> Self {
+        if !providers.is_empty() {
+            self.providers = providers;
+        }
+        self
+    }
+
     #[allow(clippy::too_many_lines)]
     pub async fn send(&mut self, message: Message) -> anyhow::Result<Option<Message>> {
         // Emit init message with session info, cwd, and tools
@@ -220,6 +230,16 @@ impl Responses {
             }
         }
 
+        let provider_config = if self.providers.is_empty()
+            || (self.providers.len() == 1 && self.providers[0] == "all")
+        {
+            None
+        } else {
+            Some(super::types::ProviderConfig {
+                only: self.providers.clone(),
+            })
+        };
+
         // Agent loop: continue until model stops making tool calls
         loop {
             let prompt = Request {
@@ -230,6 +250,7 @@ impl Responses {
                 max_output_tokens: self.max_output_tokens,
                 tools: Some(self.tools.clone()),
                 tool_choice: Some("auto".to_string()),
+                provider: provider_config.clone(),
             };
 
             debug!(target: "acai", "{BASE_URL}");
@@ -446,6 +467,7 @@ mod tests {
             temperature: Some(0.8),
             top_p: None,
             max_output_tokens: Some(8000),
+            providers: DEFAULT_PROVIDERS.iter().map(|s| (*s).to_string()).collect(),
             history: vec![],
             tools: vec![],
             streaming_callback: None,
@@ -889,5 +911,37 @@ mod tests {
             msg.content,
             "The model's response was incomplete. No final message was received."
         );
+    }
+
+    #[test]
+    fn builder_providers_sets_custom_providers() {
+        let client = test_client().providers(vec!["OpenAI".to_string(), "Anthropic".to_string()]);
+        assert_eq!(client.providers, vec!["OpenAI", "Anthropic"]);
+    }
+
+    #[test]
+    fn builder_providers_empty_uses_default() {
+        let client = test_client().providers(vec![]);
+        let expected: Vec<String> = DEFAULT_PROVIDERS.iter().map(|s| (*s).to_string()).collect();
+        assert_eq!(client.providers, expected);
+    }
+
+    #[test]
+    fn providers_default_in_new() {
+        let client =
+            Responses::new("test-model", "system prompt").expect("Failed to create client");
+        let expected: Vec<String> = DEFAULT_PROVIDERS.iter().map(|s| (*s).to_string()).collect();
+        assert_eq!(client.providers, expected);
+    }
+
+    #[test]
+    fn provider_config_with_all_returns_none() {
+        let providers = vec!["all".to_string()];
+        let config = if providers.is_empty() || (providers.len() == 1 && providers[0] == "all") {
+            None
+        } else {
+            Some(super::super::types::ProviderConfig { only: providers })
+        };
+        assert!(config.is_none());
     }
 }

@@ -65,6 +65,11 @@ pub struct Cmd {
     /// Run in an isolated git worktree (optionally provide a name)
     #[arg(short, long, num_args = 0..=1, default_missing_value = "")]
     pub worktree: Option<String>,
+
+    /// Restrict which providers can serve requests (comma-separated or multiple flags).
+    /// Use "all" to allow any provider. Defaults to "Fireworks,Moonshot AI".
+    #[arg(long, num_args = 0.., value_delimiter = ',')]
+    pub providers: Vec<String>,
 }
 
 impl Cmd {
@@ -84,6 +89,7 @@ impl Cmd {
                 .temperature(self.temperature)
                 .top_p(self.top_p)
                 .max_output_tokens(self.max_tokens)
+                .providers(self.providers.clone())
                 .with_session_id(restored.id.clone())
                 .with_history(restored.messages.clone());
             Ok((c, restored))
@@ -97,6 +103,7 @@ impl Cmd {
                 .temperature(self.temperature)
                 .top_p(self.top_p)
                 .max_output_tokens(self.max_tokens)
+                .providers(self.providers.clone())
                 .with_session_id(restored.id.clone())
                 .with_history(restored.messages.clone());
             Ok((c, restored))
@@ -104,7 +111,8 @@ impl Cmd {
             let c = Responses::new(self.model.clone(), &system_prompt)?
                 .temperature(self.temperature)
                 .top_p(self.top_p)
-                .max_output_tokens(self.max_tokens);
+                .max_output_tokens(self.max_tokens)
+                .providers(self.providers.clone());
             let s = Session::new(c.session_id.clone(), current_dir);
             Ok((c, s))
         }

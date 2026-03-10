@@ -168,6 +168,11 @@ impl ConversationItem {
 // API Request/Response DTOs (internal to clients)
 // =============================================================================
 
+#[derive(Clone, Serialize)]
+pub(super) struct ProviderConfig {
+    pub(super) only: Vec<String>,
+}
+
 #[derive(Serialize)]
 pub(super) struct Request<'a> {
     pub(super) model: &'a str,
@@ -177,6 +182,8 @@ pub(super) struct Request<'a> {
     pub(super) max_output_tokens: Option<u32>,
     pub(super) tools: Option<Vec<super::tools::Tool>>,
     pub(super) tool_choice: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) provider: Option<ProviderConfig>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -511,5 +518,26 @@ mod tests {
         assert!(json.contains("\"input_tokens\":100"));
         assert!(json.contains("\"output_tokens\":50"));
         assert!(json.contains("\"total_tokens\":150"));
+    }
+
+    #[test]
+    fn provider_config_serialization() {
+        let config = ProviderConfig {
+            only: vec!["Fireworks".to_string(), "Moonshot AI".to_string()],
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("\"only\":["));
+        assert!(json.contains("\"Fireworks\""));
+        assert!(json.contains("\"Moonshot AI\""));
+    }
+
+    #[test]
+    fn provider_config_single_provider() {
+        let config = ProviderConfig {
+            only: vec!["OpenAI".to_string()],
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let expected = r#"{"only":["OpenAI"]}"#;
+        assert_eq!(json, expected);
     }
 }
