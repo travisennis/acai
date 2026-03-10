@@ -292,17 +292,26 @@ impl Responses {
                 // Move items into history (no clone needed)
                 self.history.extend(items);
 
-                // Execute each tool call and add function_call_output to history
-                for (_id, call_id, name, arguments) in &function_calls {
-                    let tool_result = match execute_tool(name, arguments).await {
-                        Ok(r) => r.output,
-                        Err(e) => format!("Error: {e}"),
-                    };
-
-                    self.history.push(ConversationItem::FunctionCallOutput {
-                        call_id: call_id.clone(),
-                        output: tool_result,
+                // Execute tool calls concurrently using join_all
+                let futures = function_calls
+                    .iter()
+                    .map(|(_id, call_id, name, arguments)| {
+                        let call_id = call_id.clone();
+                        async move {
+                            let result = match execute_tool(name, arguments).await {
+                                Ok(r) => r.output,
+                                Err(e) => format!("Error: {e}"),
+                            };
+                            (call_id, result)
+                        }
                     });
+
+                let results = futures::future::join_all(futures).await;
+
+                // Add results to history in order
+                for (call_id, output) in results {
+                    self.history
+                        .push(ConversationItem::FunctionCallOutput { call_id, output });
                 }
 
                 // Loop continues - send next request with tool results included

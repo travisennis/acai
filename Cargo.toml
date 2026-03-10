@@ -19,6 +19,7 @@ anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }
 dashmap = "6.1.0"
 dirs = "6.0"
+futures = { version = "0.3", default-features = false, features = ["std", "async-await", "executor"] }
 hex = "0.4"
 log = "0.4.29"
 log4rs = "1.4.0"
