@@ -9,6 +9,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Permissions for jobs that need write access
+permissions:
+  contents: read
+  checks: write  # Required for rustsec/audit-check
+
 jobs:
   # Check code formatting
   fmt:
@@ -25,6 +30,8 @@ jobs:
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@v2
+        with:
+          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Check formatting
         run: cargo fmt -- --check
@@ -44,6 +51,8 @@ jobs:
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@v2
+        with:
+          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run Clippy
         run: cargo clippy --all-targets -- -D warnings
@@ -61,6 +70,8 @@ jobs:
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@v2
+        with:
+          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run tests
         run: cargo test --all-features -- --nocapture
@@ -91,6 +102,8 @@ jobs:
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@v2
+        with:
+          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install cargo-outdated
         run: cargo install cargo-outdated
@@ -113,6 +126,8 @@ jobs:
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@v2
+        with:
+          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install cargo-deny
         run: cargo install cargo-deny
@@ -140,6 +155,8 @@ jobs:
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@v2
+        with:
+          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Check compilation
         run: cargo check
@@ -157,6 +174,8 @@ jobs:
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@v2
+        with:
+          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build documentation
         run: cargo doc --no-deps --document-private-items
@@ -187,6 +206,8 @@ jobs:
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@v2
+        with:
+          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
@@ -206,9 +227,11 @@ jobs:
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@v2
+        with:
+          key: v2-nightly-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install cargo-udeps
         uses: taiki-e/install-action@cargo-udeps
 
       - name: Check unused dependencies
-        run: cargo udeps --all-targets
+        run: cargo +nightly udeps --all-targets
