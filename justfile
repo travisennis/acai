@@ -35,3 +35,6 @@ coverage-lcov:
 
 update-dependencies:
     cargo upgrade -i allow && cargo update    
+
+build:
+    cargo build --release
