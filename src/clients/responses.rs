@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 use std::env;
+use std::time::Duration;
 
 use log::debug;
+use tokio::time::sleep;
 
 use crate::models::{Message, Role};
 
@@ -10,6 +12,16 @@ use super::types::{ApiResponse, ApiUsage, ConversationItem, Request, Usage};
 use crate::config::defaults::DEFAULT_PROVIDERS;
 
 const BASE_URL: &str = "https://openrouter.ai/api/v1/responses";
+
+/// Maximum number of retries for transient API errors
+const MAX_RETRIES: u32 = 3;
+/// Initial delay in seconds for exponential backoff
+const INITIAL_DELAY_SECS: u64 = 1;
+
+/// Determines if an HTTP status code represents a transient error that should be retried
+const fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 429 | 500 | 503)
+}
 
 // =============================================================================
 // Responses Client
@@ -257,16 +269,44 @@ impl Responses {
             let prompt_json = serde_json::to_string(&prompt)?;
             debug!(target: "acai", "{prompt_json}");
 
-            let response = self
-                .client
-                .post(BASE_URL)
-                .json(&prompt)
-                .header("content-type", "application/json")
-                .header("HTTP-Referer", "https://github.com/travisennis/acai")
-                .header("X-Title", "acai")
-                .bearer_auth(self.token.clone())
-                .send()
-                .await?;
+            let mut attempt = 0;
+            let response = loop {
+                let response = self
+                    .client
+                    .post(BASE_URL)
+                    .json(&prompt)
+                    .header("content-type", "application/json")
+                    .header("HTTP-Referer", "https://github.com/travisennis/acai")
+                    .header("X-Title", "acai")
+                    .bearer_auth(self.token.clone())
+                    .send()
+                    .await?;
+
+                let status = response.status();
+
+                if status.is_success() || !is_retryable_status(status) {
+                    // Success or non-retryable error - break out of retry loop
+                    break response;
+                }
+
+                // Transient error - check if we should retry
+                attempt += 1;
+                if attempt > MAX_RETRIES {
+                    // Exhausted retries - return the error response
+                    break response;
+                }
+
+                // Calculate exponential backoff delay
+                let delay_secs = INITIAL_DELAY_SECS * 2_u64.pow(attempt - 1);
+                let delay = Duration::from_secs(delay_secs);
+
+                debug!(
+                    target: "acai",
+                    "API request failed with status {status}, retrying in {delay_secs}s (attempt {attempt}/{MAX_RETRIES})"
+                );
+
+                sleep(delay).await;
+            };
 
             if response.status().is_success() {
                 let api_response = response.json::<ApiResponse>().await?;
@@ -943,5 +983,25 @@ mod tests {
             Some(super::super::types::ProviderConfig { only: providers })
         };
         assert!(config.is_none());
+    }
+
+    #[test]
+    fn is_retryable_status_correctly_identifies_transient_errors() {
+        // Retryable status codes
+        assert!(is_retryable_status(reqwest::StatusCode::TOO_MANY_REQUESTS)); // 429
+        assert!(is_retryable_status(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR
+        )); // 500
+        assert!(is_retryable_status(
+            reqwest::StatusCode::SERVICE_UNAVAILABLE
+        )); // 503
+
+        // Non-retryable status codes
+        assert!(!is_retryable_status(reqwest::StatusCode::BAD_REQUEST)); // 400
+        assert!(!is_retryable_status(reqwest::StatusCode::UNAUTHORIZED)); // 401
+        assert!(!is_retryable_status(reqwest::StatusCode::FORBIDDEN)); // 403
+        assert!(!is_retryable_status(reqwest::StatusCode::NOT_FOUND)); // 404
+        assert!(!is_retryable_status(reqwest::StatusCode::OK)); // 200
+        assert!(!is_retryable_status(reqwest::StatusCode::CREATED)); // 201
     }
 }
