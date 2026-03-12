@@ -5,7 +5,7 @@ use clap::{Args, ValueEnum};
 use crate::{
     cli::CmdRunner,
     clients::Responses,
-    config::{AgentsFile, DataDir, Session, worktree},
+    config::{AgentsFile, DEFAULT_MODEL, DataDir, Session, worktree},
     models::{Message, Role},
     prompts::build_system_prompt,
 };
@@ -23,7 +23,7 @@ pub enum OutputFormat {
 #[derive(Clone, Args)]
 pub struct Cmd {
     /// Sets the model to use (e.g., "minimax/minimax-m2.5")
-    #[arg(long, default_value = "moonshotai/kimi-k2.5")]
+    #[arg(long, default_value = DEFAULT_MODEL)]
     pub model: String,
 
     /// Sets the temperature value

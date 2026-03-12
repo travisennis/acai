@@ -7,9 +7,9 @@ use crate::models::{Message, Role};
 
 use super::tools::{Tool, bash_tool, edit_tool, execute_tool, read_tool, write_tool};
 use super::types::{ApiResponse, ApiUsage, ConversationItem, Request, Usage};
+use crate::config::defaults::DEFAULT_PROVIDERS;
 
 const BASE_URL: &str = "https://openrouter.ai/api/v1/responses";
-const DEFAULT_PROVIDERS: &[&str] = &["Fireworks", "Moonshot AI"];
 
 // =============================================================================
 // Responses Client
