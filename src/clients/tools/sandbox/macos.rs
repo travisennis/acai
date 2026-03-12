@@ -99,6 +99,10 @@ impl MacOsSandbox {
         lines.push("; Allow file-ioctl (needed for terminal operations)".to_string());
         lines.push("(allow file-ioctl)".to_string());
 
+        // Allow file locking (needed by cargo and other build tools)
+        lines.push("; Allow file locking (needed by cargo and other build tools)".to_string());
+        lines.push("(allow file-lock)".to_string());
+
         lines.join("\n")
     }
 
@@ -272,6 +276,12 @@ mod tests {
         assert!(profile.contains("/dev/null"));
         assert!(profile.contains("/dev/urandom"));
         assert!(profile.contains("/dev/tty"));
+    }
+
+    #[test]
+    fn test_profile_allows_file_lock() {
+        let profile = MacOsSandbox::generate_profile(&test_config());
+        assert!(profile.contains("(allow file-lock)"));
     }
 
     #[test]

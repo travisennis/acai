@@ -51,14 +51,27 @@ impl SandboxConfig {
         let temp_dirs = super::get_temp_directories();
         read_write.extend(temp_dirs);
 
-        // Canonicalize all paths, keeping originals as fallback
-        let canonical_read_write = canonicalize_paths(&read_write);
+        // Add cargo writable paths (registry downloads, package cache, git deps)
+        if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            let cargo_home =
+                std::env::var_os("CARGO_HOME").map_or_else(|| home.join(".cargo"), PathBuf::from);
+            for subdir in &["registry", "git", ".package-cache"] {
+                let p = cargo_home.join(subdir);
+                if p.exists() {
+                    read_write.push(p);
+                }
+            }
+        }
+
+        // Include both original and canonical paths to handle symlinks
+        // (e.g., /tmp → /private/tmp on macOS)
+        let read_write = deduplicated_with_canonical(&read_write);
 
         let read_only_exec = Self::get_system_paths();
         let read_only = Self::get_read_only_paths();
 
         Ok(Self {
-            read_write: canonical_read_write,
+            read_write,
             read_only_exec,
             read_only,
         })
@@ -135,18 +148,25 @@ impl SandboxConfig {
     }
 }
 
-/// Canonicalize a list of paths, skipping any that fail
-fn canonicalize_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
-    paths
-        .iter()
-        .filter_map(|p| match p.canonicalize() {
-            Ok(canonical) => Some(canonical),
-            Err(e) => {
-                log::debug!("Could not canonicalize path {}: {}", p.display(), e);
-                None
-            },
-        })
-        .collect()
+/// Include both original and canonical paths, deduplicated.
+/// This ensures sandbox rules match regardless of symlink resolution
+/// (e.g., /tmp and /private/tmp on macOS).
+fn deduplicated_with_canonical(paths: &[PathBuf]) -> Vec<PathBuf> {
+    let mut result = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for p in paths {
+        if seen.insert(p.clone()) {
+            result.push(p.clone());
+        }
+        if let Ok(canonical) = p.canonicalize()
+            && seen.insert(canonical.clone())
+        {
+            result.push(canonical);
+        }
+    }
+
+    result
 }
 
 /// Platform-specific sandbox strategy trait

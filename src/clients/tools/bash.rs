@@ -74,6 +74,13 @@ pub(super) fn bash_tool() -> super::Tool {
 // Bash Execution
 // =============================================================================
 
+/// Detect if command output indicates a sandbox-related permission failure
+fn is_sandbox_violation(output: &str) -> bool {
+    output.contains("Operation not permitted")
+        || output.contains("os error 1")
+        || (output.contains("Permission denied") && output.contains("sandbox"))
+}
+
 /// Execute a bash command
 pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, String> {
     let args = BashExecutionArgs::from_json(arguments)?;
@@ -177,7 +184,19 @@ pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, S
         output_str.into_owned()
     } else {
         let code = status.and_then(|s| s.code()).unwrap_or(-1);
-        format!("Exit code {code}:\n{output_str}")
+        let output = format!("Exit code {code}:\n{output_str}");
+        if args.use_sandbox && is_sandbox_violation(&output_str) {
+            format!(
+                "{output}\n\n\
+                [Sandbox restriction]: This command was blocked by the filesystem sandbox. \
+                The sandbox restricts file access to the project directory and standard system paths. \
+                Do NOT retry with different workarounds — the restriction is intentional. \
+                Instead, inform the user that this command requires access outside the sandbox \
+                and suggest they run it directly in their terminal."
+            )
+        } else {
+            output
+        }
     };
 
     let result = truncate_output(&result);

@@ -287,6 +287,65 @@ This typically happens when:
 - Warn the user that the task may be incomplete
 - Return a meaningful message instead of `None`
 
+## Debugging Sandbox Violations
+
+When commands fail with `Operation not permitted (os error 1)` inside the sandbox, use `sandbox-exec`'s trace mode to identify exactly which operations are being denied.
+
+### Quick Diagnosis
+
+```bash
+# Check if sandbox is active
+echo $ACAI_SANDBOX  # Should be unset or "on"
+
+# Test a command in the sandbox with the same profile
+sandbox-exec -f /tmp/acai/sandbox_profiles/acai_sandbox_*.sb bash -c "your-command-here"
+```
+
+### Using Trace Mode
+
+Create a debug profile that logs denials instead of blocking them. Add a `(trace)` directive to the profile:
+
+```bash
+# 1. Find the generated profile
+ls -la /tmp/acai/sandbox_profiles/
+
+# 2. Copy it and add trace mode
+cp /tmp/acai/sandbox_profiles/acai_sandbox_XXXX.sb /tmp/debug_sandbox.sb
+
+# 3. Edit to add trace output — replace "(deny default)" with:
+#    (deny default (with send-signal SIGKILL))
+#    (trace "/tmp/sandbox_trace.log")
+# Or for just logging without blocking:
+#    (deny default (with no-log))
+#    (trace "/tmp/sandbox_trace.log")
+
+# 4. Run the failing command with the debug profile
+sandbox-exec -f /tmp/debug_sandbox.sb bash -c "cargo check"
+
+# 5. View the trace to see what operations were denied
+cat /tmp/sandbox_trace.log
+```
+
+### Common Missing Permissions
+
+| Error Pattern | Likely Cause | Fix |
+|---|---|---|
+| `Operation not permitted` on `target/` writes | Missing `file-lock` | Add `(allow file-lock)` to profile |
+| `/tmp` access denied despite being allowed | Symlink mismatch (`/tmp` → `/private/tmp`) | Ensure both forms in profile |
+| Cargo registry download fails | `~/.cargo/registry` is read-only | Add to `read_write` paths |
+| `flock` / `fcntl` failures | Missing `file-lock` permission | Add `(allow file-lock)` to profile |
+
+### Inspecting the Generated Profile
+
+```bash
+# View the actual profile being used (check acai logs)
+grep "Generated sandbox profile" ~/.cache/acai/acai.log
+
+# Or find the latest profile file
+ls -lt /tmp/acai/sandbox_profiles/ | head -5
+cat /tmp/acai/sandbox_profiles/acai_sandbox_*.sb
+```
+
 ## File Locations Summary
 
 | File Type | Location |
