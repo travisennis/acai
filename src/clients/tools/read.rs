@@ -46,8 +46,7 @@ pub(super) fn read_tool() -> super::Tool {
 // =============================================================================
 
 /// Execute a read command
-#[allow(clippy::unused_async)]
-pub(super) async fn execute_read(arguments: &str) -> Result<super::ToolResult, String> {
+pub(super) fn execute_read(arguments: &str) -> Result<super::ToolResult, String> {
     #[derive(Deserialize)]
     struct ReadArgs {
         path: String,
@@ -181,8 +180,8 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    #[tokio::test]
-    async fn read_small_file_full_content() {
+    #[test]
+    fn read_small_file_full_content() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "Line 1\nLine 2\nLine 3").unwrap();
@@ -192,15 +191,15 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_read(&args).await.unwrap();
+        let result = execute_read(&args).unwrap();
         assert!(result.output.contains("File:"));
         assert!(result.output.contains("     1: Line 1"));
         assert!(result.output.contains("     2: Line 2"));
         assert!(result.output.contains("     3: Line 3"));
     }
 
-    #[tokio::test]
-    async fn read_with_line_range() {
+    #[test]
+    fn read_with_line_range() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "Line 1\nLine 2\nLine 3\nLine 4\nLine 5").unwrap();
@@ -212,7 +211,7 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_read(&args).await.unwrap();
+        let result = execute_read(&args).unwrap();
         assert!(result.output.contains("Lines 2-4/5"));
         assert!(result.output.contains("     2: Line 2"));
         assert!(result.output.contains("     3: Line 3"));
@@ -221,8 +220,8 @@ mod tests {
         assert!(!result.output.contains("Line 5"));
     }
 
-    #[tokio::test]
-    async fn read_directory_listing() {
+    #[test]
+    fn read_directory_listing() {
         let temp_dir = TempDir::new().unwrap();
         fs::create_dir(temp_dir.path().join("subdir")).unwrap();
         fs::write(temp_dir.path().join("file1.txt"), "content").unwrap();
@@ -233,27 +232,27 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_read(&args).await.unwrap();
+        let result = execute_read(&args).unwrap();
         assert!(result.output.contains("Directory:"));
         assert!(result.output.contains("file1.txt"));
         assert!(result.output.contains("file2.txt"));
         assert!(result.output.contains("subdir/"));
     }
 
-    #[tokio::test]
-    async fn error_on_nonexistent_path() {
+    #[test]
+    fn error_on_nonexistent_path() {
         let args = serde_json::json!({
             "path": "/nonexistent/path/xyz123"
         })
         .to_string();
 
-        let result = execute_read(&args).await;
+        let result = execute_read(&args);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Path not found"));
     }
 
-    #[tokio::test]
-    async fn default_end_line_caps_at_500() {
+    #[test]
+    fn default_end_line_caps_at_500() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
         let lines: Vec<String> = (1..=600).map(|i| format!("Line {i}")).collect();
@@ -264,13 +263,13 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_read(&args).await.unwrap();
+        let result = execute_read(&args).unwrap();
         assert!(result.output.contains("Lines 1-500/600"));
         assert!(result.output.contains("[... 100 more lines ...]"));
     }
 
-    #[tokio::test]
-    async fn truncation_note_when_exceeds_range() {
+    #[test]
+    fn truncation_note_when_exceeds_range() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "Line 1\nLine 2\nLine 3").unwrap();
@@ -282,13 +281,13 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_read(&args).await.unwrap();
+        let result = execute_read(&args).unwrap();
         assert!(result.output.contains("Lines 1-2/3"));
         assert!(result.output.contains("[... 1 more lines ...]"));
     }
 
-    #[tokio::test]
-    async fn read_empty_directory() {
+    #[test]
+    fn read_empty_directory() {
         let temp_dir = TempDir::new().unwrap();
 
         let args = serde_json::json!({
@@ -296,7 +295,7 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_read(&args).await.unwrap();
+        let result = execute_read(&args).unwrap();
         assert!(result.output.contains("(empty)"));
     }
 }

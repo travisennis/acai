@@ -1,75 +1,131 @@
 use std::{
     fs,
+    io::{BufRead, BufWriter, Write},
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{Context, anyhow};
+use anyhow::Context;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::clients::ConversationItem;
 
 /// Session format version for forward compatibility.
-/// Increment when the session JSON schema changes.
-const CURRENT_FORMAT_VERSION: u32 = 1;
+/// Increment when the session JSONL schema changes.
+const CURRENT_FORMAT_VERSION: u32 = 2;
 
-/// Session metadata and messages
+/// A single line in a JSONL session file.
+/// Contains per-line metadata plus the flattened `ConversationItem`.
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Session {
-    /// Schema version for forward compatibility
+pub struct SessionLine {
     pub format_version: u32,
+    pub session_id: String,
+    pub timestamp: DateTime<Utc>,
+    pub working_directory: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(flatten)]
+    pub item: ConversationItem,
+}
+
+/// A metadata-only line written as the first entry in every session file.
+/// Ensures session identity is preserved even when there are no messages.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct SessionHeader {
+    format_version: u32,
+    session_id: String,
+    timestamp: DateTime<Utc>,
+    working_directory: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+    #[serde(rename = "type")]
+    line_type: String,
+}
+
+/// In-memory session state reconstructed from a JSONL file.
+#[derive(Debug, Clone)]
+pub struct Session {
     /// Unique session identifier (UUID v4)
     pub id: String,
     /// Working directory where session was created
     pub working_dir: PathBuf,
-    /// Unix timestamp in milliseconds when session was created
-    pub created_at: u64,
-    /// Unix timestamp in milliseconds when session was last updated
-    pub updated_at: u64,
-    /// Conversation history (typed, serializable)
+    /// Model used for the session
+    pub model: Option<String>,
+    /// Conversation history
     pub messages: Vec<ConversationItem>,
 }
 
-/// Returns the current time as Unix timestamp in milliseconds.
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-        .unwrap_or(0)
-}
-
 impl Session {
-    /// Create a new session with the given working directory.
-    /// Sets `created_at` and `updated_at` to now.
-    pub fn new(id: String, working_dir: PathBuf) -> Self {
-        let now = now_ms();
+    /// Create a new empty session.
+    pub const fn new(id: String, working_dir: PathBuf) -> Self {
         Self {
-            format_version: CURRENT_FORMAT_VERSION,
             id,
             working_dir,
-            created_at: now,
-            updated_at: now,
+            model: None,
             messages: Vec::new(),
         }
     }
 
-    /// Load session from a file. Returns error if `format_version` is unsupported.
+    /// Load session from a JSONL file.
+    /// The first line is a `SessionHeader`, subsequent lines are `SessionLine` entries.
     pub fn load(path: &Path) -> anyhow::Result<Self> {
-        let data = fs::read_to_string(path)
-            .with_context(|| format!("Failed to read session file: {}", path.display()))?;
-        let session: Self = serde_json::from_str(&data)
-            .with_context(|| format!("Failed to parse session file: {}", path.display()))?;
-        if session.format_version > CURRENT_FORMAT_VERSION {
-            return Err(anyhow!(
-                "Unsupported session format version {} (max supported: {})",
-                session.format_version,
-                CURRENT_FORMAT_VERSION
-            ));
+        let file = fs::File::open(path)
+            .with_context(|| format!("Failed to open session file: {}", path.display()))?;
+        let reader = std::io::BufReader::new(file);
+
+        let mut id = String::new();
+        let mut working_dir = PathBuf::new();
+        let mut model = None;
+        let mut messages = Vec::new();
+
+        for (line_num, line) in reader.lines().enumerate() {
+            let line = line.with_context(|| {
+                format!(
+                    "Failed to read line {} of session file: {}",
+                    line_num + 1,
+                    path.display()
+                )
+            })?;
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            // First line is the session header
+            if line_num == 0 {
+                let header: SessionHeader = serde_json::from_str(trimmed).with_context(|| {
+                    format!("Failed to parse header of session file: {}", path.display())
+                })?;
+                id = header.session_id;
+                working_dir = header.working_directory;
+                model = header.model;
+                continue;
+            }
+
+            let entry: SessionLine = serde_json::from_str(trimmed).with_context(|| {
+                format!(
+                    "Failed to parse line {} of session file: {}",
+                    line_num + 1,
+                    path.display()
+                )
+            })?;
+
+            if entry.model.is_some() {
+                model.clone_from(&entry.model);
+            }
+
+            messages.push(entry.item);
         }
-        Ok(session)
+
+        Ok(Self {
+            id,
+            working_dir,
+            model,
+            messages,
+        })
     }
 
-    /// Save session atomically (write to temp file, then rename).
+    /// Save session as JSONL (one `SessionLine` per line), atomically.
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).with_context(|| {
@@ -77,21 +133,52 @@ impl Session {
             })?;
         }
 
-        let json = serde_json::to_string_pretty(self).context("Failed to serialize session")?;
-
         let temp_path = path.with_extension("tmp");
-        fs::write(&temp_path, json).with_context(|| {
-            format!("Failed to write temp session file: {}", temp_path.display())
+        let file = fs::File::create(&temp_path).with_context(|| {
+            format!(
+                "Failed to create temp session file: {}",
+                temp_path.display()
+            )
         })?;
+        let mut writer = BufWriter::new(file);
+
+        let now = Utc::now();
+
+        // Write header line
+        let header = SessionHeader {
+            format_version: CURRENT_FORMAT_VERSION,
+            session_id: self.id.clone(),
+            timestamp: now,
+            working_directory: self.working_dir.clone(),
+            model: self.model.clone(),
+            line_type: "session_start".to_string(),
+        };
+        serde_json::to_writer(&mut writer, &header)
+            .context("Failed to serialize session header")?;
+        writer.write_all(b"\n").context("Failed to write newline")?;
+
+        // Write conversation items
+        for item in &self.messages {
+            let line = SessionLine {
+                format_version: CURRENT_FORMAT_VERSION,
+                session_id: self.id.clone(),
+                timestamp: now,
+                working_directory: self.working_dir.clone(),
+                model: self.model.clone(),
+                item: item.clone(),
+            };
+            serde_json::to_writer(&mut writer, &line)
+                .context("Failed to serialize session line")?;
+            writer.write_all(b"\n").context("Failed to write newline")?;
+        }
+
+        writer.flush().context("Failed to flush session file")?;
+        drop(writer);
+
         fs::rename(&temp_path, path)
             .with_context(|| format!("Failed to rename temp file to: {}", path.display()))?;
 
         Ok(())
-    }
-
-    /// Update the `updated_at` timestamp to now.
-    pub fn touch(&mut self) {
-        self.updated_at = now_ms();
     }
 }
 
@@ -105,20 +192,19 @@ mod tests {
     #[test]
     fn test_session_new_defaults() {
         let session = Session::new("test-id".to_string(), PathBuf::from("/tmp/test"));
-        assert_eq!(session.format_version, CURRENT_FORMAT_VERSION);
         assert_eq!(session.id, "test-id");
         assert_eq!(session.working_dir, PathBuf::from("/tmp/test"));
-        assert!(session.created_at > 0);
-        assert_eq!(session.created_at, session.updated_at);
         assert!(session.messages.is_empty());
+        assert!(session.model.is_none());
     }
 
     #[test]
     fn test_session_save_and_load_roundtrip() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("session.json");
+        let path = dir.path().join("session.jsonl");
 
         let mut session = Session::new("abc-123".to_string(), PathBuf::from("/tmp/test"));
+        session.model = Some("gpt-4".to_string());
         session.messages.push(ConversationItem::Message {
             role: Role::User,
             content: "Hello".to_string(),
@@ -130,29 +216,136 @@ mod tests {
         let loaded = Session::load(&path).unwrap();
 
         assert_eq!(loaded.id, session.id);
-        assert_eq!(loaded.format_version, session.format_version);
         assert_eq!(loaded.working_dir, session.working_dir);
+        assert_eq!(loaded.model, session.model);
         assert_eq!(loaded.messages.len(), 1);
     }
 
     #[test]
-    fn test_session_load_rejects_unsupported_version() {
+    fn test_session_jsonl_format() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("session.json");
+        let path = dir.path().join("session.jsonl");
 
-        let mut session = Session::new("test".to_string(), PathBuf::from("/tmp"));
-        session.format_version = 999;
-        // Write directly, bypassing save()
-        let json = serde_json::to_string_pretty(&session).unwrap();
-        fs::write(&path, json).unwrap();
+        let mut session = Session::new("test-uuid".to_string(), PathBuf::from("/work"));
+        session.model = Some("test-model".to_string());
+        session.messages.push(ConversationItem::Message {
+            role: Role::User,
+            content: "Hello".to_string(),
+            id: None,
+            status: None,
+        });
+        session.messages.push(ConversationItem::Message {
+            role: Role::Assistant,
+            content: "Hi".to_string(),
+            id: Some("msg-1".to_string()),
+            status: Some("completed".to_string()),
+        });
 
-        let result = Session::load(&path);
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Unsupported session format version")
-        );
+        session.save(&path).unwrap();
+
+        // Verify it's valid JSONL: 1 header + 2 message lines
+        let content = fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 3);
+
+        // First line is the session header
+        let header: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(header["format_version"], 2);
+        assert_eq!(header["session_id"], "test-uuid");
+        assert_eq!(header["working_directory"], "/work");
+        assert_eq!(header["model"], "test-model");
+        assert_eq!(header["type"], "session_start");
+
+        // Second line is the first message
+        let first_msg: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(first_msg["format_version"], 2);
+        assert_eq!(first_msg["session_id"], "test-uuid");
+        assert_eq!(first_msg["type"], "message");
+        assert_eq!(first_msg["role"], "user");
+        assert_eq!(first_msg["content"], "Hello");
+    }
+
+    #[test]
+    fn test_session_multiple_item_types() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("session.jsonl");
+
+        let mut session = Session::new("multi-test".to_string(), PathBuf::from("/tmp"));
+        session.messages.push(ConversationItem::Message {
+            role: Role::User,
+            content: "list files".to_string(),
+            id: None,
+            status: None,
+        });
+        session.messages.push(ConversationItem::FunctionCall {
+            id: "fc-1".to_string(),
+            call_id: "call-1".to_string(),
+            name: "bash".to_string(),
+            arguments: r#"{"cmd":"ls"}"#.to_string(),
+        });
+        session.messages.push(ConversationItem::FunctionCallOutput {
+            call_id: "call-1".to_string(),
+            output: "file.txt".to_string(),
+        });
+        session.messages.push(ConversationItem::Reasoning {
+            id: "r-1".to_string(),
+            summary: vec!["thinking...".to_string()],
+            encrypted_content: None,
+            content: None,
+        });
+
+        session.save(&path).unwrap();
+        let loaded = Session::load(&path).unwrap();
+
+        assert_eq!(loaded.messages.len(), 4);
+    }
+
+    #[test]
+    fn test_session_empty_messages() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("session.jsonl");
+
+        let session = Session::new("empty".to_string(), PathBuf::from("/tmp"));
+        session.save(&path).unwrap();
+
+        // File should have exactly one line (the header)
+        let content = fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 1);
+
+        let header: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(header["type"], "session_start");
+        assert_eq!(header["session_id"], "empty");
+
+        // Round-trip should preserve metadata
+        let loaded = Session::load(&path).unwrap();
+        assert_eq!(loaded.id, "empty");
+        assert_eq!(loaded.working_dir, PathBuf::from("/tmp"));
+        assert!(loaded.messages.is_empty());
+    }
+
+    #[test]
+    fn test_session_no_model() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("session.jsonl");
+
+        let mut session = Session::new("no-model".to_string(), PathBuf::from("/tmp"));
+        session.messages.push(ConversationItem::Message {
+            role: Role::User,
+            content: "Hello".to_string(),
+            id: None,
+            status: None,
+        });
+
+        session.save(&path).unwrap();
+
+        // Verify model field is absent in JSON
+        let content = fs::read_to_string(&path).unwrap();
+        let line: serde_json::Value =
+            serde_json::from_str(content.lines().next().unwrap()).unwrap();
+        assert!(line.get("model").is_none());
+
+        let loaded = Session::load(&path).unwrap();
+        assert!(loaded.model.is_none());
     }
 }

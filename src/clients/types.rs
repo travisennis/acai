@@ -3,6 +3,20 @@ use serde::{Deserialize, Serialize};
 use crate::models::Role;
 
 // =============================================================================
+// Reasoning Content (preserved for API round-tripping)
+// =============================================================================
+
+/// A content item within a reasoning output, preserved verbatim for echoing
+/// back to the API in multi-turn conversations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReasoningContent {
+    #[serde(rename = "type")]
+    pub content_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+// =============================================================================
 // Conversation Item Enum (for Responses API input/output)
 // =============================================================================
 
@@ -32,6 +46,15 @@ pub enum ConversationItem {
     Reasoning {
         id: String,
         summary: Vec<String>,
+        /// Opaque encrypted reasoning content that must be echoed back to the
+        /// API for multi-turn conversations with reasoning models.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        encrypted_content: Option<String>,
+        /// Original content array from the API response (e.g., `reasoning_text` items).
+        /// Must be echoed back so the router can reconstruct `reasoning_content`
+        /// for Chat Completions providers like Moonshot AI.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        content: Option<Vec<ReasoningContent>>,
     },
 }
 
@@ -97,14 +120,26 @@ impl ConversationItem {
                     "output": output
                 })
             },
-            Self::Reasoning { id, summary } => {
-                serde_json::json!({
+            Self::Reasoning {
+                id,
+                summary,
+                encrypted_content,
+                content,
+            } => {
+                let mut obj = serde_json::json!({
                     "type": "reasoning",
                     "id": id,
                     "summary": summary.iter().map(|s| {
                         serde_json::json!({"type": "summary_text", "text": s})
                     }).collect::<Vec<_>>()
-                })
+                });
+                if let Some(enc) = encrypted_content {
+                    obj["encrypted_content"] = serde_json::json!(enc);
+                }
+                if let Some(content) = content {
+                    obj["content"] = serde_json::json!(content);
+                }
+                obj
             },
         }
     }
@@ -153,7 +188,7 @@ impl ConversationItem {
                     "output": output
                 })
             },
-            Self::Reasoning { id, summary } => {
+            Self::Reasoning { id, summary, .. } => {
                 serde_json::json!({
                     "type": "reasoning",
                     "id": id,
@@ -211,6 +246,10 @@ pub(super) struct OutputMessage {
     pub(super) role: Option<String>,
     pub(super) status: Option<String>,
     pub(super) content: Option<Vec<OutputContent>>,
+    /// Opaque encrypted reasoning content returned by reasoning models.
+    pub(super) encrypted_content: Option<String>,
+    /// Top-level summary strings on reasoning items (alternative to content-based summaries).
+    pub(super) summary: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -381,6 +420,8 @@ mod tests {
         let item = ConversationItem::Reasoning {
             id: "r-1".to_string(),
             summary: vec!["thinking...".to_string()],
+            encrypted_content: None,
+            content: None,
         };
         let json = item.to_api_input();
         assert_eq!(json["type"], "reasoning");
@@ -394,9 +435,52 @@ mod tests {
         let item = ConversationItem::Reasoning {
             id: "r-2".to_string(),
             summary: vec!["step 1".to_string(), "step 2".to_string()],
+            encrypted_content: None,
+            content: None,
         };
         let json = item.to_api_input();
         assert_eq!(json["summary"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn to_api_input_reasoning_with_encrypted_content() {
+        let item = ConversationItem::Reasoning {
+            id: "r-1".to_string(),
+            summary: vec!["thinking...".to_string()],
+            encrypted_content: Some("gAAAAABencrypted...".to_string()),
+            content: None,
+        };
+        let json = item.to_api_input();
+        assert_eq!(json["type"], "reasoning");
+        assert_eq!(json["encrypted_content"], "gAAAAABencrypted...");
+    }
+
+    #[test]
+    fn to_api_input_reasoning_without_encrypted_content_omits_field() {
+        let item = ConversationItem::Reasoning {
+            id: "r-1".to_string(),
+            summary: vec!["thinking...".to_string()],
+            encrypted_content: None,
+            content: None,
+        };
+        let json = item.to_api_input();
+        assert!(json.get("encrypted_content").is_none());
+    }
+
+    #[test]
+    fn to_api_input_reasoning_with_content() {
+        let item = ConversationItem::Reasoning {
+            id: "r-1".to_string(),
+            summary: vec!["thinking...".to_string()],
+            encrypted_content: None,
+            content: Some(vec![ReasoningContent {
+                content_type: "reasoning_text".to_string(),
+                text: Some("deep thoughts".to_string()),
+            }]),
+        };
+        let json = item.to_api_input();
+        assert_eq!(json["content"][0]["type"], "reasoning_text");
+        assert_eq!(json["content"][0]["text"], "deep thoughts");
     }
 
     #[test]
@@ -430,6 +514,8 @@ mod tests {
         let item = ConversationItem::Reasoning {
             id: "r-1".to_string(),
             summary: vec!["step 1".to_string()],
+            encrypted_content: None,
+            content: None,
         };
         let json = item.to_streaming_json();
         assert_eq!(json["type"], "reasoning");
@@ -483,6 +569,8 @@ mod tests {
             ConversationItem::Reasoning {
                 id: "r".to_string(),
                 summary: vec!["s".to_string()],
+                encrypted_content: None,
+                content: None,
             },
         ];
 

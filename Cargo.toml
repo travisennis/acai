@@ -32,6 +32,7 @@ thiserror = "2.0.18"
 tempfile = "3"
 tokio = { version = "1.49.0", features = ["full"] }
 uuid = { version = "1.21", features = ["v4"] }
+chrono = { version = "0.4.44", features = ["serde"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock = { version = "0.4", optional = true }

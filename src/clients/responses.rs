@@ -11,6 +11,9 @@ use super::tools::{Tool, bash_tool, edit_tool, execute_tool, read_tool, write_to
 use super::types::{ApiResponse, ApiUsage, ConversationItem, Request, Usage};
 use crate::config::defaults::DEFAULT_PROVIDERS;
 
+/// Callback type for streaming JSON output
+type StreamingCallback = Box<dyn Fn(&str) + Send + Sync>;
+
 const BASE_URL: &str = "https://openrouter.ai/api/v1/responses";
 
 /// Maximum number of retries for transient API errors
@@ -38,8 +41,7 @@ pub struct Responses {
     history: Vec<ConversationItem>,
     tools: Vec<Tool>,
     /// Callback for streaming JSON output
-    #[allow(clippy::type_complexity)]
-    streaming_callback: Option<Box<dyn Fn(&str) + Send + Sync>>,
+    streaming_callback: Option<StreamingCallback>,
     /// Session ID for tracking
     pub session_id: String,
     /// Accumulated usage across all API calls
@@ -76,6 +78,11 @@ impl Responses {
             turn_count: 0,
             client: reqwest::Client::new(),
         })
+    }
+
+    /// Get the model name.
+    pub fn model(&self) -> &str {
+        &self.model
     }
 
     /// Replace the auto-generated session ID with a restored session's ID.
@@ -345,13 +352,13 @@ impl Responses {
                     })
                     .collect();
 
-                // If no function calls, resolve the message before moving items
-                if function_calls.is_empty() {
-                    return Ok(Some(resolve_assistant_message(&items)));
-                }
-
-                // Move items into history (no clone needed)
+                // Move items into history BEFORE checking for function calls
                 self.history.extend(items);
+
+                // If no function calls, resolve and return the message
+                if function_calls.is_empty() {
+                    return Ok(Some(resolve_assistant_message(&self.history)));
+                }
 
                 // Execute tool calls concurrently using join_all
                 let futures = function_calls
@@ -447,17 +454,41 @@ fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
     for output in &api_response.output {
         match output.msg_type.as_str() {
             "reasoning" => {
-                // Extract reasoning text from content (content_type: "reasoning_text")
-                let reasoning_text = output
-                    .content
-                    .as_ref()
-                    .and_then(|c| c.iter().find(|item| item.content_type == "reasoning_text"))
-                    .and_then(|item| item.text.clone());
+                if let Some(id) = &output.id {
+                    // Extract summary: prefer top-level summary array, fall back to
+                    // content-based reasoning_text items
+                    let summary = output
+                        .summary
+                        .clone()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| {
+                            output
+                                .content
+                                .as_ref()
+                                .map(|c| {
+                                    c.iter()
+                                        .filter(|item| item.content_type == "reasoning_text")
+                                        .filter_map(|item| item.text.clone())
+                                        .collect()
+                                })
+                                .unwrap_or_default()
+                        });
 
-                if let (Some(id), Some(text)) = (&output.id, reasoning_text) {
+                    // Preserve original content array for echoing back to the API
+                    let content = output.content.as_ref().map(|c| {
+                        c.iter()
+                            .map(|item| super::types::ReasoningContent {
+                                content_type: item.content_type.clone(),
+                                text: item.text.clone(),
+                            })
+                            .collect()
+                    });
+
                     items.push(ConversationItem::Reasoning {
                         id: id.clone(),
-                        summary: vec![text],
+                        summary,
+                        encrypted_content: output.encrypted_content.clone(),
+                        content,
                     });
                 }
             },
@@ -599,6 +630,8 @@ mod tests {
                     content_type: "output_text".to_string(),
                     text: Some("Hello!".to_string()),
                 }]),
+                encrypted_content: None,
+                summary: None,
             }],
             usage: None,
             status: None,
@@ -624,6 +657,8 @@ mod tests {
                 role: None,
                 status: None,
                 content: None,
+                encrypted_content: None,
+                summary: None,
             }],
             usage: None,
             status: None,
@@ -652,6 +687,8 @@ mod tests {
                     content_type: "reasoning_text".to_string(),
                     text: Some("thinking...".to_string()),
                 }]),
+                encrypted_content: None,
+                summary: None,
             }],
             usage: None,
             status: None,
@@ -660,6 +697,73 @@ mod tests {
         let items = parse_output_items(&response);
         assert_eq!(items.len(), 1);
         assert!(matches!(&items[0], ConversationItem::Reasoning { .. }));
+    }
+
+    #[test]
+    fn parse_output_items_reasoning_with_encrypted_content() {
+        let response = ApiResponse {
+            id: None,
+            output: vec![OutputMessage {
+                msg_type: "reasoning".to_string(),
+                id: Some("r-1".to_string()),
+                call_id: None,
+                name: None,
+                arguments: None,
+                role: None,
+                status: None,
+                content: None,
+                encrypted_content: Some("gAAAAABencrypted...".to_string()),
+                summary: Some(vec!["step 1".to_string(), "step 2".to_string()]),
+            }],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert_eq!(items.len(), 1);
+        if let ConversationItem::Reasoning {
+            summary,
+            encrypted_content,
+            ..
+        } = &items[0]
+        {
+            assert_eq!(summary.len(), 2);
+            assert_eq!(summary[0], "step 1");
+            assert_eq!(encrypted_content.as_deref(), Some("gAAAAABencrypted..."));
+        } else {
+            panic!("Expected Reasoning item");
+        }
+    }
+
+    #[test]
+    fn parse_output_items_reasoning_preserves_content_for_roundtrip() {
+        let response = ApiResponse {
+            id: None,
+            output: vec![OutputMessage {
+                msg_type: "reasoning".to_string(),
+                id: Some("r-1".to_string()),
+                call_id: None,
+                name: None,
+                arguments: None,
+                role: None,
+                status: None,
+                content: Some(vec![OutputContent {
+                    content_type: "reasoning_text".to_string(),
+                    text: Some("deep reasoning here".to_string()),
+                }]),
+                encrypted_content: None,
+                summary: None,
+            }],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert_eq!(items.len(), 1);
+        // Verify content is preserved for API round-tripping
+        let api_input = items[0].to_api_input();
+        assert_eq!(api_input["content"][0]["type"], "reasoning_text");
+        assert_eq!(api_input["content"][0]["text"], "deep reasoning here");
     }
 
     #[test]
@@ -675,6 +779,8 @@ mod tests {
                 role: None,
                 status: None,
                 content: None,
+                encrypted_content: None,
+                summary: None,
             }],
             usage: None,
             status: None,
@@ -701,6 +807,8 @@ mod tests {
                         content_type: "reasoning_text".to_string(),
                         text: Some("thinking...".to_string()),
                     }]),
+                    encrypted_content: None,
+                    summary: None,
                 },
                 OutputMessage {
                     msg_type: "message".to_string(),
@@ -714,6 +822,8 @@ mod tests {
                         content_type: "output_text".to_string(),
                         text: Some("Hello!".to_string()),
                     }]),
+                    encrypted_content: None,
+                    summary: None,
                 },
             ],
             usage: None,
@@ -737,6 +847,8 @@ mod tests {
                 role: None,
                 status: None,
                 content: None,
+                encrypted_content: None,
+                summary: None,
             }],
             usage: None,
             status: None,
@@ -926,6 +1038,8 @@ mod tests {
         let items = vec![ConversationItem::Reasoning {
             id: "r-1".to_string(),
             summary: vec!["thinking...".to_string()],
+            encrypted_content: None,
+            content: None,
         }];
         let msg = resolve_assistant_message(&items);
         assert!(msg.content.contains("cut off during reasoning"));

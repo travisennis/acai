@@ -77,7 +77,7 @@ impl DataDir {
         hex::encode(&result[..8])
     }
 
-    /// Save a session to `sessions/{dir_hash}/{session.id}.json` with atomic write
+    /// Save a session to `sessions/{dir_hash}/{session.id}.jsonl` with atomic write
     /// and update the `latest` reference.
     pub fn save_session(&self, session: &Session) -> anyhow::Result<PathBuf> {
         uuid::Uuid::parse_str(&session.id).map_err(|e| {
@@ -87,7 +87,7 @@ impl DataDir {
 
         let dir_hash = Self::dir_hash(&session.working_dir);
         let session_dir = self.sessions_dir().join(&dir_hash);
-        let session_path = session_dir.join(format!("{}.json", session.id));
+        let session_path = session_dir.join(format!("{}.jsonl", session.id));
 
         session.save(&session_path)?;
 
@@ -105,7 +105,7 @@ impl DataDir {
 
         let latest_link = session_dir.join("latest");
         let temp_link = session_dir.join(".latest_tmp");
-        let target = format!("{session_id}.json");
+        let target = format!("{session_id}.jsonl");
 
         // Remove temp symlink if it exists
         let _ = fs::remove_file(&temp_link);
@@ -145,7 +145,7 @@ impl DataDir {
         let session_path = self
             .sessions_dir()
             .join(&dir_hash)
-            .join(format!("{session_id}.json"));
+            .join(format!("{session_id}.jsonl"));
 
         if !session_path.exists() {
             return Ok(None);
@@ -163,7 +163,7 @@ impl DataDir {
         target
             .file_name()
             .and_then(|n| n.to_str())
-            .map(|s| s.trim_end_matches(".json").to_string())
+            .map(|s| s.trim_end_matches(".jsonl").to_string())
             .ok_or_else(|| anyhow!("Invalid symlink target: {}", target.display()))
     }
 
@@ -183,7 +183,7 @@ impl DataDir {
         let session_path = self
             .sessions_dir()
             .join(&dir_hash)
-            .join(format!("{id}.json"));
+            .join(format!("{id}.jsonl"));
 
         if !session_path.exists() {
             return Ok(None);

@@ -100,9 +100,24 @@ pub(super) fn get_temp_directories() -> Vec<std::path::PathBuf> {
 pub(super) async fn execute_tool(name: &str, arguments: &str) -> Result<ToolResult, String> {
     match name {
         "Bash" => Box::pin(bash::execute_bash(arguments)).await,
-        "Edit" => edit::execute_edit(arguments).await,
-        "Read" => read::execute_read(arguments).await,
-        "Write" => write::execute_write(arguments).await,
+        "Edit" => {
+            let args = arguments.to_string();
+            tokio::task::spawn_blocking(move || edit::execute_edit(&args))
+                .await
+                .map_err(|e| format!("Task join error: {e}"))?
+        },
+        "Read" => {
+            let args = arguments.to_string();
+            tokio::task::spawn_blocking(move || read::execute_read(&args))
+                .await
+                .map_err(|e| format!("Task join error: {e}"))?
+        },
+        "Write" => {
+            let args = arguments.to_string();
+            tokio::task::spawn_blocking(move || write::execute_write(&args))
+                .await
+                .map_err(|e| format!("Task join error: {e}"))?
+        },
         _ => Err(format!("Unknown tool: {name}")),
     }
 }

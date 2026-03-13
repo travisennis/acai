@@ -144,7 +144,12 @@ impl Cmd {
     /// Clean up a worktree after the session ends. Removes it if there are no
     /// changes; keeps it otherwise.
     fn cleanup_worktree(wt: &worktree::Worktree, original_dir: &std::path::Path) {
-        std::env::set_current_dir(original_dir).ok();
+        if let Err(e) = std::env::set_current_dir(original_dir) {
+            log::warn!(
+                "Failed to restore original directory '{}': {e}",
+                original_dir.display()
+            );
+        }
 
         match worktree::has_changes(&wt.path) {
             Ok(false) => {
@@ -262,7 +267,7 @@ impl CmdRunner for Cmd {
         // Save session regardless of outcome (Phase 4: save on error)
         if !self.no_session {
             session.messages = client.get_history_without_system();
-            session.touch();
+            session.model = Some(client.model().to_string());
             if let Err(e) = data_dir.save_session(&session) {
                 log::error!("Failed to save session: {e}");
             }

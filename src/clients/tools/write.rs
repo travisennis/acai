@@ -36,8 +36,7 @@ pub(super) fn write_tool() -> super::Tool {
 // =============================================================================
 
 /// Execute a write command
-#[allow(clippy::unused_async)]
-pub(super) async fn execute_write(arguments: &str) -> Result<super::ToolResult, String> {
+pub(super) fn execute_write(arguments: &str) -> Result<super::ToolResult, String> {
     #[derive(Deserialize)]
     struct WriteArgs {
         file_path: String,
@@ -162,8 +161,8 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    #[tokio::test]
-    async fn create_new_file() {
+    #[test]
+    fn create_new_file() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("new_file.txt");
 
@@ -173,7 +172,7 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_write(&args).await.unwrap();
+        let result = execute_write(&args).unwrap();
         assert!(result.output.contains("Created:"));
         assert!(result.output.contains("Bytes written: 13"));
 
@@ -181,8 +180,8 @@ mod tests {
         assert_eq!(content, "Hello, world!");
     }
 
-    #[tokio::test]
-    async fn overwrite_existing_file() {
+    #[test]
+    fn overwrite_existing_file() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("existing.txt");
         fs::write(&file_path, "old content").unwrap();
@@ -193,7 +192,7 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_write(&args).await.unwrap();
+        let result = execute_write(&args).unwrap();
         assert!(result.output.contains("Overwritten:"));
         assert!(result.output.contains("Note: Consider using Edit tool"));
 
@@ -201,8 +200,8 @@ mod tests {
         assert_eq!(content, "new content");
     }
 
-    #[tokio::test]
-    async fn auto_create_parent_directories() {
+    #[test]
+    fn auto_create_parent_directories() {
         let temp_dir = TempDir::new().unwrap();
         let nested_path = temp_dir.path().join("a/b/c/deep_file.txt");
 
@@ -212,22 +211,22 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_write(&args).await.unwrap();
+        let result = execute_write(&args).unwrap();
         assert!(result.output.contains("Created:"));
 
         let content = fs::read_to_string(&nested_path).unwrap();
         assert_eq!(content, "Deep content");
     }
 
-    #[tokio::test]
-    async fn error_on_path_outside_working_directory() {
+    #[test]
+    fn error_on_path_outside_working_directory() {
         let args = serde_json::json!({
             "file_path": "/etc/passwd",
             "content": "test"
         })
         .to_string();
 
-        let result = execute_write(&args).await;
+        let result = execute_write(&args);
         assert!(result.is_err());
         assert!(
             result
@@ -236,8 +235,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn empty_content_creates_file() {
+    #[test]
+    fn empty_content_creates_file() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("empty.txt");
 
@@ -247,7 +246,7 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_write(&args).await.unwrap();
+        let result = execute_write(&args).unwrap();
         assert!(result.output.contains("Created:"));
         assert!(result.output.contains("Bytes written: 0"));
 

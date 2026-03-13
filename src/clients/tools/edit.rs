@@ -46,8 +46,7 @@ pub(super) fn edit_tool() -> super::Tool {
 // =============================================================================
 
 /// Execute an edit command
-#[allow(clippy::unused_async)]
-pub(super) async fn execute_edit(arguments: &str) -> Result<super::ToolResult, String> {
+pub(super) fn execute_edit(arguments: &str) -> Result<super::ToolResult, String> {
     #[derive(Deserialize)]
     struct EditArgs {
         file_path: String,
@@ -197,8 +196,8 @@ mod tests {
     use std::io::Write;
     use tempfile::TempDir;
 
-    #[tokio::test]
-    async fn edit_single_occurrence() {
+    #[test]
+    fn edit_single_occurrence() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "Hello world\nGoodbye earth").unwrap();
@@ -210,7 +209,7 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_edit(&args).await.unwrap();
+        let result = execute_edit(&args).unwrap();
         assert!(result.output.contains("Replacements: 1"));
         assert!(result.output.contains("-Hello world"));
         assert!(result.output.contains("+Hello universe"));
@@ -219,8 +218,8 @@ mod tests {
         assert_eq!(content, "Hello universe\nGoodbye earth");
     }
 
-    #[tokio::test]
-    async fn error_when_old_text_not_found() {
+    #[test]
+    fn error_when_old_text_not_found() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "Hello world").unwrap();
@@ -232,13 +231,13 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_edit(&args).await;
+        let result = execute_edit(&args);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
     }
 
-    #[tokio::test]
-    async fn error_when_multiple_occurrences_without_replace_all() {
+    #[test]
+    fn error_when_multiple_occurrences_without_replace_all() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "Hello world\nGoodbye world").unwrap();
@@ -250,13 +249,13 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_edit(&args).await;
+        let result = execute_edit(&args);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("matches 2 locations"));
     }
 
-    #[tokio::test]
-    async fn replace_all_occurrences() {
+    #[test]
+    fn replace_all_occurrences() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "Hello world\nGoodbye world").unwrap();
@@ -269,15 +268,15 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_edit(&args).await.unwrap();
+        let result = execute_edit(&args).unwrap();
         assert!(result.output.contains("Replacements: 2"));
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "Hello universe\nGoodbye universe");
     }
 
-    #[tokio::test]
-    async fn delete_text_with_empty_new_text() {
+    #[test]
+    fn delete_text_with_empty_new_text() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "Hello world").unwrap();
@@ -289,15 +288,15 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_edit(&args).await.unwrap();
+        let result = execute_edit(&args).unwrap();
         assert!(result.output.contains("Replacements: 1"));
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "Hello");
     }
 
-    #[tokio::test]
-    async fn error_on_binary_file() {
+    #[test]
+    fn error_on_binary_file() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.bin");
         let mut file = fs::File::create(&file_path).unwrap();
@@ -310,13 +309,13 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_edit(&args).await;
+        let result = execute_edit(&args);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("binary file"));
     }
 
-    #[tokio::test]
-    async fn error_on_nonexistent_file() {
+    #[test]
+    fn error_on_nonexistent_file() {
         let args = serde_json::json!({
             "file_path": "/etc/nonexistent_file_12345.txt",
             "old_text": "test",
@@ -324,14 +323,14 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_edit(&args).await;
+        let result = execute_edit(&args);
         assert!(result.is_err());
         // Path doesn't exist, so should fail with "not found" error
         assert!(result.unwrap_err().contains("not found"));
     }
 
-    #[tokio::test]
-    async fn error_on_no_op_edit() {
+    #[test]
+    fn error_on_no_op_edit() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "Hello world").unwrap();
@@ -343,13 +342,13 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_edit(&args).await;
+        let result = execute_edit(&args);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("identical"));
     }
 
-    #[tokio::test]
-    async fn error_on_directory() {
+    #[test]
+    fn error_on_directory() {
         let temp_dir = TempDir::new().unwrap();
 
         let args = serde_json::json!({
@@ -359,7 +358,7 @@ mod tests {
         })
         .to_string();
 
-        let result = execute_edit(&args).await;
+        let result = execute_edit(&args);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not a file"));
     }
