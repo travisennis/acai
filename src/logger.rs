@@ -22,18 +22,20 @@ pub enum Error {
     Configuration(String),
 }
 
-// error!("Goes to stderr and file");
-// warn!("Goes to stderr and file");
-// info!("Goes to stderr and file");
-// debug!("Goes to file only");
-// trace!("Goes to file only");
-pub fn configure(log_path: &Path) -> Result<(), Error> {
+/// Configure the logging system.
+///
+/// # Arguments
+/// * `log_path` - Directory where the log file will be created
+/// * `quiet` - If true, only log to file (no stderr output). Use this for
+///   machine-readable output modes like stream-json.
+///
+/// Log level routing:
+/// - error!, warn!, info! -> stderr (unless quiet) and file
+/// - debug!, trace! -> file only
+pub fn configure(log_path: &Path, quiet: bool) -> Result<(), Error> {
     let log_line_pattern = "{d(%Y-%m-%d %H:%M:%S)} | {({l}):5.5} | {f}:{L} — {m}{n}\n";
     let level = LevelFilter::Info;
     let file_path = log_path.join("acai.log");
-
-    // Build a stderr logger.
-    let stderr = ConsoleAppender::builder().target(Target::Stderr).build();
 
     // Logging to log file.
     let logfile = FileAppender::builder()
@@ -41,22 +43,36 @@ pub fn configure(log_path: &Path) -> Result<(), Error> {
         .build(file_path)
         .map_err(|e| Error::Configuration(format!("Failed to build file appender: {e}")))?;
 
-    // Log Trace level output to file where trace is the default level
-    // and the programmatically specified level to stderr.
-    let config = Config::builder()
-        .appender(Appender::builder().build("logfile", Box::new(logfile)))
-        .appender(
-            Appender::builder()
-                .filter(Box::new(ThresholdFilter::new(level)))
-                .build("stderr", Box::new(stderr)),
-        )
-        .logger(
-            Logger::builder()
-                .appender("logfile")
-                .build("acai", LevelFilter::Trace),
-        )
-        .build(Root::builder().appender("stderr").build(LevelFilter::Trace))
-        .map_err(|e| Error::Configuration(format!("Failed to build config: {e}")))?;
+    let config = if quiet {
+        // Quiet mode: only log to file, no stderr
+        Config::builder()
+            .appender(Appender::builder().build("logfile", Box::new(logfile)))
+            .logger(
+                Logger::builder()
+                    .appender("logfile")
+                    .build("acai", LevelFilter::Trace),
+            )
+            .build(Root::builder().build(LevelFilter::Trace))
+            .map_err(|e| Error::Configuration(format!("Failed to build config: {e}")))?
+    } else {
+        // Normal mode: log to both stderr and file
+        let stderr = ConsoleAppender::builder().target(Target::Stderr).build();
+
+        Config::builder()
+            .appender(Appender::builder().build("logfile", Box::new(logfile)))
+            .appender(
+                Appender::builder()
+                    .filter(Box::new(ThresholdFilter::new(level)))
+                    .build("stderr", Box::new(stderr)),
+            )
+            .logger(
+                Logger::builder()
+                    .appender("logfile")
+                    .build("acai", LevelFilter::Trace),
+            )
+            .build(Root::builder().appender("stderr").build(LevelFilter::Trace))
+            .map_err(|e| Error::Configuration(format!("Failed to build config: {e}")))?
+    };
 
     // Use this to change log levels at runtime.
     // This means you can change the default log level to trace
