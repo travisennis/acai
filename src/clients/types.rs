@@ -238,7 +238,6 @@ pub(super) struct OutputMessage {
     #[serde(rename = "type")]
     pub(super) msg_type: String,
     pub(super) id: Option<String>,
-    #[serde(rename = "call_id")]
     pub(super) call_id: Option<String>,
     pub(super) name: Option<String>,
     pub(super) arguments: Option<String>,
@@ -262,58 +261,44 @@ pub(super) struct OutputContent {
 /// Usage statistics for API calls
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Usage {
-    #[serde(rename = "input_tokens")]
     pub input_tokens: u32,
-    #[serde(rename = "input_tokens_details")]
     pub input_tokens_details: InputTokensDetails,
-    #[serde(rename = "output_tokens")]
     pub output_tokens: u32,
-    #[serde(rename = "output_tokens_details")]
     pub output_tokens_details: OutputTokensDetails,
-    #[serde(rename = "total_tokens")]
     pub total_tokens: u32,
 }
 
 /// Details about input tokens
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct InputTokensDetails {
-    #[serde(rename = "cached_tokens")]
     pub cached_tokens: u32,
 }
 
 /// Details about output tokens
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct OutputTokensDetails {
-    #[serde(rename = "reasoning_tokens")]
     pub reasoning_tokens: u32,
 }
 
 /// Internal usage struct for API response deserialization (with optional fields)
 #[derive(Deserialize, Debug, Clone, Default)]
 pub(super) struct ApiUsage {
-    #[serde(rename = "input_tokens")]
     pub(super) input_tokens: Option<u32>,
-    #[serde(rename = "input_tokens_details")]
     pub(super) input_tokens_details: Option<ApiInputTokensDetails>,
-    #[serde(rename = "output_tokens")]
     pub(super) output_tokens: Option<u32>,
-    #[serde(rename = "output_tokens_details")]
     pub(super) output_tokens_details: Option<ApiOutputTokensDetails>,
-    #[serde(rename = "total_tokens")]
     pub(super) total_tokens: Option<u32>,
 }
 
 /// Internal input tokens details for API response deserialization
 #[derive(Deserialize, Debug, Clone, Default)]
 pub(super) struct ApiInputTokensDetails {
-    #[serde(rename = "cached_tokens")]
     pub(super) cached_tokens: Option<u32>,
 }
 
 /// Internal output tokens details for API response deserialization
 #[derive(Deserialize, Debug, Clone, Default)]
 pub(super) struct ApiOutputTokensDetails {
-    #[serde(rename = "reasoning_tokens")]
     pub(super) reasoning_tokens: Option<u32>,
 }
 
