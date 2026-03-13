@@ -14,6 +14,41 @@ use std::process::Stdio;
 pub struct MacOsSandbox;
 
 impl MacOsSandbox {
+    /// Append device and PTY rules to the profile
+    fn append_device_rules(lines: &mut Vec<String>) {
+        lines.push("; Allow access to standard and PTY devices".to_string());
+        lines.push("(allow file-read* file-write* (literal \"/dev/null\"))".to_string());
+        lines.push("(allow file-read* (literal \"/dev/urandom\"))".to_string());
+        lines.push("(allow file-read* (literal \"/dev/random\"))".to_string());
+        lines.push("(allow file-read* (literal \"/dev/zero\"))".to_string());
+        lines.push("(allow file-read* file-write* (literal \"/dev/tty\"))".to_string());
+        lines.push("(allow file-read* file-write* (literal \"/dev/ptmx\"))".to_string());
+        lines.push("(allow file-read* file-write* (literal \"/dev/dtracehelper\"))".to_string());
+        lines.push("(allow file-read* file-write* (literal \"/dev/stdout\"))".to_string());
+        lines.push("(allow file-read* file-write* (literal \"/dev/stderr\"))".to_string());
+        lines.push("(allow file-read* file-write* (subpath \"/dev/fd\"))".to_string());
+        lines.push("(allow file-read* file-write* (regex #\"^/dev/ttys\"))".to_string());
+        lines.push("(allow file-read* file-write* (regex #\"^/dev/pty\"))".to_string());
+        lines.push(String::new());
+    }
+
+    /// Append git configuration read-only rules to the profile
+    fn append_git_rules(lines: &mut Vec<String>) {
+        lines.push("; Git configuration (read-only)".to_string());
+        if let Ok(home) = std::env::var("HOME") {
+            lines.push(format!("(allow file-read* (prefix \"{home}/.gitconfig\"))"));
+            lines.push(format!("(allow file-read* (prefix \"{home}/.gitignore\"))"));
+            lines.push(format!("(allow file-read* (literal \"{home}/.ssh\"))"));
+            lines.push(format!(
+                "(allow file-read* (literal \"{home}/.ssh/config\"))"
+            ));
+            lines.push(format!(
+                "(allow file-read* (literal \"{home}/.ssh/known_hosts\"))"
+            ));
+        }
+        lines.push(String::new());
+    }
+
     /// Generate a deny-default sandbox profile (.sb file content) from the configuration
     fn generate_profile(config: &SandboxConfig) -> String {
         let mut lines = vec![
@@ -26,6 +61,14 @@ impl MacOsSandbox {
         lines.push("; Allow process execution".to_string());
         lines.push("(allow process-fork)".to_string());
         lines.push("(allow process-exec)".to_string());
+        lines.push("(allow pseudo-tty)".to_string());
+        lines.push(String::new());
+
+        // Process introspection scoped to same sandbox
+        lines.push("; Allow process introspection within same sandbox".to_string());
+        lines.push("(allow process-info* (target same-sandbox))".to_string());
+        lines.push("(allow signal (target same-sandbox))".to_string());
+        lines.push("(allow mach-priv-task-port (target same-sandbox))".to_string());
         lines.push(String::new());
 
         // Mach services (required for dyld, DNS, system frameworks, etc.)
@@ -33,14 +76,18 @@ impl MacOsSandbox {
         lines.push("(allow mach-lookup)".to_string());
         lines.push(String::new());
 
-        // Signals (needed for process management)
-        lines.push("; Allow signals".to_string());
-        lines.push("(allow signal)".to_string());
-        lines.push(String::new());
-
         // Sysctl reads (needed by many tools)
         lines.push("; Allow sysctl reads".to_string());
         lines.push("(allow sysctl-read)".to_string());
+        lines.push(String::new());
+
+        // System socket (needed for kernel event monitoring by network stack)
+        lines.push("; Allow system sockets and shared memory".to_string());
+        lines.push("(allow system-socket)".to_string());
+        lines.push(
+            "(allow ipc-posix-shm-read-data (ipc-posix-name \"apple.shm.notification_center\"))"
+                .to_string(),
+        );
         lines.push(String::new());
 
         // Network access (sandbox only restricts filesystem, not network)
@@ -53,9 +100,29 @@ impl MacOsSandbox {
         lines.push("(allow file-read* (literal \"/\"))".to_string());
         lines.push(String::new());
 
+        // CWD ancestor directory literals (agents call readdir() on ancestors)
+        lines.push("; Allow reading CWD ancestor directories".to_string());
+        if let Some(cwd) = config.read_write.first() {
+            let mut ancestor = cwd.as_path();
+            let mut ancestors = Vec::new();
+            while let Some(parent) = ancestor.parent() {
+                ancestors.push(parent.to_path_buf());
+                ancestor = parent;
+            }
+            for a in ancestors.into_iter().rev() {
+                let escaped = escape_path(&a);
+                if escaped != "/" {
+                    lines.push(format!("(allow file-read* (literal \"{escaped}\"))"));
+                }
+            }
+        }
+        lines.push(String::new());
+
         // Read-write access for working directory and temp dirs
         if !config.read_write.is_empty() {
-            lines.push("; Read-write access: working directory and temp dirs".to_string());
+            lines.push(
+                "; Read-write access: working directory, temp dirs, and toolchains".to_string(),
+            );
             for path in &config.read_write {
                 let escaped = escape_path(path);
                 lines.push(format!(
@@ -85,18 +152,11 @@ impl MacOsSandbox {
             lines.push(String::new());
         }
 
-        // Device access for /dev/null, /dev/urandom, /dev/zero, /dev/tty
-        lines.push("; Allow access to standard devices".to_string());
-        lines.push("(allow file-read* file-write* (literal \"/dev/null\"))".to_string());
-        lines.push("(allow file-read* (literal \"/dev/urandom\"))".to_string());
-        lines.push("(allow file-read* (literal \"/dev/random\"))".to_string());
-        lines.push("(allow file-read* (literal \"/dev/zero\"))".to_string());
-        lines.push("(allow file-read* file-write* (literal \"/dev/tty\"))".to_string());
-        lines.push("(allow file-read* file-write* (literal \"/dev/dtracehelper\"))".to_string());
-        lines.push(String::new());
+        Self::append_git_rules(&mut lines);
+        Self::append_device_rules(&mut lines);
 
-        // Allow file-ioctl (needed for terminal operations)
-        lines.push("; Allow file-ioctl (needed for terminal operations)".to_string());
+        // Allow file-ioctl scoped to terminal devices
+        lines.push("; Allow file-ioctl for terminal operations".to_string());
         lines.push("(allow file-ioctl)".to_string());
 
         // Allow file locking (needed by cargo and other build tools)
@@ -263,9 +323,12 @@ mod tests {
 
         assert!(profile.contains("(allow process-fork)"));
         assert!(profile.contains("(allow process-exec)"));
+        assert!(profile.contains("(allow pseudo-tty)"));
         assert!(profile.contains("(allow mach-lookup)"));
-        assert!(profile.contains("(allow signal)"));
+        assert!(profile.contains("(allow process-info* (target same-sandbox))"));
+        assert!(profile.contains("(allow signal (target same-sandbox))"));
         assert!(profile.contains("(allow sysctl-read)"));
+        assert!(profile.contains("(allow system-socket)"));
         assert!(profile.contains("(allow network*)"));
     }
 
@@ -276,6 +339,8 @@ mod tests {
         assert!(profile.contains("/dev/null"));
         assert!(profile.contains("/dev/urandom"));
         assert!(profile.contains("/dev/tty"));
+        assert!(profile.contains("/dev/ptmx"));
+        assert!(profile.contains("/dev/fd"));
     }
 
     #[test]

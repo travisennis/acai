@@ -51,16 +51,49 @@ impl SandboxConfig {
         let temp_dirs = super::get_temp_directories();
         read_write.extend(temp_dirs);
 
-        // Add cargo writable paths (registry downloads, package cache, git deps)
+        // Add user home toolchain and integration paths
         if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            // Rust: full read-write to cargo and rustup for builds/installs
             let cargo_home =
                 std::env::var_os("CARGO_HOME").map_or_else(|| home.join(".cargo"), PathBuf::from);
-            for subdir in &["registry", "git", ".package-cache"] {
-                let p = cargo_home.join(subdir);
-                if p.exists() {
-                    read_write.push(p);
-                }
-            }
+            let rustup_home =
+                std::env::var_os("RUSTUP_HOME").map_or_else(|| home.join(".rustup"), PathBuf::from);
+            read_write.push(cargo_home);
+            read_write.push(rustup_home);
+
+            // Rust: sccache paths
+            read_write.extend([
+                home.join(".cache/sccache"),
+                home.join("Library/Caches/sccache"),
+            ]);
+
+            // SCM CLIs: gh and glab for PR/issue workflows
+            read_write.extend([
+                home.join(".config/gh"),
+                home.join(".cache/gh"),
+                home.join(".local/share/gh"),
+                home.join(".local/state/gh"),
+                home.join(".config/glab-cli"),
+                home.join(".cache/glab-cli"),
+                home.join(".local/share/glab-cli"),
+                home.join(".local/state/glab-cli"),
+            ]);
+
+            // Runtime managers: mise, asdf, volta
+            read_write.extend([
+                home.join(".config/mise"),
+                home.join(".local/share/mise"),
+                home.join(".local/state/mise"),
+                home.join(".cache/mise"),
+                home.join(".asdf"),
+                home.join(".volta"),
+            ]);
+
+            #[cfg(target_os = "macos")]
+            read_write.extend([
+                home.join("Library/Caches/mise"),
+                home.join("Library/Application Support/Mozilla.sccache"),
+            ]);
         }
 
         // Include both original and canonical paths to handle symlinks
@@ -108,41 +141,34 @@ impl SandboxConfig {
             ]);
         }
 
-        // Add user toolchain paths (cargo, rustup, etc.)
-        if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-            let cargo_home =
-                std::env::var_os("CARGO_HOME").map_or_else(|| home.join(".cargo"), PathBuf::from);
-            let rustup_home =
-                std::env::var_os("RUSTUP_HOME").map_or_else(|| home.join(".rustup"), PathBuf::from);
-
-            paths.push(cargo_home);
-            paths.push(rustup_home);
-        }
-
         paths.into_iter().filter(|p| p.exists()).collect()
     }
 
     /// Get paths that need read-only access
     fn get_read_only_paths() -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+
         #[cfg(target_os = "macos")]
-        let paths = vec![
+        paths.extend([
             PathBuf::from("/etc"),
             PathBuf::from("/private/etc"),
             PathBuf::from("/private/var"),
             PathBuf::from("/dev"),
             PathBuf::from("/var"),
-        ];
+        ]);
 
         #[cfg(target_os = "linux")]
-        let paths = vec![
+        paths.extend([
             PathBuf::from("/etc"),
             PathBuf::from("/dev"),
             PathBuf::from("/proc"),
             PathBuf::from("/sys"),
-        ];
+        ]);
 
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        let paths: Vec<PathBuf> = vec![];
+        // Git configuration (read-only)
+        if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            paths.extend([home.join(".config/git"), home.join(".gitattributes")]);
+        }
 
         paths.into_iter().filter(|p| p.exists()).collect()
     }
