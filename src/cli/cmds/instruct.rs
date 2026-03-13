@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::time::Instant;
 
 use clap::{Args, ValueEnum};
@@ -191,10 +192,12 @@ impl CmdRunner for Cmd {
             None
         };
 
-        // Only read from stdin if a prompt is not provided
-        // Note: We always attempt to read stdin unless --prompt is explicitly provided.
-        // If stdin is a TTY (interactive terminal), it will be empty anyway.
-        let input_context: Option<String> = if self.prompt.is_some() || self.prompt_file.is_some() {
+        // Only read from stdin if a prompt is not provided and stdin is not a TTY.
+        // Reading from a TTY stdin would block forever waiting for input.
+        let input_context: Option<String> = if self.prompt.is_some()
+            || self.prompt_file.is_some()
+            || std::io::stdin().is_terminal()
+        {
             None
         } else {
             std::io::read_to_string(std::io::stdin()).ok()
