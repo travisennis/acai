@@ -248,6 +248,9 @@ impl CmdRunner for Cmd {
         // Start timing
         let start = Instant::now();
 
+        // Emit init message with session info, cwd, and tools
+        client.emit_init_message();
+
         // Send message and handle result
         let result: anyhow::Result<Option<Message>> = client.send(msg).await;
 

@@ -225,9 +225,6 @@ impl Responses {
 
     #[allow(clippy::too_many_lines)]
     pub async fn send(&mut self, message: Message) -> anyhow::Result<Option<Message>> {
-        // Emit init message with session info, cwd, and tools
-        self.emit_init_message();
-
         // Add user message to history
         let user_content = message.content.clone();
         self.history.push(ConversationItem::Message {
