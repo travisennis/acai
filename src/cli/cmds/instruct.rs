@@ -59,6 +59,11 @@ pub struct Cmd {
     #[arg(long, value_name = "UUID")]
     pub resume: Option<String>,
 
+    /// Fork a session: copy its history into a new session with a fresh ID.
+    /// Use without a value to fork the latest session, or provide a UUID.
+    #[arg(long, num_args = 0..=1, default_missing_value = "", value_name = "UUID")]
+    pub fork: Option<String>,
+
     /// Do not save the session to disk
     #[arg(long)]
     pub no_session: bool,
@@ -108,6 +113,28 @@ impl Cmd {
                 .with_session_id(restored.id.clone())
                 .with_history(restored.messages.clone());
             Ok((c, restored))
+        } else if let Some(ref fork_id) = self.fork {
+            let restored = if fork_id.is_empty() {
+                data_dir.load_latest_session(&current_dir)?.ok_or_else(|| {
+                    anyhow::anyhow!("No previous session found for this directory")
+                })?
+            } else {
+                uuid::Uuid::parse_str(fork_id)
+                    .map_err(|e| anyhow::anyhow!("Invalid session UUID '{fork_id}': {e}"))?;
+                data_dir
+                    .load_session(&current_dir, fork_id)?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Session {fork_id} not found in this directory")
+                    })?
+            };
+            let c = Responses::new(self.model.clone(), &system_prompt)?
+                .temperature(self.temperature)
+                .top_p(self.top_p)
+                .max_output_tokens(self.max_tokens)
+                .providers(self.providers.clone())
+                .with_history(restored.messages);
+            let s = Session::new(c.session_id.clone(), current_dir);
+            Ok((c, s))
         } else {
             let c = Responses::new(self.model.clone(), &system_prompt)?
                 .temperature(self.temperature)
@@ -179,9 +206,15 @@ impl Cmd {
 impl CmdRunner for Cmd {
     async fn run(&self, data_dir: &DataDir) -> anyhow::Result<()> {
         // Validate mutually exclusive flags
-        if self.continue_session && self.resume.is_some() {
+        let session_flags = [
+            self.continue_session,
+            self.resume.is_some(),
+            self.fork.is_some(),
+        ];
+        let active = session_flags.iter().filter(|&&f| f).count();
+        if active > 1 {
             return Err(anyhow::anyhow!(
-                "Cannot use both --continue and --resume at the same time"
+                "Cannot use more than one of --continue, --resume, and --fork at the same time"
             ));
         }
 
