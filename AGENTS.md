@@ -30,11 +30,8 @@ just update-dependencies
 
 ## Rules
 
-- Always verify changes compile and pass tests before finishing
-- You must run all checks (build, formatting, linting, and tests) at the completion of coding tasks.
-- Always run `cargo check` immediately after making changes to verify syntax
+- Run all checks (build, formatting, linting, and tests) at the completion of coding tasks. Verify changes compile and pass tests before finishing.
 - If compilation fails, analyze the error output and fix syntax issues
-- If a change causes compilation errors, analyze the error and fix it
 
 ## Running the App
 
@@ -59,6 +56,11 @@ cargo run --release -- instruct --prompt "Your prompt here"
 - **Derives**: Always derive `Debug`, `Clone` for structs; use `Serialize`/`Deserialize` for data models
 - **Error Handling**: Use `thiserror` for custom errors, `anyhow` for application errors
 - **Async**: Prefer `async fn` with Tokio; use `?` for error propagation
+
+## Git Workflow
+
+- **Never commit directly to the main branch** — verify current branch with `git branch` before committing
+- Merge via feature branch + PR. Naming: `feat/xxx`, `fix/xxx`, `refactor/xxx`, `test/xxx`
 
 ## Additional Notes
 
