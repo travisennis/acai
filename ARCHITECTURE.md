@@ -145,8 +145,13 @@ Use symbol search to locate specific implementations:
 
 For deeper understanding of specific subsystems:
 
-- `docs/session-management.md` - Session lifecycle and storage format
-- `docs/sandbox.md` - Sandbox implementation details
-- `docs/responses-api.md` - OpenRouter Responses API integration
-- `docs/streaming-json-output.md` - Machine-readable output format
-- `docs/logging.md` - Logging configuration and troubleshooting
+- `docs/design-docs/cli.md` - Command-line interface and command dispatch
+- `docs/design-docs/conversation-types.md` - ConversationItem enum and API types
+- `docs/design-docs/models.md` - Role and Message types
+- `docs/design-docs/prompts.md` - System prompt construction and AGENTS.md integration
+- `docs/design-docs/session-management.md` - Session lifecycle and storage format
+- `docs/design-docs/sandbox.md` - Sandbox implementation details
+- `docs/design-docs/streaming-json-output.md` - Machine-readable output format
+- `docs/design-docs/logging.md` - Logging configuration and troubleshooting
+- `docs/design-docs/tools.md` - Tool framework (Bash, Read, Edit, Write)
+- `docs/references/responses-api.md` - OpenRouter Responses API integration
