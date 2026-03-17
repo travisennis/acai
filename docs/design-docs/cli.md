@@ -17,56 +17,58 @@ The CLI layer is intentionally thin—it delegates all business logic to lower l
 The main CLI is implemented as a single struct using `clap`'s derive macro:
 
 ```rust
-#[derive(Parser, Debug, Clone)]
-#[command(name = "acai")]
-#[command(about = "AI coding assistant CLI")]
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
 pub struct CodingAssistant {
     /// The prompt to send to the AI (use `-` to read from stdin)
+    #[arg(value_name = "PROMPT")]
     pub prompt: Option<String>,
-    
+
     /// Sets the model to use (e.g., "minimax/minimax-m2.5")
-    #[arg(long)]
-    pub model: Option<String>,
-    
+    #[arg(long, default_value = DEFAULT_MODEL)]
+    pub model: String,
+
     /// Sets the temperature value
     #[arg(long)]
     pub temperature: Option<f32>,
-    
+
     /// Sets the max tokens value
     #[arg(long)]
     pub max_tokens: Option<u32>,
-    
+
     /// Sets the top-p value
     #[arg(long)]
     pub top_p: Option<f32>,
-    
-    /// Output format (text or stream-json)
-    #[arg(long)]
-    pub output_format: Option<OutputFormat>,
-    
-    /// Continue the most recent session
-    #[arg(long)]
+
+    /// Output format for the response (text or stream-json)
+    #[arg(long, value_enum, default_value = "text")]
+    pub output_format: OutputFormat,
+
+    /// Continue the most recent session for this directory
+    #[arg(long = "continue")]
     pub continue_session: bool,
-    
+
     /// Resume a specific session by UUID
-    #[arg(long)]
+    #[arg(long, value_name = "UUID")]
     pub resume: Option<String>,
-    
-    /// Fork a session into a new one
-    #[arg(long)]
+
+    /// Fork a session: copy its history into a new session with a fresh ID.
+    /// Use without a value to fork the latest session, or provide a UUID.
+    #[arg(long, num_args = 0..=1, default_missing_value = "", value_name = "UUID")]
     pub fork: Option<String>,
-    
-    /// Do not save the session
+
+    /// Do not save the session to disk
     #[arg(long)]
     pub no_session: bool,
-    
-    /// Run in an isolated git worktree
-    #[arg(short, long)]
-    pub worktree: Option<Option<String>>,
-    
-    /// Restrict which providers can serve requests
-    #[arg(long)]
-    pub providers: Option<Vec<String>>,
+
+    /// Run in an isolated git worktree (optionally provide a name)
+    #[arg(short, long, num_args = 0..=1, default_missing_value = "", value_name = "NAME")]
+    pub worktree: Option<String>,
+
+    /// Restrict which providers can serve requests (comma-separated or multiple flags).
+    /// Use "all" to allow any provider. Defaults to "Fireworks,Moonshot AI".
+    #[arg(long, num_args = 0.., value_delimiter = ',')]
+    pub providers: Vec<String>,
 }
 ```
 

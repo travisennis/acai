@@ -8,12 +8,6 @@ The `--output-format stream-json` option enables streaming JSON output for the m
 acai --output-format stream-json "Your prompt here"
 ```
 
-Or with shorthand:
-
-```bash
-acai --output-format stream-json "Your prompt here"
-```
-
 ## Behavior
 
 When `--output-format stream-json` is enabled:

@@ -110,6 +110,9 @@ impl CodingAssistant {
         prompt: Option<&str>,
         stdin_content: Option<String>,
     ) -> anyhow::Result<String> {
+        // Filter out empty stdin content to ensure consistent behavior
+        let stdin_content = stdin_content.filter(|s| !s.is_empty());
+
         match (prompt, stdin_content) {
             (Some("-"), None) => {
                 // acai - (with no piped input)
@@ -475,18 +478,27 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_build_content_empty_stdin() {
-        // Edge case: empty stdin should be treated as valid stdin content
+        // Edge case: empty stdin is filtered out to match production behavior
+        // where read_stdin_content() filters empty strings. With no prompt and
+        // empty stdin, this becomes a "no input" error case.
         let result = CodingAssistant::build_content(None, Some(String::new()));
-        assert_eq!(result.unwrap(), "");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No input provided")
+        );
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_build_content_prompt_with_empty_stdin() {
         // Edge case: prompt with empty stdin should just return the prompt
-        // (not prompt + "\n\n" which would happen if empty stdin wasn't filtered)
+        // Empty stdin is filtered out to match production behavior where
+        // read_stdin_content() filters empty strings
         let result = CodingAssistant::build_content(Some("my prompt"), Some(String::new()));
-        assert_eq!(result.unwrap(), "my prompt\n\n");
+        assert_eq!(result.unwrap(), "my prompt");
     }
 
     #[test]

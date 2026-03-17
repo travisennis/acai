@@ -9,10 +9,7 @@
 use std::process::{Command, Stdio};
 
 fn get_binary_path() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target")
-        .join("release")
-        .join("acai")
+    std::path::PathBuf::from(env!("CARGO_BIN_EXE_acai"))
 }
 
 #[test]
