@@ -94,6 +94,39 @@ fn should_use_quiet_logging() -> bool {
 }
 
 impl CodingAssistant {
+    /// Read content from stdin if available (non-terminal)
+    fn read_stdin_content() -> Option<String> {
+        if std::io::stdin().is_terminal() {
+            None
+        } else {
+            std::io::read_to_string(std::io::stdin())
+                .ok()
+                .filter(|s| !s.is_empty())
+        }
+    }
+
+    /// Build the final content from prompt and stdin according to codex-style rules
+    fn build_content(
+        prompt: Option<&str>,
+        stdin_content: Option<String>,
+    ) -> anyhow::Result<String> {
+        match (prompt, stdin_content) {
+            (Some("-"), None) => {
+                // acai - (with no piped input)
+                Err(anyhow::anyhow!("No input provided via stdin"))
+            },
+            (Some("-") | None, Some(stdin)) => Ok(stdin), // acai - < input.txt or just stdin
+            (Some(prompt), Some(stdin)) => Ok(format!("{prompt}\n\n{stdin}")), // Both: prompt + stdin
+            (Some(prompt), None) => Ok(prompt.to_string()),                    // Just prompt
+            (None, None) => {
+                // Nothing at all
+                Err(anyhow::anyhow!(
+                    "No input provided. Provide a prompt as an argument, use 'acai -' for stdin, or pipe input to acai."
+                ))
+            },
+        }
+    }
+
     fn build_client_and_session(
         &self,
         data_dir: &DataDir,
@@ -233,30 +266,9 @@ impl CmdRunner for CodingAssistant {
             ));
         }
 
-        // Handle stdin input
-        let stdin_content: Option<String> = if std::io::stdin().is_terminal() {
-            None
-        } else {
-            std::io::read_to_string(std::io::stdin()).ok()
-        };
-
-        // Build content from prompt and stdin
-        // Error if neither prompt nor stdin input is provided
-        let content = match (self.prompt.as_deref(), stdin_content) {
-            (Some("-"), None) => {
-                // acai - (with no piped input)
-                return Err(anyhow::anyhow!("No input provided via stdin"));
-            },
-            (Some("-") | None, Some(stdin)) => stdin, // acai - < input.txt or just stdin
-            (Some(prompt), Some(stdin)) => format!("{prompt}\n\n{stdin}"), // Both: prompt + stdin
-            (Some(prompt), None) => prompt.to_string(), // Just prompt
-            (None, None) => {
-                // Nothing at all
-                return Err(anyhow::anyhow!(
-                    "No input provided. Provide a prompt as an argument, use 'acai -' for stdin, or pipe input to acai."
-                ));
-            },
-        };
+        // Handle stdin input and build content
+        let stdin_content = Self::read_stdin_content();
+        let content = Self::build_content(self.prompt.as_deref(), stdin_content)?;
 
         let original_dir = std::env::current_dir()
             .map_err(|e| anyhow::anyhow!("Failed to get current directory: {e}"))?;
@@ -395,5 +407,113 @@ mod tests {
     fn test_cli_parsing_no_prompt() {
         let args = CodingAssistant::parse_from(["acai"]);
         assert_eq!(args.prompt, None);
+    }
+
+    // Unit tests for build_content stdin handling logic
+    // Allow unwrap in tests for clarity
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_content_prompt_only() {
+        let result = CodingAssistant::build_content(Some("hello"), None);
+        assert_eq!(result.unwrap(), "hello");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_content_stdin_only() {
+        let result = CodingAssistant::build_content(None, Some("stdin content".to_string()));
+        assert_eq!(result.unwrap(), "stdin content");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_content_dash_with_stdin() {
+        let result = CodingAssistant::build_content(Some("-"), Some("stdin content".to_string()));
+        assert_eq!(result.unwrap(), "stdin content");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_content_dash_without_stdin() {
+        let result = CodingAssistant::build_content(Some("-"), None);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No input provided via stdin")
+        );
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_content_prompt_and_stdin() {
+        let result =
+            CodingAssistant::build_content(Some("instructions"), Some("file content".to_string()));
+        assert_eq!(result.unwrap(), "instructions\n\nfile content");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_content_no_input() {
+        let result = CodingAssistant::build_content(None, None);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("No input provided"));
+        assert!(err_msg.contains("acai -"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_content_empty_prompt() {
+        // Edge case: empty string prompt is still a prompt
+        let result = CodingAssistant::build_content(Some(""), None);
+        assert_eq!(result.unwrap(), "");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_content_empty_stdin() {
+        // Edge case: empty stdin should be treated as valid stdin content
+        let result = CodingAssistant::build_content(None, Some(String::new()));
+        assert_eq!(result.unwrap(), "");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_content_prompt_with_empty_stdin() {
+        // Edge case: prompt with empty stdin should just return the prompt
+        // (not prompt + "\n\n" which would happen if empty stdin wasn't filtered)
+        let result = CodingAssistant::build_content(Some("my prompt"), Some(String::new()));
+        assert_eq!(result.unwrap(), "my prompt\n\n");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_content_multiline_prompt() {
+        let result = CodingAssistant::build_content(Some("line 1\nline 2"), None);
+        assert_eq!(result.unwrap(), "line 1\nline 2");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_content_multiline_stdin() {
+        let result =
+            CodingAssistant::build_content(None, Some("stdin line 1\nstdin line 2".to_string()));
+        assert_eq!(result.unwrap(), "stdin line 1\nstdin line 2");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_content_multiline_both() {
+        let result = CodingAssistant::build_content(
+            Some("prompt line 1\nprompt line 2"),
+            Some("stdin line 1\nstdin line 2".to_string()),
+        );
+        assert_eq!(
+            result.unwrap(),
+            "prompt line 1\nprompt line 2\n\nstdin line 1\nstdin line 2"
+        );
     }
 }
