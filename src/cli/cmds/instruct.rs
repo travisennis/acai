@@ -233,7 +233,9 @@ impl CmdRunner for Cmd {
         {
             None
         } else {
-            std::io::read_to_string(std::io::stdin()).ok()
+            std::io::read_to_string(std::io::stdin())
+                .ok()
+                .filter(|s| !s.trim().is_empty())
         };
 
         let original_dir = std::env::current_dir()
