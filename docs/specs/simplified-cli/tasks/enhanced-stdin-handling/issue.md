@@ -17,14 +17,14 @@ This slice enables all the flexible input methods developers expect from modern 
 
 ## Acceptance criteria
 
-- [ ] `acai -` reads entire prompt from stdin
-- [ ] `cat file.txt | acai` works (no positional prompt, stdin provided)
-- [ ] `cat file.txt | acai "instructions"` concatenates prompt + stdin content
-- [ ] `acai < prompt.txt` works (input redirection)
-- [ ] `acai <<EOF ... EOF` heredoc syntax works
-- [ ] `(echo "instructions"; cat file.py) | acai` combined input works
-- [ ] Unit tests cover all stdin input combinations
-- [ ] Integration tests verify end-to-end stdin handling
+- [x] `acai -` reads entire prompt from stdin
+- [x] `cat file.txt | acai` works (no positional prompt, stdin provided)
+- [x] `cat file.txt | acai "instructions"` concatenates prompt + stdin content
+- [x] `acai < prompt.txt` works (input redirection)
+- [x] `acai <<EOF ... EOF` heredoc syntax works
+- [x] `(echo "instructions"; cat file.py) | acai` combined input works
+- [x] Unit tests cover all stdin input combinations (12 tests added)
+- [x] Integration tests verify end-to-end stdin handling (5 tests added)
 
 ## Blocked by
 
