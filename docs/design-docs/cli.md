@@ -1,71 +1,82 @@
 # CLI Module
 
-The CLI module provides the command-line interface for acai, handling argument parsing, command dispatch, and user-facing error messages.
+The CLI module provides the command-line interface for acai, handling argument parsing and user-facing error messages.
 
 ## Overview
 
 The CLI layer is intentionally thin—it delegates all business logic to lower layers while handling:
 
 - **Argument parsing**: Using `clap` to define and validate command-line flags
-- **Command dispatch**: Routing to the appropriate command implementation via the `CmdRunner` trait
 - **User interaction**: Reading from stdin, handling worktrees, and formatting output
 - **Session lifecycle**: Managing session creation, continuation, resumption, and forking
 
 ## Architecture
 
-### CmdRunner Trait
+### CodingAssistant Struct
 
-The `CmdRunner` trait defines the interface that all commands must implement:
+The main CLI is implemented as a single struct using `clap`'s derive macro:
 
 ```rust
-pub trait CmdRunner {
-    async fn run(&self, data_dir: &DataDir) -> anyhow::Result<()>;
+#[derive(Parser, Debug, Clone)]
+#[command(name = "acai")]
+#[command(about = "AI coding assistant CLI")]
+pub struct CodingAssistant {
+    /// The prompt to send to the AI (use `-` to read from stdin)
+    pub prompt: Option<String>,
+    
+    /// Sets the model to use (e.g., "minimax/minimax-m2.5")
+    #[arg(long)]
+    pub model: Option<String>,
+    
+    /// Sets the temperature value
+    #[arg(long)]
+    pub temperature: Option<f32>,
+    
+    /// Sets the max tokens value
+    #[arg(long)]
+    pub max_tokens: Option<u32>,
+    
+    /// Sets the top-p value
+    #[arg(long)]
+    pub top_p: Option<f32>,
+    
+    /// Output format (text or stream-json)
+    #[arg(long)]
+    pub output_format: Option<OutputFormat>,
+    
+    /// Continue the most recent session
+    #[arg(long)]
+    pub continue_session: bool,
+    
+    /// Resume a specific session by UUID
+    #[arg(long)]
+    pub resume: Option<String>,
+    
+    /// Fork a session into a new one
+    #[arg(long)]
+    pub fork: Option<String>,
+    
+    /// Do not save the session
+    #[arg(long)]
+    pub no_session: bool,
+    
+    /// Run in an isolated git worktree
+    #[arg(short, long)]
+    pub worktree: Option<Option<String>>,
+    
+    /// Restrict which providers can serve requests
+    #[arg(long)]
+    pub providers: Option<Vec<String>>,
 }
 ```
 
-This trait-based design allows for:
-- Easy addition of new commands
-- Consistent error handling across commands
-- Dependency injection for testing
-
-### Commands
-
-Currently implemented commands:
-
-- **`instruct`**: The primary command for sending instructions to the AI
-
-### Instruct Command
-
-The `instruct` command (`src/cli/cmds/instruct.rs`) is the main interface:
+The struct implements the `CmdRunner` trait for execution:
 
 ```rust
-pub struct Cmd {
-    /// Sets the model to use (e.g., "minimax/minimax-m2.5")
-    pub model: String,
-    /// Sets the temperature value
-    pub temperature: Option<f32>,
-    /// Sets the max tokens value
-    pub max_tokens: Option<u32>,
-    /// Sets the top-p value
-    pub top_p: Option<f32>,
-    /// Sets the prompt
-    pub prompt: Option<String>,
-    /// Read the prompt from a file
-    pub prompt_file: Option<String>,
-    /// Output format (text or stream-json)
-    pub output_format: OutputFormat,
-    /// Continue the most recent session
-    pub continue_session: bool,
-    /// Resume a specific session by UUID
-    pub resume: Option<String>,
-    /// Fork a session into a new one
-    pub fork: Option<String>,
-    /// Do not save the session
-    pub no_session: bool,
-    /// Run in an isolated git worktree
-    pub worktree: Option<String>,
-    /// Restrict which providers can serve requests
-    pub providers: Vec<String>,
+impl CmdRunner for CodingAssistant {
+    async fn run(&self, data_dir: &DataDir) -> anyhow::Result<()> {
+        // Validate flags, build client, run the conversation
+    }
 }
 ```
 
@@ -82,13 +93,32 @@ These modes are mutually exclusive—only one can be used at a time.
 
 ## Input Sources
 
-The CLI accepts input from multiple sources (in order of precedence):
+The CLI accepts input from multiple sources:
 
-1. **`--prompt "text"`**: Direct command-line prompt
-2. **`--prompt-file path`**: Read prompt from a file
-3. **stdin**: Pipe input (only if stdin is not a TTY)
+1. **`[PROMPT]`**: Positional argument for the prompt (use `-` to read from stdin)
+2. **stdin**: Pipe input or use heredocs for multi-line prompts
 
-If multiple sources are provided, they are combined with the prompt first, then stdin context.
+The prompt and stdin can be combined—the prompt is used as instructions with stdin content appended.
+
+### Examples
+
+```bash
+# Positional prompt
+acai "Implement a binary search tree"
+
+# Read from stdin
+cat file.txt | acai "Summarize this"
+
+# Heredoc
+acai << 'EOF'
+Implement a function that:
+1. Takes a list of numbers
+2. Returns the sum
+EOF
+
+# Explicit stdin with dash
+echo "Hello" | acai -
+```
 
 ## Output Formats
 
@@ -98,45 +128,3 @@ Two output formats are supported:
 - **`stream-json`**: Machine-readable JSON streaming with events for each conversation item
 
 When using `stream-json`, console logging is automatically suppressed to avoid polluting stdout.
-
-## Git Worktree Support
-
-The `--worktree` flag enables isolated execution environments:
-
-1. Creates a new git worktree (or uses an existing one)
-2. Changes the working directory to the worktree
-3. After execution, removes the worktree if there are no changes, or keeps it if there are
-
-This allows safe experimentation without affecting the main working tree.
-
-## Error Handling
-
-The CLI layer handles user-facing errors:
-
-- **Validation errors**: Mutually exclusive flags, invalid UUIDs
-- **Input errors**: Missing prompts, file not found
-- **API errors**: Network issues, rate limits
-- **Tool errors**: Sandboxing violations, path validation failures
-
-Errors are reported to stderr, and the process exits with a non-zero status.
-
-## Integration with Lower Layers
-
-The CLI integrates with:
-
-- **`clients::responses`**: Creates and configures the API client
-- **`clients::types`**: Handles conversation items for streaming output
-- **`config`**: Loads/saves sessions, reads AGENTS.md files
-- **`prompts`**: Builds the system prompt with context
-- **`models`**: Constructs user messages
-
-## Testing
-
-The CLI module includes tests for:
-
-- Flag validation and mutual exclusivity
-- Input source combination
-- Session lifecycle (new, continue, resume, fork)
-- Worktree setup and cleanup
-
-Tests use temporary directories and mock inputs to avoid side effects.

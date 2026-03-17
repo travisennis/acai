@@ -79,7 +79,7 @@ All read-write paths are canonicalized (symlinks resolved) before being added to
 
 ```bash
 # This works — reading files in the project directory
-acai instruct --prompt "List the files in this project"
+acai "List the files in this project"
 # Bash tool runs: ls -la  ✓
 
 # This is blocked — writing outside the project directory

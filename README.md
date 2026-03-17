@@ -28,22 +28,38 @@ To install Acai, you'll need Rust and Cargo installed on your system. Then, foll
 
 ## Usage
 
-### Instruct Mode
-
-Generate code or documentation based on instructions:
-
 ```bash
 # Basic usage with a prompt
-acai instruct --prompt "Implement a binary search tree in Rust"
+acai "Implement a binary search tree in Rust"
 
-# Read prompt from a file (avoids shell escaping issues)
-acai instruct --prompt-file ./my-prompt.txt
+# Pipe file content with instructions
+cat src/main.rs | acai "Explain this code"
+
+# Use a heredoc for multi-line prompts
+acai << 'EOF'
+Implement a function that:
+1. Takes a list of numbers
+2. Returns the sum
+EOF
+
+# Heredoc with prompt prefix
+acai "Review this code:" << 'EOF'
+fn main() {
+    println!("Hello");
+}
+EOF
+
+# Input redirection
+acai < prompt.txt
+
+# Read from stdin explicitly
+acai - < file.txt
 
 # Using a specific model
-acai instruct --model anthropic/sonnet-3-5 --prompt "Write a hello world program"
+acai --model anthropic/sonnet-3-5 "Write a hello world program"
 
 # With temperature
-acai instruct --model openai/gpt-4o --temperature 0.7 --prompt "Your prompt here"
+acai --model openai/gpt-4o --temperature 0.7 "Your prompt here"
 ```
 
 ## Configuration
@@ -60,13 +76,13 @@ Acai automatically saves conversation sessions so you can continue conversations
 
 ```bash
 # Start a conversation
-acai instruct --prompt "Remember the number 42"
+acai "Remember the number 42"
 
 # Continue the most recent session in the current directory
-acai instruct --continue --prompt "What number did I tell you?"
+acai --continue "What number did I tell you?"
 
 # Resume a specific session by UUID
-acai instruct --resume 550e8400-e29b-41d4-a716-446655440000 --prompt "Continue our conversation"
+acai --resume 550e8400-e29b-41d4-a716-446655440000 "Continue our conversation"
 ```
 
 Sessions are saved to `~/.cache/acai/sessions/` and include full conversation history with metadata. Sessions are saved on both success and error for crash recovery.
@@ -79,10 +95,10 @@ Run a task in an isolated git worktree so changes don't affect your main working
 
 ```bash
 # Named worktree
-acai instruct -w feature-auth -p "Add auth middleware"
+acai -w feature-auth "Add auth middleware"
 
 # Auto-generated name
-acai instruct -w -p "Fix the bug"
+acai -w "Fix the bug"
 ```
 
 When the task finishes, acai automatically removes the worktree if no changes were made. If there are uncommitted changes or new commits, the worktree is kept so you can return to it later.
@@ -100,13 +116,12 @@ For more details, see [Filesystem Sandbox](docs/sandbox.md).
 
 ### Options
 
+- `[PROMPT]` - Your instruction prompt as a positional argument (use `-` to read from stdin)
 - `--model` - Set the model to use (default: `minimax/minimax-m2.5`)
 - `--temperature` - Set the temperature (0.0 to 1.0)
 - `--max-tokens` - Set maximum tokens in response
 - `--top-p` - Set top-p value
 - `--output-format` - Output format: `text` (default) or `stream-json`
-- `--prompt` (`-p`) - Your instruction prompt (mutually exclusive with `--prompt-file`)
-- `--prompt-file` - Read prompt from a file, avoiding shell escaping issues (mutually exclusive with `--prompt`)
 - `--continue` - Continue the most recent session for the current directory
 - `--resume <UUID>` - Resume a specific session by its UUID
 - `--no-session` - Do not save the session to disk
@@ -116,7 +131,7 @@ For more details, see [Filesystem Sandbox](docs/sandbox.md).
 
 ```bash
 export OPENROUTER_API_KEY=your_api_key_here
-acai instruct --model anthropic/sonnet-3-5 --temperature 0.7 --prompt "Explain what this code does"
+acai --model anthropic/sonnet-3-5 --temperature 0.7 "Explain what this code does"
 ```
 
 ## Contributing

@@ -141,17 +141,17 @@ Streamed messages include:
 export OPENROUTER_API_KEY=your_key_here
 
 # Basic usage (text output)
-./target/release/acai instruct --prompt "Your prompt here"
+./target/release/acai "Your prompt here"
 
 # Streaming JSON output
-./target/release/acai instruct --prompt "Your prompt here" --output-format stream-json
+./target/release/acai "Your prompt here" --output-format stream-json
 
 # With options
-./target/release/acai instruct \
+./target/release/acai \
     --model "minimax/minimax-m2.5" \
     --temperature 0.7 \
     --max-tokens 4000 \
-    --prompt "Explain Rust ownership"
+    "Explain Rust ownership"
 ```
 
 ## Configuration Options

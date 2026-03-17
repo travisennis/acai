@@ -4,16 +4,16 @@ Acai provides session persistence and restoration, enabling users to continue co
 
 ## Overview
 
-Every time you run `acai instruct`, a session is automatically created and saved. Sessions capture the full conversation history (messages, function calls, function outputs, reasoning) along with metadata such as timestamps and the working directory. Sessions are saved on both success and error, ensuring crash recovery.
+Every time you run `acai`, a session is automatically created and saved. Sessions capture the full conversation history (messages, function calls, function outputs, reasoning) along with metadata such as timestamps and the working directory. Sessions are saved on both success and error, ensuring crash recovery.
 
 ## Usage
 
 ### Starting a Session
 
-Every `acai instruct` invocation creates a new session automatically:
+Every `acai` invocation creates a new session automatically:
 
 ```bash
-acai instruct --prompt "My favorite color is blue"
+acai "My favorite color is blue"
 ```
 
 ### Continuing the Latest Session
@@ -21,7 +21,7 @@ acai instruct --prompt "My favorite color is blue"
 Use `--continue` to restore the most recent session for the current directory:
 
 ```bash
-acai instruct --continue --prompt "What's my favorite color?"
+acai --continue "What's my favorite color?"
 # The AI will remember "blue" from the previous session
 ```
 
@@ -30,7 +30,7 @@ acai instruct --continue --prompt "What's my favorite color?"
 Use `--resume <UUID>` to restore a specific session by its identifier:
 
 ```bash
-acai instruct --resume 550e8400-e29b-41d4-a716-446655440000 --prompt "Continue our conversation"
+acai --resume 550e8400-e29b-41d4-a716-446655440000 "Continue our conversation"
 ```
 
 The UUID is scoped to the current directory — you can only resume sessions that were created in the same directory.
@@ -40,7 +40,7 @@ The UUID is scoped to the current directory — you can only resume sessions tha
 Use `--no-session` to run a command without saving the session to disk:
 
 ```bash
-acai instruct --no-session --prompt "Quick one-off question"
+acai --no-session "Quick one-off question"
 ```
 
 This is useful for ephemeral queries where you don't need to continue the conversation later.
@@ -146,10 +146,10 @@ Sessions are isolated by working directory. Each directory gets its own namespac
 ```bash
 # Sessions in /Users/user/project-a are separate from /Users/user/project-b
 cd /Users/user/project-a
-acai instruct --prompt "Working on project A"
+acai "Working on project A"
 
 cd /Users/user/project-b
-acai instruct --continue --prompt "What project am I working on?"
+acai --continue "What project am I working on?"
 # Error: No previous session found for this directory
 ```
 
@@ -161,5 +161,5 @@ The new session system coexists with the legacy timestamp-based history files in
 
 - **Session struct**: `src/config/session.rs`
 - **Storage and retrieval**: `src/config/data_dir.rs` (`save_session`, `load_latest_session`, `load_session`)
-- **CLI integration**: `src/cli/cmds/instruct.rs` (`--continue`, `--resume`, `--no-session` flags)
+- **CLI integration**: `src/main.rs` (`--continue`, `--resume`, `--fork`, `--no-session` flags)
 - **Client builder methods**: `src/clients/responses.rs` (`with_session_id`, `with_history`)
