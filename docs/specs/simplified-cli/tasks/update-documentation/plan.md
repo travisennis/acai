@@ -122,6 +122,112 @@ The simplified CLI refactor (tasks #1-3) has removed the `instruct` subcommand a
 - **Adding new features**: This is documentation-only, no code changes
 - **Rewriting architecture docs**: ARCHITECTURE.md references the `instruct` module but describes the architecture accurately; minimal updates only if needed
 
+## Phase 1: Update README.md
+
+**Goal**: Rewrite the Usage section of README.md to show the new simplified CLI syntax.
+
+**Steps**:
+1. Update the "Usage" section header to remove "Instruct Mode" subsection
+2. Replace all examples in the usage code block:
+   - Change `acai instruct --prompt "..."` → `acai "..."`
+   - Remove the `--prompt-file` example
+   - Add new stdin piping example: `cat file.txt | acai "summarize"`
+   - Add new heredoc example (prompt only): `acai << 'EOF'`
+   - Add new heredoc with prompt prefix: `acai "Review:" << 'EOF'`
+   - Add input redirection: `acai < prompt.txt`
+   - Add stdin placeholder: `acai - < file.txt`
+3. Update Session Management examples
+4. Update Worktrees examples
+5. Update Options section (remove `--prompt`/`--prompt-file`)
+6. Update final Example section
+
+**Validation**:
+- No `instruct` references remain in README.md
+- No `--prompt` flag references remain
+- No `--prompt-file` references remain
+
+---
+
+## Phase 2: Update AGENTS.md
+
+**Goal**: Update the "Running the App" section in AGENTS.md to use the new syntax.
+
+**Steps**:
+1. Find the "Running the App" section
+2. Update the three examples:
+   - `./target/release/acai instruct --prompt` → `./target/release/acai`
+   - `cargo run --release -- instruct --prompt` → `cargo run --release --`
+   - `./target/release/acai instruct --help` → `./target/release/acai --help`
+
+**Validation**:
+- No `instruct` references in AGENTS.md
+- No `--prompt` flag references
+
+---
+
+## Phase 3: Update docs/references/responses-api.md
+
+**Goal**: Update the CLI Usage section in the Responses API reference.
+
+**Steps**:
+1. Find the "CLI Usage" section (around line 140)
+2. Update all three examples to use positional prompt syntax
+3. Remove `--prompt` flag references
+
+**Validation**:
+- No `instruct` references
+- No `--prompt` flag references
+
+---
+
+## Phase 4: Update docs/design-docs/session-management.md
+
+**Goal**: Update all session management examples to use the new simplified CLI syntax.
+
+**Steps**:
+1. Find the "Usage" section
+2. Update all examples (`instruct --prompt` → positional prompt)
+3. Update the "Overview" paragraph that mentions `acai instruct`
+
+**Validation**:
+- No `instruct` references
+- No `--prompt` flag references
+
+---
+
+## Phase 5: Update prompt.md and Verify Help Output
+
+**Goal**: Update the internal evaluation prompt and verify the `--help` output.
+
+**Steps**:
+1. Find Phase 1 in `prompt.md`
+2. Update the CLI examples
+3. Run `./target/release/acai --help` to verify output
+
+**Validation**:
+- No `instruct` references in prompt.md
+- Help output shows positional PROMPT argument
+- No `--prompt` or `--prompt-file` options in help
+
+---
+
+## Phase 6: Final Verification and Cleanup
+
+**Goal**: Do a final comprehensive check across all markdown files.
+
+**Steps**:
+1. Grep for any remaining `acai instruct` references
+2. Check for any `--prompt` or `--prompt-file` references
+3. Run build and tests to ensure nothing is broken
+
+**Validation**:
+- No `acai instruct` references in any markdown
+- No `--prompt-file` references
+- Build succeeds
+- Tests pass
+
+---
+
 ## Implementation Approach
 
 The approach is systematic file-by-file updates:
@@ -525,6 +631,34 @@ cargo test
 - [ ] Verify the help output looks good
 
 **Idempotence and Recovery**: All changes are documentation edits tracked by git. Full rollback: `git checkout -- '*.md' docs/`
+
+## Success Criteria
+
+This task is complete when:
+
+1. **All user-facing documentation updated**
+   - [x] README.md shows only positional prompt syntax
+   - [x] AGENTS.md examples use new syntax
+   - [x] docs/references/responses-api.md examples updated
+   - [x] docs/design-docs/session-management.md examples updated
+   - [x] prompt.md examples updated
+
+2. **No outdated references remain**
+   - [x] No `acai instruct` references in markdown files
+   - [x] No `--prompt` flag references
+   - [x] No `--prompt-file` references
+
+3. **Help output verified**
+   - [x] `acai --help` shows positional `[PROMPT]` argument
+   - [x] No `--prompt` or `--prompt-file` options in help
+
+4. **Build and tests pass**
+   - [x] `cargo build --release` succeeds
+   - [x] `cargo test` passes
+   - [x] `cargo fmt --check` passes
+   - [x] `cargo clippy` passes
+
+---
 
 ## Testing Strategy
 
