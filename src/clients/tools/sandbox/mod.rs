@@ -31,7 +31,7 @@ pub(super) use linux::LandlockSandbox;
 // =============================================================================
 
 #[derive(Clone, Debug)]
-#[allow(clippy::struct_field_names)]
+#[allow(clippy::struct_field_names, dead_code)]
 pub(super) struct SandboxConfig {
     /// Directories with read-write access (cwd, temp dirs)
     pub read_write: Vec<PathBuf>,
@@ -214,17 +214,19 @@ pub(super) fn detect_platform() -> Option<Box<dyn SandboxStrategy>> {
     {
         if std::path::Path::new("/usr/bin/sandbox-exec").exists() {
             log::debug!("Using macOS sandbox-exec for filesystem sandboxing");
-            return Some(Box::new(MacOsSandbox));
+            Some(Box::new(MacOsSandbox))
+        } else {
+            log::warn!(
+                "sandbox-exec not found at /usr/bin/sandbox-exec; bash commands will run unsandboxed"
+            );
+            None
         }
-        log::warn!(
-            "sandbox-exec not found at /usr/bin/sandbox-exec; bash commands will run unsandboxed"
-        );
     }
 
     #[cfg(target_os = "linux")]
     {
         log::debug!("Using Linux Landlock LSM for filesystem sandboxing");
-        return Some(Box::new(LandlockSandbox));
+        Some(Box::new(LandlockSandbox))
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
@@ -233,9 +235,8 @@ pub(super) fn detect_platform() -> Option<Box<dyn SandboxStrategy>> {
             "No sandbox available for this platform ({}); bash commands will run unsandboxed",
             std::env::consts::OS
         );
+        None
     }
-
-    None
 }
 
 /// Check if sandboxing should be disabled via environment variable
