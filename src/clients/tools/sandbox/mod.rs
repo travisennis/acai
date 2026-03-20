@@ -209,6 +209,7 @@ pub(super) trait SandboxStrategy: Send + Sync {
 }
 
 /// Detect the appropriate sandbox strategy for the current platform
+#[allow(clippy::unnecessary_wraps)]
 pub(super) fn detect_platform() -> Option<Box<dyn SandboxStrategy>> {
     #[cfg(target_os = "macos")]
     {
