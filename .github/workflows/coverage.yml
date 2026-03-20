@@ -55,7 +55,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate text coverage report
-        run: cargo llvm-cov --text | tee coverage.txt
+        run: cargo llvm-cov report --summary-only | tee coverage.txt
 
       - name: Check coverage thresholds
         run: |
