@@ -375,8 +375,16 @@ impl Responses {
 
                 // Add results to history in order
                 for (call_id, output) in results {
-                    self.history
-                        .push(ConversationItem::FunctionCallOutput { call_id, output });
+                    let item = ConversationItem::FunctionCallOutput { call_id, output };
+                    self.history.push(item.clone());
+
+                    // Stream the function call output
+                    if let (Some(ref callback), Ok(json)) = (
+                        self.streaming_callback.as_ref(),
+                        serde_json::to_string(&item.to_streaming_json()),
+                    ) {
+                        callback(&json);
+                    }
                 }
 
                 // Loop continues - send next request with tool results included
@@ -1121,5 +1129,53 @@ mod tests {
         assert!(!is_retryable_status(reqwest::StatusCode::NOT_FOUND)); // 404
         assert!(!is_retryable_status(reqwest::StatusCode::OK)); // 200
         assert!(!is_retryable_status(reqwest::StatusCode::CREATED)); // 201
+    }
+
+    #[test]
+    fn streaming_json_includes_function_call_output() {
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured_clone = captured.clone();
+
+        let mut client = test_client().with_streaming_json(move |json| {
+            captured_clone.lock().unwrap().push(json.to_string());
+        });
+
+        // Add a function call to history
+        client.history.push(ConversationItem::FunctionCall {
+            id: "call-1".to_string(),
+            call_id: "call-1".to_string(),
+            name: "bash".to_string(),
+            arguments: r#"{"cmd":"echo hello"}"#.to_string(),
+        });
+
+        // Simulate tool execution results
+        let results = vec![("call-1".to_string(), "hello world".to_string())];
+
+        // Add results to history (this should trigger streaming)
+        for (call_id, output) in results {
+            let item = ConversationItem::FunctionCallOutput { call_id, output };
+            client.history.push(item.clone());
+
+            // Stream the function call output
+            if let (Some(callback), Ok(json)) = (
+                client.streaming_callback.as_ref(),
+                serde_json::to_string(&item.to_streaming_json()),
+            ) {
+                callback(&json);
+            }
+        }
+
+        drop(client);
+        let messages: Vec<serde_json::Value> = captured
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|s| serde_json::from_str(s).unwrap())
+            .collect();
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["type"], "function_call_output");
+        assert_eq!(messages[0]["call_id"], "call-1");
+        assert_eq!(messages[0]["output"], "hello world");
     }
 }
