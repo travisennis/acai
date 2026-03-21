@@ -62,6 +62,7 @@ fn test_positional_prompt_parsing() {
     // It will fail on API key, but that's expected
     let output = Command::new(get_binary_path())
         .arg("test prompt here")
+        .env_remove("OPENROUTER_API_KEY")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -69,7 +70,8 @@ fn test_positional_prompt_parsing() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    // Should NOT say "No input provided" - the prompt was parsed
+    // Should NOT say "No input provided" - the prompt was parsed.
+    // Without an API key the binary will fail on the missing key instead.
     assert!(
         !stderr.contains("No input provided"),
         "Should parse positional prompt. Stderr: {stderr}"
@@ -82,6 +84,7 @@ fn test_dash_prompt_parsing() {
     // It will fail on no stdin + API key, but that's expected
     let output = Command::new(get_binary_path())
         .arg("-")
+        .env_remove("OPENROUTER_API_KEY")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -102,6 +105,7 @@ fn test_dash_prompt_parsing() {
 fn test_no_prompt_no_stdin_error() {
     // Verify that running without any input produces a clear error
     let output = Command::new(get_binary_path())
+        .env_remove("OPENROUTER_API_KEY")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
