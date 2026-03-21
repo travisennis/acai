@@ -118,6 +118,15 @@ impl Responses {
         self
     }
 
+    /// Stream a conversation item as JSON via the streaming callback, if set.
+    fn stream_item(&self, item: &ConversationItem) {
+        if let Some(ref callback) = self.streaming_callback
+            && let Ok(json) = serde_json::to_string(&item.to_streaming_json())
+        {
+            callback(&json);
+        }
+    }
+
     /// Emit the init message with session info, cwd, and tools
     pub fn emit_init_message(&self) {
         if let Some(ref callback) = self.streaming_callback {
@@ -323,12 +332,8 @@ impl Responses {
                 let items = parse_output_items(&api_response);
 
                 // Stream each item as JSON if callback is set
-                if let Some(ref callback) = self.streaming_callback {
-                    for item in &items {
-                        if let Ok(json) = serde_json::to_string(&item.to_streaming_json()) {
-                            callback(&json);
-                        }
-                    }
+                for item in &items {
+                    self.stream_item(item);
                 }
 
                 // Collect function calls from the items (borrowing from items)
@@ -376,15 +381,8 @@ impl Responses {
                 // Add results to history in order
                 for (call_id, output) in results {
                     let item = ConversationItem::FunctionCallOutput { call_id, output };
-                    self.history.push(item.clone());
-
-                    // Stream the function call output
-                    if let (Some(ref callback), Ok(json)) = (
-                        self.streaming_callback.as_ref(),
-                        serde_json::to_string(&item.to_streaming_json()),
-                    ) {
-                        callback(&json);
-                    }
+                    self.stream_item(&item);
+                    self.history.push(item);
                 }
 
                 // Loop continues - send next request with tool results included
@@ -1132,38 +1130,21 @@ mod tests {
     }
 
     #[test]
-    fn streaming_json_includes_function_call_output() {
+    fn stream_item_emits_function_call_output() {
         let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let captured_clone = captured.clone();
 
-        let mut client = test_client().with_streaming_json(move |json| {
+        let client = test_client().with_streaming_json(move |json| {
             captured_clone.lock().unwrap().push(json.to_string());
         });
 
-        // Add a function call to history
-        client.history.push(ConversationItem::FunctionCall {
-            id: "call-1".to_string(),
+        let item = ConversationItem::FunctionCallOutput {
             call_id: "call-1".to_string(),
-            name: "bash".to_string(),
-            arguments: r#"{"cmd":"echo hello"}"#.to_string(),
-        });
+            output: "hello world".to_string(),
+        };
 
-        // Simulate tool execution results
-        let results = vec![("call-1".to_string(), "hello world".to_string())];
-
-        // Add results to history (this should trigger streaming)
-        for (call_id, output) in results {
-            let item = ConversationItem::FunctionCallOutput { call_id, output };
-            client.history.push(item.clone());
-
-            // Stream the function call output
-            if let (Some(callback), Ok(json)) = (
-                client.streaming_callback.as_ref(),
-                serde_json::to_string(&item.to_streaming_json()),
-            ) {
-                callback(&json);
-            }
-        }
+        // Use the production helper
+        client.stream_item(&item);
 
         drop(client);
         let messages: Vec<serde_json::Value> = captured
