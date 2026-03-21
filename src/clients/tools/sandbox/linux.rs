@@ -105,6 +105,7 @@ impl LandlockSandbox {
 }
 
 impl SandboxStrategy for LandlockSandbox {
+    #[allow(unused_variables)]
     fn apply(
         &self,
         command: &mut tokio::process::Command,

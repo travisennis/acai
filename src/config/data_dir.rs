@@ -107,10 +107,23 @@ impl DataDir {
         let temp_link = session_dir.join(".latest_tmp");
         let target = format!("{session_id}.jsonl");
 
-        // Remove temp symlink if it exists
+        // Remove temp symlink if it exists (ignore errors)
         let _ = fs::remove_file(&temp_link);
+
+        // Ensure the session directory exists
+        if !session_dir.exists() {
+            fs::create_dir_all(session_dir).with_context(|| {
+                format!(
+                    "Failed to create session directory: {}",
+                    session_dir.display()
+                )
+            })?;
+        }
+
         symlink(&target, &temp_link)
             .with_context(|| format!("Failed to create temp symlink at {}", temp_link.display()))?;
+        // Remove existing latest symlink before renaming (macOS doesn't allow overwriting symlinks)
+        let _ = fs::remove_file(&latest_link);
         fs::rename(&temp_link, &latest_link)
             .with_context(|| format!("Failed to rename symlink to {}", latest_link.display()))?;
 

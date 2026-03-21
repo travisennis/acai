@@ -1079,6 +1079,13 @@ mod tests {
 
     #[test]
     fn providers_default_in_new() {
+        // Set a dummy API key for testing if not already set
+        if std::env::var("OPENROUTER_API_KEY").is_err() {
+            #[allow(unused_unsafe)]
+            unsafe {
+                std::env::set_var("OPENROUTER_API_KEY", "test-api-key");
+            }
+        }
         let client =
             Responses::new("test-model", "system prompt").expect("Failed to create client");
         let expected: Vec<String> = DEFAULT_PROVIDERS.iter().map(|s| (*s).to_string()).collect();

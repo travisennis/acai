@@ -1,17 +1,11 @@
 # `--output-format stream-json` Documentation
 
-The `--output-format stream-json` option enables streaming JSON output for the `instruct` command. When enabled, each message, reasoning step, function call, and function call output is emitted as a separate JSON object to stdout in real-time as it's received from the API.
+The `--output-format stream-json` option enables streaming JSON output for the main command. When enabled, each message, reasoning step, function call, and function call output is emitted as a separate JSON object to stdout in real-time as it's received from the API.
 
 ## Usage
 
 ```bash
-acai instruct --output-format stream-json --prompt "Your prompt here"
-```
-
-Or with shorthand:
-
-```bash
-acai instruct --output-format stream-json -p "Your prompt here"
+acai --output-format stream-json "Your prompt here"
 ```
 
 ## Behavior

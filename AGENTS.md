@@ -55,13 +55,13 @@ just update-dependencies
 export OPENROUTER_API_KEY=your_key_here
 
 # Run binary directly
-./target/release/acai instruct --prompt "Your prompt here"
+./target/release/acai "Your prompt here"
 
 # Or with cargo
-cargo run --release -- instruct --prompt "Your prompt here"
+cargo run --release -- "Your prompt here"
 
 # To get help
-./target/release/acai instruct --help
+./target/release/acai --help
 ```
 
 ## Development Workflow
