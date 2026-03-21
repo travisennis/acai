@@ -22,6 +22,18 @@ test:
 ci: fmt-check clippy-strict test
     echo "All checks passed!"
 
+# Recreate full CI pipeline locally (matches GitHub Actions)
+ci-full: fmt-check clippy-strict test deny doc build
+    echo "Full CI pipeline passed!"
+
+# Check for denied/advisory dependencies (requires cargo-deny)
+deny:
+    cargo deny check advisories
+
+# Build documentation with warnings denied
+doc:
+    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
+
 # Run tests with coverage (requires cargo-llvm-cov)
 coverage:
     cargo llvm-cov --html
