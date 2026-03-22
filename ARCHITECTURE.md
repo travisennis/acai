@@ -27,7 +27,13 @@ The CLI layer is intentionally thin—it delegates all business logic to lower l
 
 The bridge to external AI services and the orchestration layer for tool execution.
 
-**`responses`**: The main API client for OpenRouter's Responses API. Implements the agent loop: send request → parse output items → execute any tool calls concurrently → feed results back → repeat until done. Handles retry logic with exponential backoff for transient failures.
+**`agent`**: The `Agent` struct orchestrates the conversation loop, tool execution, streaming, and retry logic. It dispatches API calls to backends based on `ApiType` (Responses or Chat Completions). This is the public-facing type (`clients::Agent`).
+
+**`responses`**: Backend for the Responses API. Provides `send_request()` and `parse_response()` functions that handle the Responses API wire format. No longer contains orchestration logic.
+
+**`chat_completions`**: Backend for the Chat Completions API. Provides `send_request()` and `parse_response()` functions. Translates `ConversationItem` to/from chat completions format: groups consecutive `FunctionCall` items into assistant messages with `tool_calls`, maps `System` role to `"developer"`, and skips `Reasoning` items.
+
+**`chat_types`**: Request/response DTOs for the Chat Completions API (`ChatRequest`, `ChatResponse`, `ChatMessage`, `ChatTool`, `ChatToolCall`, etc.).
 
 **`types`**: Core conversation abstraction. The `ConversationItem` enum represents all possible items in a conversation: user messages, assistant messages, tool calls, tool outputs, and reasoning traces. This is the fundamental data structure that flows through the entire system.
 
@@ -43,6 +49,8 @@ Foundation modules that provide data persistence, core types, and prompt generat
 - `DataDir`: Manages the `~/.cache/acai/` directory, session storage, and AGENTS.md discovery
 - `Session`: In-memory session state with JSONL serialization
 - `worktree`: Git worktree utilities for isolated execution environments
+- `model`: Contains `ApiType` enum (`Responses`/`ChatCompletions`), `ModelConfig` struct (model, api_type, base_url, api_key_env, temperature, top_p, max_output_tokens, providers), and `ResolvedModelConfig` (resolves API key from env var)
+- `defaults`: Default values for model, base URL, API key env var, and providers
 
 Sessions are stored in a directory hashed from the working directory path (SHA-256, first 16 hex chars), ensuring isolation between projects.
 
@@ -82,7 +90,7 @@ These constraints guide the design and are unlikely to change:
 
 ### CLI ↔ Client Boundary
 
-The CLI layer owns argument parsing and user-facing error messages. The client layer owns all network communication and tool execution. The boundary is the `CmdRunner` trait: `async fn run(&self, data_dir: &DataDir) -> anyhow::Result<()>`.
+The CLI layer owns argument parsing and user-facing error messages. The client layer owns all network communication and tool execution. The boundary is the `CmdRunner` trait: `async fn run(&self, data_dir: &DataDir) -> anyhow::Result<()>`. The CLI creates an `Agent` via `ModelConfig::default()` → `ResolvedModelConfig::resolve()` → `Agent::new()`.
 
 ### Client ↔ Tool Boundary
 
@@ -134,8 +142,11 @@ Logging is automatically suppressed to avoid polluting stdout.
 
 Use symbol search to locate specific implementations:
 
-- **Agent loop**: Search for `Responses` struct and its `send` method
-- **Tool execution**: Search for `execute_tool` function
+- **Agent loop**: Search for `Agent` struct and its `send` method in `agent.rs`
+- **Tool execution**: Search for `execute_tool` function in `tools/mod.rs`
+- **API dispatch**: Search for `complete_turn` method in `agent.rs`
+- **Chat Completions translation**: Search for `build_messages` in `chat_completions.rs`
+- **Model configuration**: Search for `ModelConfig` in `config/model.rs`
 - **Session loading**: Search for `Session::load` or `DataDir::load_latest_session`
 - **Path validation**: Search for `validate_path_in_cwd`
 - **Sandbox profiles**: Search for `SandboxConfig` and platform-specific implementations

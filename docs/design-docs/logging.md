@@ -13,17 +13,16 @@ The project uses the **`log`** crate combined with **`log4rs`** for logging conf
 
 ## Logging Architecture
 
-The project uses a **dual-output logging** setup:
+The project uses a **file-only logging** setup. All log levels are written to a log file, keeping console output clean for user-facing messages.
 
 | Output | Log Levels | Destination |
 |--------|------------|-------------|
-| **stderr** | `error!`, `warn!`, `info!` | Console (via `ConsoleAppender`) |
 | **file** | `error!`, `warn!`, `info!`, `debug!`, `trace!` | `acai.log` in cache directory |
 
 ### Log Format
 
 ```
-{d(%Y-%m-%d %H:%M:%S)} | {l:5.5} | {f}:{L} — {m}{n}
+{d(%Y-%m-%d %H:%M:%S)} | {({l}):5.5} | {f}:{L} — {m}{n}
 ```
 
 Example output:

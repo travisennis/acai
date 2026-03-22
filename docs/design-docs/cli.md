@@ -24,21 +24,9 @@ pub struct CodingAssistant {
     #[arg(value_name = "PROMPT")]
     pub prompt: Option<String>,
 
-    /// Sets the model to use (e.g., "minimax/minimax-m2.5")
-    #[arg(long, default_value = DEFAULT_MODEL)]
-    pub model: String,
-
-    /// Sets the temperature value
-    #[arg(long)]
-    pub temperature: Option<f32>,
-
     /// Sets the max tokens value
     #[arg(long)]
     pub max_tokens: Option<u32>,
-
-    /// Sets the top-p value
-    #[arg(long)]
-    pub top_p: Option<f32>,
 
     /// Output format for the response (text or stream-json)
     #[arg(long, value_enum, default_value = "text")]
@@ -65,12 +53,12 @@ pub struct CodingAssistant {
     #[arg(short, long, num_args = 0..=1, default_missing_value = "", value_name = "NAME")]
     pub worktree: Option<String>,
 
-    /// Restrict which providers can serve requests (comma-separated or multiple flags).
-    /// Use "all" to allow any provider. Defaults to "Fireworks,Moonshot AI".
-    #[arg(long, num_args = 0.., value_delimiter = ',')]
-    pub providers: Vec<String>,
 }
 ```
+
+### Model Configuration
+
+Model-related settings (`model`, `temperature`, `top_p`, `api_type`, etc.) are configured via `ModelConfig` in `config::model`. Only `--max-tokens` remains as a CLI override. Provider defaults are sourced from `config::defaults`.
 
 The struct implements the `CmdRunner` trait for execution:
 

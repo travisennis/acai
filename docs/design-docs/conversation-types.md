@@ -1,6 +1,6 @@
 # Conversation Types
 
-The `clients::types` module defines the core data structures for representing conversations with AI models. These types map directly to the OpenRouter Responses API format.
+The `clients::types` module defines the core data structures for representing conversations with AI models. `ConversationItem` is the canonical representation used by both the Responses API and Chat Completions API backends. Each backend handles translation to and from its own wire format, making `ConversationItem` the single source of truth for conversation state.
 
 ## Overview
 
@@ -79,13 +79,13 @@ ConversationItem::Reasoning {
 }
 ```
 
-The `encrypted_content` field preserves reasoning tokens that must be echoed back to the API for multi-turn conversations with reasoning models.
+The `encrypted_content` field preserves reasoning tokens that must be echoed back to the API for multi-turn conversations with reasoning models. Note that the Chat Completions backend skips `Reasoning` items entirely during translation, since that API format does not support reasoning traces.
 
 ## Serialization
 
-### to_api_input()
+### to_api_input() — Responses API
 
-Converts a `ConversationItem` to the format required by the Responses API:
+Converts a `ConversationItem` to the format required by the Responses API backend:
 
 ```rust
 pub fn to_api_input(&self) -> serde_json::Value
@@ -95,6 +95,13 @@ Key transformations:
 - Messages use `input_text`/`output_text` content arrays
 - Reasoning summaries are wrapped in `summary_text` objects
 - Assistant messages include `id` and `status` fields
+
+### build_messages() — Chat Completions API
+
+The Chat Completions backend uses a separate `build_messages()` function in `chat_completions.rs` to translate `Vec<ConversationItem>` into the chat completions message format. Key differences from `to_api_input()`:
+- Consecutive `FunctionCall` items are grouped into a single assistant message with multiple `tool_calls`
+- `System` role is mapped to the `"developer"` role
+- `Reasoning` items are skipped entirely (the chat completions format does not support them)
 
 ### to_streaming_json()
 
@@ -162,6 +169,14 @@ The API uses content arrays for flexibility, but this adds complexity. The desig
 - Stores plain text internally for simplicity
 - Transforms to content arrays only when sending to API
 - Keeps original content arrays for reasoning round-tripping
+
+### Dual-Backend Translation
+
+Storing plain text internally decouples conversation state from any specific wire format. Each backend translates `ConversationItem` independently:
+- The **Responses API** backend uses `to_api_input()` to produce content arrays (`input_text`, `output_text`)
+- The **Chat Completions API** backend uses `build_messages()` to produce the chat completions message structure
+
+This means adding or changing a backend does not affect the canonical conversation representation or the other backend.
 
 ### Encrypted Content Preservation
 

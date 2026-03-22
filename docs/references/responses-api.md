@@ -149,20 +149,19 @@ export OPENROUTER_API_KEY=your_key_here
 # With options
 ./target/release/acai \
     --model "minimax/minimax-m2.5" \
-    --temperature 0.7 \
     --max-tokens 4000 \
-    "Explain Rust ownership"
+    --prompt "Explain Rust ownership"
 ```
 
 ## Configuration Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--model` | `minimax/minimax-m2.5` | AI model to use |
-| `--temperature` | `0.8` | Sampling temperature (0-1) |
+| `--model` | (from ModelConfig) | AI model to use |
 | `--max-tokens` | `8000` | Maximum output tokens |
-| `--top-p` | None | Top-p sampling |
 | `--output-format` | `text` | Output format (`text` or `stream-json`) |
+
+> **Note:** Model, temperature, top-p, api_type, and base URL are configured per-model in `ModelConfig` (`src/config/model.rs`), not via CLI flags.
 
 ## Implementation Details
 

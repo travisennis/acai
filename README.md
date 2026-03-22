@@ -5,9 +5,11 @@ Acai is an AI-powered coding assistant that integrates with your development wor
 ## Features
 
 - Send instructions to AI for code generation or documentation
-- Uses OpenRouter's Responses API for multi-provider access
-- Default model: MiniMax MiniMax-M2.5
+- Supports multiple AI providers via configurable API endpoints
+- Default model: GLM-5 via OpenCode Zen
 - OS-level filesystem sandbox for Bash tool commands (macOS sandbox-exec, Linux Landlock)
+- Conversation session management with continue, resume, and fork capabilities
+- Git worktree integration for isolated development environments
 
 ## Installation
 
@@ -55,20 +57,26 @@ acai < prompt.txt
 # Read from stdin explicitly
 acai - < file.txt
 
-# Using a specific model
-acai --model anthropic/sonnet-3-5 "Write a hello world program"
-
-# With temperature
-acai --model openai/gpt-4o --temperature 0.7 "Your prompt here"
+# With max tokens override
+acai --max-tokens 4000 "Your prompt here"
 ```
 
 ## Configuration
 
-Acai uses OpenRouter for AI access. Set your API key as an environment variable:
+Acai requires an API key for the AI provider. Set your API key as an environment variable:
 
-- `OPENROUTER_API_KEY`: Your OpenRouter API key
+- `OPENCODE_ZEN_API_TOKEN`: Your OpenCode Zen API key (default)
 
-Get your free API key at [openrouter.ai](https://openrouter.ai).
+Or configure a different provider by setting the appropriate environment variable for your chosen endpoint.
+
+### Model Configuration
+
+Model settings (model name, temperature, top_p, API type, etc.) are configured via the `ModelConfig` struct. Only `--max-tokens` and `--providers` can be overridden via CLI flags. Default configuration:
+
+- **Model**: `glm-5`
+- **API Endpoint**: `https://opencode.ai/zen/go/v1`
+- **Temperature**: 0.8
+- **Max Output Tokens**: 8000
 
 ### Session Management
 
@@ -83,11 +91,17 @@ acai --continue "What number did I tell you?"
 
 # Resume a specific session by UUID
 acai --resume 550e8400-e29b-41d4-a716-446655440000 "Continue our conversation"
+
+# Fork the latest session (creates new session with same history)
+acai --fork "Let's discuss something different"
+
+# Fork a specific session by UUID
+acai --fork 550e8400-e29b-41d4-a716-446655440000 "New branch of conversation"
 ```
 
 Sessions are saved to `~/.cache/acai/sessions/` and include full conversation history with metadata. Sessions are saved on both success and error for crash recovery.
 
-For more details, see [Session Management](docs/session-management.md).
+For more details, see [Session Management](docs/design-docs/session-management.md).
 
 ### Worktrees
 
@@ -112,27 +126,36 @@ Commands executed by the Bash tool run inside an OS-level filesystem sandbox tha
 
 The sandbox can be disabled by setting `ACAI_SANDBOX=off`.
 
-For more details, see [Filesystem Sandbox](docs/sandbox.md).
+For more details, see [Filesystem Sandbox](docs/design-docs/sandbox.md).
 
 ### Options
 
 - `[PROMPT]` - Your instruction prompt as a positional argument (use `-` to read from stdin)
-- `--model` - Set the model to use (default: `minimax/minimax-m2.5`)
-- `--temperature` - Set the temperature (0.0 to 1.0)
 - `--max-tokens` - Set maximum tokens in response
-- `--top-p` - Set top-p value
+- `--providers` - Restrict which providers can serve requests (comma-separated or multiple flags, use "all" to allow any)
 - `--output-format` - Output format: `text` (default) or `stream-json`
 - `--continue` - Continue the most recent session for the current directory
 - `--resume <UUID>` - Resume a specific session by its UUID
+- `--fork [UUID]` - Fork a session (copy history into new session), optionally specify UUID
 - `--no-session` - Do not save the session to disk
 - `--worktree` (`-w`) - Run in an isolated git worktree (optionally provide a name)
 
 ### Example
 
 ```bash
-export OPENROUTER_API_KEY=your_api_key_here
-acai --model anthropic/sonnet-3-5 --temperature 0.7 "Explain what this code does"
+export OPENCODE_ZEN_API_TOKEN=your_api_key_here
+acai --max-tokens 4000 "Explain what this code does"
 ```
+
+## Architecture
+
+Acai follows a layered architecture with strict dependency flow:
+
+1. **CLI Layer**: Argument parsing and user interaction
+2. **Clients Layer**: AI service integration, tool execution, and conversation orchestration
+3. **Config/Models/Prompts Layer**: Data persistence, core types, and prompt generation
+
+For detailed architecture documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Contributing
 
@@ -183,5 +206,5 @@ Acai is licensed under the MIT License. See the [LICENSE](LICENSE) file for deta
 Acai uses several open-source libraries and AI models. We're grateful to the developers and organizations behind these technologies:
 
 - Rust and the Rust community for providing excellent tools and libraries that make projects like this possible.
-- OpenRouter for providing unified access to multiple AI providers.
+- OpenCode Zen for AI model access.
 - The developers of crates used in this project (tokio, clap, reqwest, and others). Please see the `Cargo.toml` file for a full list of dependencies.

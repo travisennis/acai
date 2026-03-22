@@ -83,7 +83,7 @@ pub struct Message {
 
 The `Message` type is used for:
 
-1. **User input construction** (in `cli::instruct`):
+1. **User input construction** (in `main.rs`):
    ```rust
    let msg = Message {
        role: Role::User,
@@ -114,7 +114,7 @@ There's an intentional distinction between `Message` and `ConversationItem::Mess
 | **Use case** | Input, simple output | Full conversation history |
 | **Storage** | Sessions, simple APIs | API requests/responses |
 
-The `clients::responses` module handles conversion between these representations.
+The `clients::agent` module handles conversion between these representations.
 
 ## Design Decisions
 
@@ -179,9 +179,12 @@ fn message_serialization_format() {
 
 The `models` module is used by:
 
-- **`cli::instruct`**: Constructs user messages from prompts
+- **CLI (`main.rs`)**: Constructs user messages from prompts via `CodingAssistant`
 - **`config::Session`**: Stores conversation history
 - **`clients::types`**: `ConversationItem::Message` uses `Role` for its role field
+- **`clients::agent`**: Handles agent-loop conversation management
+- **`clients::chat_completions`**: Chat completions API client
+- **`config::model`**: `ModelConfig` relates to model configuration
 - **`prompts`**: System prompt is constructed as a `Message` internally
 
 ## Future Considerations

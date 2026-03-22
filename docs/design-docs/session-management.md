@@ -58,8 +58,8 @@ Sessions are stored under `~/.cache/acai/sessions/` organized by a hash of the w
 ```
 ~/.cache/acai/sessions/
   {dir_hash}/
-    {uuid}.json          # Individual session files
-    latest -> {uuid}.json  # Symlink to the most recent session
+    {uuid}.jsonl        # Individual session files (JSONL format)
+    latest -> {uuid}.jsonl  # Symlink to the most recent session
 ```
 
 - **dir_hash**: First 16 hex characters of a SHA-256 hash of the absolute working directory path. This groups sessions by project directory.
@@ -67,50 +67,42 @@ Sessions are stored under `~/.cache/acai/sessions/` organized by a hash of the w
 
 ### Session File Format
 
-Each session is saved as a JSON file with the following structure:
+Sessions are stored in JSONL (JSON Lines) format, where each line is a separate JSON object. The first line is a session header, followed by one line per conversation item:
 
+**Session header (first line):**
 ```json
 {
-  "format_version": 1,
-  "id": "550e8400-e29b-41d4-a716-446655440000",
-  "working_dir": "/Users/user/project",
-  "created_at": 1709500000000,
-  "updated_at": 1709500030000,
-  "messages": [
-    {
-      "type": "message",
-      "role": "user",
-      "content": "My favorite color is blue",
-      "id": null,
-      "status": null
-    },
-    {
-      "type": "message",
-      "role": "assistant",
-      "content": "Got it! I'll remember that your favorite color is blue.",
-      "id": "msg_abc123",
-      "status": "completed"
-    }
-  ]
+  "format_version": 2,
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-03-04T10:30:00Z",
+  "working_directory": "/Users/user/project",
+  "model": "anthropic/claude-3.5-sonnet",
+  "type": "session_start"
 }
+```
+
+**Conversation items (subsequent lines):**
+```json
+{"format_version":2,"session_id":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2024-03-04T10:30:05Z","working_directory":"/Users/user/project","type":"message","role":"user","content":"My favorite color is blue"}
+{"format_version":2,"session_id":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2024-03-04T10:30:10Z","working_directory":"/Users/user/project","type":"message","role":"assistant","content":"Got it! I'll remember that your favorite color is blue.","id":"msg_abc123","status":"completed"}
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `format_version` | number | Schema version for forward compatibility (currently `1`) |
-| `id` | string | UUID v4 session identifier |
-| `working_dir` | string | Absolute path of the directory where the session was created |
-| `created_at` | number | Unix timestamp in milliseconds when the session was created |
-| `updated_at` | number | Unix timestamp in milliseconds when the session was last updated |
-| `messages` | array | Conversation history as typed items (see [Responses API docs](responses-api.md)) |
+| `format_version` | number | Schema version for forward compatibility (currently `2`) |
+| `session_id` | string | UUID v4 session identifier |
+| `timestamp` | string | ISO 8601 timestamp when the line was written |
+| `working_directory` | string | Absolute path of the directory where the session was created |
+| `model` | string? | Optional model identifier used for the session |
+| `type` | string | Line type: `session_start` for header, or `message`/`function_call`/`function_call_output`/`reasoning` for items |
 
 **Note:** The system prompt is not stored in session files. It is built fresh from AGENTS.md files each time a session is started or restored. This ensures that any updates to the system prompt are always reflected.
 
 ### Message Types
 
-The `messages` array contains typed conversation items:
+Each line in the JSONL file (after the header) contains a typed conversation item:
 
-- **`message`**: A text message with a role (`user`, `assistant`, `tool`)
+- **`message`**: A text message with a role (`user`, `assistant`, `system`, `tool`)
 - **`function_call`**: A tool invocation request from the model
 - **`function_call_output`**: The result of a tool execution
 - **`reasoning`**: Intermediate reasoning from models that support it
@@ -120,7 +112,7 @@ The `messages` array contains typed conversation items:
 Session files are written atomically to prevent corruption:
 
 1. Session data is written to a temporary file (`{uuid}.tmp`)
-2. The temporary file is renamed to the final path (`{uuid}.json`)
+2. The temporary file is renamed to the final path (`{uuid}.jsonl`)
 3. The `latest` symlink is updated via a temporary symlink + rename
 
 ### Save on Error
@@ -159,7 +151,7 @@ The new session system coexists with the legacy timestamp-based history files in
 
 ## Implementation Details
 
-- **Session struct**: `src/config/session.rs`
+- **Session struct**: `src/config/session.rs` (`Session`, `SessionLine`, `SessionHeader`)
 - **Storage and retrieval**: `src/config/data_dir.rs` (`save_session`, `load_latest_session`, `load_session`)
 - **CLI integration**: `src/main.rs` (`--continue`, `--resume`, `--fork`, `--no-session` flags)
-- **Client builder methods**: `src/clients/responses.rs` (`with_session_id`, `with_history`)
+- **Agent builder methods**: `src/clients/agent.rs` (`with_session_id`, `with_history`)

@@ -8,10 +8,10 @@ When the Bash tool executes a command, acai wraps it in an OS-level sandbox that
 
 | Access Level | Paths | Purpose |
 |---|---|---|
-| **Read-write** | Current working directory, temp directories | Project files, build artifacts |
-| **Read-only + execute** | `/usr`, `/bin`, `/sbin`, system paths, `~/.cargo`, `~/.rustup` | Running system tools and compilers |
-| **Read-only** | `/etc`, `/dev`, `/var` | Configuration and device access |
-| **Denied** | Everything else | Home directory, other projects, etc. |
+| **Read-write** | Current working directory, temp directories, `~/.cargo`, `~/.rustup`, `~/.cache/sccache`, `~/.config/gh`, `~/.config/glab-cli`, `~/.config/mise`, `~/.asdf`, `~/.volta`, and related cache/state directories | Project files, build artifacts, toolchain caches, SCM CLI configs |
+| **Read-only + execute** | `/usr`, `/bin`, `/sbin`, system paths, `/Library`, `/System`, `/Applications`, `/opt/homebrew`, `/opt/local` (macOS); `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc/alternatives`, `/snap` (Linux) | Running system tools and compilers |
+| **Read-only** | `/etc`, `/dev`, `/var`, `/proc`, `/sys` (Linux); `/etc`, `/private/etc`, `/private/var`, `/dev`, `/var` (macOS); `~/.config/git`, `~/.gitattributes` | Configuration, device access, git config |
+| **Denied** | Everything else | Home directory (except allowed paths), other projects, etc. |
 
 ## Platform Support
 
@@ -19,12 +19,12 @@ When the Bash tool executes a command, acai wraps it in an OS-level sandbox that
 
 On macOS, acai uses `sandbox-exec` with a dynamically generated [Seatbelt profile](https://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf). The profile uses a deny-default policy and explicitly allows:
 
-- **Filesystem**: read-write for cwd/temp, read-only+exec for system paths, read-only for config/device paths
+- **Filesystem**: read-write for cwd/temp/toolchain/SCM/runtime paths, read-only+exec for system paths, read-only for config/device paths
 - **Process**: `process-fork`, `process-exec` (needed for bash and subcommands)
 - **IPC**: `mach-lookup` (needed for dyld, DNS, system frameworks)
 - **Signals**: allowed (needed for process management)
 - **Network**: fully allowed (the sandbox restricts filesystem only, not network)
-- **Devices**: `/dev/null`, `/dev/urandom`, `/dev/random`, `/dev/zero`, `/dev/tty`, `/dev/dtracehelper`
+- **Devices**: `/dev` (read-only access to device files)
 - **System**: `sysctl-read`, `file-ioctl` (needed for terminal operations)
 
 Sandbox profiles are written to temporary files under `$TMPDIR/acai/sandbox_profiles/`.
@@ -72,6 +72,9 @@ The sandbox automatically includes:
 - The current working directory (and its subtree)
 - System temp directories (`$TMPDIR`, `/tmp`, `/var/tmp`)
 - User toolchain paths (`$CARGO_HOME` or `~/.cargo`, `$RUSTUP_HOME` or `~/.rustup`)
+- SCM CLI paths: `~/.config/gh`, `~/.cache/gh`, `~/.local/share/gh`, `~/.local/state/gh`, `~/.config/glab-cli`, `~/.cache/glab-cli`, `~/.local/share/glab-cli`, `~/.local/state/glab-cli`
+- Runtime manager paths: `~/.config/mise`, `~/.local/share/mise`, `~/.local/state/mise`, `~/.cache/mise`, `~/.asdf`, `~/.volta`
+- sccache paths: `~/.cache/sccache`, `~/Library/Caches/sccache` (macOS)
 
 All read-write paths are canonicalized (symlinks resolved) before being added to the sandbox policy.
 

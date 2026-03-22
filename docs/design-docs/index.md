@@ -9,7 +9,7 @@ This directory contains design documents and architectural decisions for the aca
 | [cli.md](cli.md) | CLI design and command structure |
 | [conversation-types.md](conversation-types.md) | Conversation type system and patterns |
 | [logging.md](logging.md) | Logging architecture and implementation |
-| [models.md](models.md) | AI model configuration and selection |
+| [models.md](models.md) | Role and Message types |
 | [prompts.md](prompts.md) | Prompt engineering and templating |
 | [sandbox.md](sandbox.md) | Sandbox environment design |
 | [session-management.md](session-management.md) | Session lifecycle and state management |

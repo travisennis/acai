@@ -40,6 +40,7 @@ default = []
 landlock = ["dep:landlock"]
 
 [dev-dependencies]
+temp-env = "0.3"
 tempfile = "3"
 
 # Enforce code quality standards across the workspace
