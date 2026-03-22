@@ -150,25 +150,43 @@ Lines 1-100/500
 **Purpose**: Make targeted text replacements in existing files.
 
 **Parameters**:
-- `file_path`: Absolute path to the file (required)
-- `old_text`: Exact text to find (required)
-- `new_text`: Replacement text (required)
-- `replace_all`: Replace all occurrences (default: false)
+- `path`: Absolute path to the file (required)
+- `edits`: Array of edit operations (required, max 10)
+  - `old_text`: Exact text to find (required)
+  - `new_text`: Replacement text (required)
 
 **Features**:
+- Multiple edits per call (up to 10)
+- Preflight validation (all edits validated before any changes)
+- Overlap detection (prevents conflicting edits)
+- Reverse-order application (prevents position shifting)
+- Line ending preservation (LF/CRLF)
+- UTF-8 BOM handling
 - Exact match validation (including whitespace)
-- Single replacement by default (must be unique)
-- Optional replace-all mode
-- Delete support (empty `new_text`)
+- Delete support (empty `newText`)
 - Binary file detection
-- Diff output showing changes
+- Unified diff output showing changes
 
 **Error Cases**:
-- `old_text` not found
-- Multiple matches without `replace_all: true`
+- `old_text` not found (with edit number)
+- Multiple matches for `old_text` (must be unique)
 - `old_text` == `new_text` (no-op)
+- Overlapping edits (with edit numbers)
+- Too many edits (> 10)
+- No edits provided
 - File is binary
 - Path is outside working directory
+
+**Example**:
+```json
+{
+  "path": "/path/to/file.rs",
+  "edits": [
+    { "old_text": "fn old_name()", "new_text": "fn new_name()" },
+    { "old_text": "old_name()", "new_text": "new_name()" }
+  ]
+}
+```
 
 ### Write Tool
 
@@ -226,7 +244,7 @@ Each tool has comprehensive tests:
 
 - **Bash**: Output streaming, timeout, sandbox blocking, stderr capture
 - **Read**: Small files, line ranges, directories, binary detection
-- **Edit**: Single/multiple replacements, delete, binary files, no-op detection
+- **Edit**: Multiple edits, overlap detection, line ending preservation, BOM handling, binary files, no-op detection, path validation
 - **Write**: Create, overwrite, nested directories, path validation
 
 Tests use `tempfile` for isolation and avoid side effects on the real filesystem.
