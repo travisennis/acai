@@ -1,237 +1,101 @@
+# Consolidated CI workflow
+# 
+# Key optimizations:
+# 1. Merged coverage into single job (was duplicate in coverage.yml)
+# 2. Added "check" job as fast gate to fail early
+# 3. Removed expensive jobs (macOS builds, udeps, msrv, outdated)
+# 4. Security/deny moved to scheduled workflow
+# 5. Release builds moved to release.yml (tags only)
+
 name: CI
 
 on:
   push:
-    branches: [master, main, develop]
+    branches: [master, main]
   pull_request:
-    branches: [master, main, develop]
+    branches: [master, main]
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
-# Permissions for jobs that need write access
 permissions:
   contents: read
-  checks: write  # Required for rustsec/audit-check
+  checks: write
 
 jobs:
-  # Check code formatting
-  fmt:
-    name: Format Check
+  # Fast smoke test - gates all other jobs (fail fast)
+  check:
+    name: Quick Check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-features
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+  fmt:
+    name: Format
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      - run: cargo fmt -- --check
 
-      - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Check formatting
-        run: cargo fmt -- --check
-
-  # Run clippy lints
   clippy:
-    name: Clippy Lints
+    name: Clippy
+    needs: check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Run Clippy
-        run: cargo clippy --all-targets -- -D warnings
-
-  # Run tests
   test:
-    name: Test Suite
+    name: Test
+    needs: check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Run tests
-        run: cargo test --all-features -- --nocapture
-
-  # Security audit for dependencies
-  security-audit:
-    name: Security Audit
+  coverage:
+    name: Coverage
+    needs: check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Run security audit
-        uses: rustsec/audit-check@v2.0.0
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-  # Check for outdated dependencies
-  outdated:
-    name: Outdated Dependencies
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      
+      - name: Generate coverage
+        run: cargo llvm-cov --lcov --output-path lcov.info
+      
+      - name: Check coverage threshold
+        run: |
+          cargo llvm-cov --summary-only | tee coverage.txt
+          COVERAGE=$(grep "^TOTAL" coverage.txt | grep -oE '[0-9]+\.[0-9]+%' | tail -1 | tr -d '%')
+          echo "Coverage: $COVERAGE%"
+          if [ "$(echo "$COVERAGE < 30" | bc -l)" = "1" ]; then
+            echo "Coverage below 30%"
+            exit 1
+          fi
+      
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
         with:
-          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Install cargo-outdated
-        run: cargo install cargo-outdated
-
-      - name: Check outdated
-        run: cargo outdated --exit-code 1 || true
-        # Run with || true to not fail the build, just warn
-        # Remove || true to enforce strict dependency updates
-
-  # Check for denied dependencies
-  deny:
-    name: Dependency Audit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Install cargo-deny
-        run: cargo install cargo-deny
-
-      - name: Fetch dependencies
-        run: cargo fetch
-
-      - name: Check dependencies
-        run: cargo deny check advisories
-
-  # Check minimum supported Rust version (MSRV)
-  msrv:
-    name: MSRV Compatibility
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # Rust 2024 edition + round_char_boundary (1.91) + let chains (1.87)
-      # Adjust based on your actual MSRV requirements
-      - name: Install Rust (MSRV)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.91.0
-
-      - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Check compilation
-        run: cargo check
-
-  # Check documentation
-  docs:
-    name: Documentation
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Build documentation
-        run: cargo doc --no-deps --document-private-items
+          files: lcov.info
+          fail_ci_if_error: false
         env:
-          RUSTDOCFLAGS: -D warnings
-
-  # Build check (ensure it compiles on multiple targets)
-  build:
-    name: Build Check
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: macos-latest
-            target: x86_64-apple-darwin
-          - os: macos-latest
-            target: aarch64-apple-darwin
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: v2-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
-
-  # Check for unused dependencies
-  udeps:
-    name: Unused Dependencies
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust (nightly)
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt
-
-      - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: v2-nightly-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Install cargo-udeps
-        uses: taiki-e/install-action@cargo-udeps
-
-      - name: Check unused dependencies
-        run: cargo +nightly udeps --all-targets
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
