@@ -7,7 +7,6 @@ mod logger;
 mod models;
 mod prompts;
 
-use std::io::IsTerminal;
 use std::time::Instant;
 
 use crate::cli::CmdRunner;
@@ -68,13 +67,55 @@ struct CodingAssistant {
 
 impl CodingAssistant {
     /// Read content from stdin if available (non-terminal)
+    ///
+    /// This function only reads from stdin if:
+    /// 1. Stdin is not a terminal (i.e., piped input)
+    /// 2. There is data available to read within a short timeout
+    ///
+    /// This prevents hanging when stdin is a pipe but no data is being sent,
+    /// which can happen when the CLI is invoked from another process (e.g.,
+    /// from a TUI or another CLI instance) that doesn't close stdin properly.
     fn read_stdin_content() -> Option<String> {
+        use std::io::IsTerminal;
+        use std::sync::mpsc;
+        use std::thread;
+        use std::time::Duration;
+
         if std::io::stdin().is_terminal() {
-            None
-        } else {
-            std::io::read_to_string(std::io::stdin())
-                .ok()
-                .filter(|s| !s.is_empty())
+            return None;
+        }
+
+        // Use a thread with a timeout to read from stdin.
+        // This prevents hanging when stdin is a pipe but no data is being sent.
+        let (tx, rx) = mpsc::channel();
+        let thread = thread::spawn(move || {
+            let stdin = std::io::stdin();
+            match std::io::read_to_string(stdin) {
+                Ok(s) if !s.is_empty() => {
+                    let _ = tx.send(Some(s));
+                },
+                _ => {
+                    let _ = tx.send(None);
+                },
+            }
+        });
+
+        // Wait for stdin with a short timeout (100ms)
+        match rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(Some(content)) => {
+                // Wait for the thread to finish
+                let _ = thread.join();
+                Some(content)
+            },
+            Ok(None) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = thread.join();
+                None
+            },
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // No data available within timeout - assume stdin is empty
+                // The thread will continue running in the background but we don't wait for it
+                None
+            },
         }
     }
 
