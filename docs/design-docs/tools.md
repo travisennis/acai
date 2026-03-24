@@ -112,12 +112,52 @@ This allows creating new files in new subdirectories while maintaining security.
 - Configurable via `ACAI_SANDBOX=0` environment variable
 - Output streaming with 100KB read cap
 - Automatic truncation for large outputs (saved to temp file)
-- Exit code reporting
+- Metadata footer with exit code and execution time
+- Binary output detection and handling
 
 **Output Handling**:
 - Small output (< 50KB): Returned inline
 - Large output (> 50KB): Written to temp file, preview returned
+- Binary output: Written to temp file with helpful message and MIME type detection
 - Timeout: Command killed, timeout error returned
+
+**Metadata Footer**:
+
+All Bash tool output includes a metadata footer showing exit code and execution time:
+
+```
+[exit:0 | 12ms]
+```
+
+The time display adapts to the duration:
+- Durations under 1 second: Shows milliseconds (e.g., `12ms`, `500ms`, `999ms`)
+- Durations of 1 second or more: Shows seconds with one decimal place (e.g., `1.0s`, `1.2s`, `15.3s`)
+
+**Binary Output Detection**:
+
+The Bash tool automatically detects binary output and prevents returning corrupted binary data to the LLM. Detection is based on:
+- Null byte count: More than 8 null bytes indicates binary
+- Non-printable character ratio: More than 30% non-printable characters (excluding common whitespace: `\t`, `\n`, `\r`) indicates binary
+
+When binary output is detected:
+1. The data is saved to a temp file in `/tmp/acai/bash_binary_<uuid>`
+2. MIME type is detected via magic numbers for common formats:
+   - Images: PNG, JPEG, GIF
+   - Documents: PDF
+   - Archives: ZIP, Gzip, BZip2, TAR
+   - Executables: ELF, Mach-O
+   - Databases: SQLite
+3. A user-friendly message is returned with the file path and suggested tools for inspection (`file`, `hexdump`, `xxd`)
+
+Example binary output message:
+```
+[Binary output detected - 12345 bytes (12.1 KB)]
+Detected type: image/png
+Binary data saved to: /tmp/acai/bash_binary_abc123
+The command produced binary output which cannot be displayed as text.
+You can inspect the file with appropriate tools (e.g., `file`, `hexdump`, `xxd`).
+[exit:0 | 15ms]
+```
 
 ### Read Tool
 
@@ -242,7 +282,7 @@ Examples:
 
 Each tool has comprehensive tests:
 
-- **Bash**: Output streaming, timeout, sandbox blocking, stderr capture
+- **Bash**: Output streaming, timeout, sandbox blocking, stderr capture, metadata footer formatting, binary output detection
 - **Read**: Small files, line ranges, directories, binary detection
 - **Edit**: Multiple edits, overlap detection, line ending preservation, BOM handling, binary files, no-op detection, path validation
 - **Write**: Create, overwrite, nested directories, path validation
