@@ -83,8 +83,15 @@ fn is_sandbox_violation(output: &str) -> bool {
 }
 
 /// Format metadata footer with exit code and elapsed time
+/// Shows milliseconds for values under 1 second, seconds otherwise
+#[allow(clippy::cast_precision_loss)]
 fn format_metadata_footer(exit_code: i32, elapsed_ms: u128) -> String {
-    format!("[exit:{exit_code} | {elapsed_ms}ms]")
+    if elapsed_ms > 999 {
+        let elapsed_sec = elapsed_ms as f64 / 1000.0;
+        format!("[exit:{exit_code} | {elapsed_sec:.1}s]")
+    } else {
+        format!("[exit:{exit_code} | {elapsed_ms}ms]")
+    }
 }
 
 /// Append metadata footer to output
@@ -310,6 +317,44 @@ mod tests {
         assert!(result.contains("[Output too long"));
         // Verify the result is valid UTF-8 (would panic if not)
         let _ = result.as_bytes();
+    }
+
+    // ===========================================================================
+    // Metadata Footer Tests
+    // ===========================================================================
+
+    #[test]
+    fn metadata_footer_shows_milliseconds_under_1_second() {
+        let footer = format_metadata_footer(0, 500);
+        assert_eq!(footer, "[exit:0 | 500ms]");
+    }
+
+    #[test]
+    fn metadata_footer_shows_milliseconds_at_boundary() {
+        // 999ms should still show as milliseconds
+        let footer = format_metadata_footer(0, 999);
+        assert_eq!(footer, "[exit:0 | 999ms]");
+    }
+
+    #[test]
+    fn metadata_footer_shows_seconds_over_1_second() {
+        // 1000ms should show as 1.0s
+        let footer = format_metadata_footer(0, 1000);
+        assert_eq!(footer, "[exit:0 | 1.0s]");
+    }
+
+    #[test]
+    fn metadata_footer_shows_seconds_with_decimal() {
+        // 1234ms should show as 1.2s (rounded to 1 decimal)
+        let footer = format_metadata_footer(1, 1234);
+        assert_eq!(footer, "[exit:1 | 1.2s]");
+    }
+
+    #[test]
+    fn metadata_footer_handles_large_values() {
+        // 60000ms = 60.0s
+        let footer = format_metadata_footer(0, 60000);
+        assert_eq!(footer, "[exit:0 | 60.0s]");
     }
 
     // ===========================================================================
