@@ -1,6 +1,7 @@
 use log::debug;
 use serde::Deserialize;
 use std::process::Stdio;
+use std::time::Instant;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::time::{Duration, timeout};
@@ -81,9 +82,25 @@ fn is_sandbox_violation(output: &str) -> bool {
         || (output.contains("Permission denied") && output.contains("sandbox"))
 }
 
+/// Format metadata footer with exit code and elapsed time
+fn format_metadata_footer(exit_code: i32, elapsed_ms: u128) -> String {
+    format!("[exit:{exit_code} | {elapsed_ms}ms]")
+}
+
+/// Append metadata footer to output
+fn append_metadata(output: &str, exit_code: i32, elapsed_ms: u128) -> String {
+    let footer = format_metadata_footer(exit_code, elapsed_ms);
+    if output.is_empty() {
+        footer
+    } else {
+        format!("{}\n{footer}", output.trim_end())
+    }
+}
+
 /// Execute a bash command
 pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, String> {
     let args = BashExecutionArgs::from_json(arguments)?;
+    let start_time = Instant::now();
 
     // Build sandbox configuration
     let cwd = std::env::current_dir().map_err(|e| format!("Failed to get cwd: {e}"))?;
@@ -170,11 +187,13 @@ pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, S
         let _ = child.kill().await;
     }
     let status = child.wait().await.ok();
+    let elapsed_ms = start_time.elapsed().as_millis();
 
     let output_str = String::from_utf8_lossy(&buf);
     let success = status
         .as_ref()
         .is_some_and(std::process::ExitStatus::success);
+    let exit_code = status.and_then(|s| s.code()).unwrap_or(-1);
 
     let result = if output_str.is_empty() {
         String::new()
@@ -182,24 +201,23 @@ pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, S
         format!("{output_str}\n[... output truncated at {BASH_READ_CAP} bytes ...]")
     } else if success {
         output_str.into_owned()
+    } else if args.use_sandbox && is_sandbox_violation(&output_str) {
+        format!(
+            "{output_str}\n\n\
+            [Sandbox restriction]: This command was blocked by the filesystem sandbox. \
+            The sandbox restricts file access to the project directory and standard system paths. \
+            Do NOT retry with different workarounds — the restriction is intentional. \
+            Instead, inform the user that this command requires access outside the sandbox \
+            and suggest they run it directly in their terminal."
+        )
     } else {
-        let code = status.and_then(|s| s.code()).unwrap_or(-1);
-        let output = format!("Exit code {code}:\n{output_str}");
-        if args.use_sandbox && is_sandbox_violation(&output_str) {
-            format!(
-                "{output}\n\n\
-                [Sandbox restriction]: This command was blocked by the filesystem sandbox. \
-                The sandbox restricts file access to the project directory and standard system paths. \
-                Do NOT retry with different workarounds — the restriction is intentional. \
-                Instead, inform the user that this command requires access outside the sandbox \
-                and suggest they run it directly in their terminal."
-            )
-        } else {
-            output
-        }
+        output_str.into_owned()
     };
 
     let result = truncate_output(&result);
+
+    // Append metadata footer
+    let result = append_metadata(&result, exit_code, elapsed_ms);
 
     Ok(super::ToolResult { output: result })
 }
@@ -300,10 +318,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_streaming_small_output() {
-        // Command with small output returns it verbatim
+        // Command with small output returns it verbatim with metadata footer
         let args = r#"{"command": "echo hello world"}"#;
         let result = Box::pin(execute_bash(args)).await.unwrap();
-        assert_eq!(result.output.trim(), "hello world");
+        assert!(result.output.contains("hello world"));
+        assert!(result.output.contains("[exit:0 |"));
     }
 
     #[tokio::test]
@@ -316,6 +335,8 @@ mod tests {
         assert!(result.output.contains("[... output truncated at"));
         // Should still have useful content
         assert!(!result.output.is_empty());
+        // Should contain metadata footer
+        assert!(result.output.contains("[exit:"));
     }
 
     #[tokio::test]
@@ -329,10 +350,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_streaming_stderr_included() {
-        // Command that writes to stderr has it captured
+        // Command that writes to stderr has it captured with metadata footer
         let args = r#"{"command": "echo err >&2"}"#;
         let result = Box::pin(execute_bash(args)).await.unwrap();
-        assert_eq!(result.output.trim(), "err");
+        assert!(result.output.contains("err"));
+        assert!(result.output.contains("[exit:0 |"));
     }
 
     // ===========================================================================
@@ -363,6 +385,8 @@ mod tests {
             "Expected ls in cwd to succeed, got: {}",
             result.output
         );
+        // Should contain metadata footer
+        assert!(result.output.contains("[exit:0 |"));
     }
 
     #[cfg(target_os = "macos")]
