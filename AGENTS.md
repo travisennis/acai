@@ -48,6 +48,21 @@ just clippy-strict
 just update-dependencies
 ```
 
+## Development Setup
+
+Required tools for contributing:
+
+```bash
+# Install prek for git hooks
+cargo install prek
+
+# Install cocogitto for conventional commit validation
+cargo install --locked cocogitto
+
+# Install git hooks
+prek install --hook-type pre-commit --hook-type commit-msg
+```
+
 ## Running the App
 
 ```bash
@@ -100,6 +115,40 @@ A development task is considered "complete" only when ALL of the following are m
 
 - **Never commit directly to the main branch** — verify current branch with `git branch` before committing
 - Merge via feature branch + PR. Naming: `feat/xxx`, `fix/xxx`, `refactor/xxx`, `test/xxx`
+
+## Commit Conventions
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/). Commit messages are validated by a `commit-msg` hook.
+
+**Format:** `<type>[(scope)]: <description>`
+
+**Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+
+**Recommended Scopes** (aligned with architecture):
+
+| Scope | Description |
+|-------|-------------|
+| `cli` | Command-line interface and argument parsing |
+| `agent` | Agent orchestration, conversation loop, tool execution |
+| `responses` | Responses API backend |
+| `chat` | Chat Completions API backend |
+| `tools` | Tool definitions (Bash, Read, Edit, Write, etc.) |
+| `sandbox` | Sandbox implementations (Seatbelt, Landlock) |
+| `config` | Configuration, sessions, data directory |
+| `session` | Session persistence and management |
+| `model` | Model configuration and API types |
+| `prompts` | System prompt construction, AGENTS.md integration |
+| `logger` | Logging configuration |
+| `docs` | Documentation changes |
+| `tests` | Test files and test infrastructure |
+
+**Examples:**
+```
+feat(cli): add --verbose flag
+fix(agent): handle timeout correctly
+docs: update ARCHITECTURE.md with new module
+refactor(tools): extract path validation into shared function
+```
 
 ## Additional Notes
 

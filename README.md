@@ -169,19 +169,25 @@ Contributions to Acai are welcome! Please follow these steps:
 
 ### Development Setup
 
-Install [prek](https://github.com/j178/prek) to enable pre-commit hooks:
+Install the required development tools:
 
 ```bash
-# Install prek (if not already installed)
+# Install prek for git hooks (if not already installed)
 cargo install prek
 
+# Install cocogitto for conventional commit validation
+cargo install --locked cocogitto
+
 # Install the git hooks
-prek install
+prek install --hook-type pre-commit --hook-type commit-msg
 ```
 
-Pre-commit hooks will automatically run:
-- `cargo fmt -- --check` - formatting verification
-- `cargo clippy --all-targets -- -D warnings` - linting
+Git hooks will automatically run:
+- **pre-commit**: `cargo fmt -- --check` (formatting verification)
+- **pre-commit**: `cargo clippy --all-targets -- -D warnings` (linting)
+- **commit-msg**: `cog verify --file` (conventional commit validation)
+
+See [AGENTS.md](AGENTS.md) for commit conventions and recommended scopes.
 
 Run tests before submitting:
 

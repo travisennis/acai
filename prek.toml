@@ -18,3 +18,15 @@ hooks = [
     pass_filenames = false,
   },
 ]
+
+[[repos]]
+repo = "local"
+hooks = [
+  {
+    id = "conventional-commit-check",
+    name = "Conventional Commit Check",
+    language = "system",
+    entry = "cog verify --file",
+    stages = ["commit-msg"],
+  },
+]
