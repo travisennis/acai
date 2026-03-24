@@ -67,6 +67,9 @@ impl SandboxConfig {
                 home.join("Library/Caches/sccache"),
             ]);
 
+            // Pre-commit hooks: prek cache
+            read_write.push(home.join(".cache/prek"));
+
             // SCM CLIs: gh and glab for PR/issue workflows
             read_write.extend([
                 home.join(".config/gh"),
