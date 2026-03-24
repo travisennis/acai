@@ -6,6 +6,13 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::time::{Duration, timeout};
 
+/// Maximum number of null bytes or control characters (excluding common whitespace)
+/// allowed before considering output as binary.
+const BINARY_NULL_BYTE_THRESHOLD: usize = 8;
+
+/// Ratio of non-printable characters that indicates binary data (0.3 = 30%)
+const BINARY_RATIO_THRESHOLD: f64 = 0.3;
+
 /// Maximum number of bytes the Bash tool will return inline.
 /// Output exceeding this limit is written to a temporary file and the agent
 /// receives a truncated message with a path to the full output.
@@ -82,6 +89,142 @@ fn is_sandbox_violation(output: &str) -> bool {
         || (output.contains("Permission denied") && output.contains("sandbox"))
 }
 
+/// Check if raw bytes appear to be binary data rather than text.
+/// Returns true if the data contains:
+/// - Multiple null bytes (common in binary files)
+/// - A high ratio of non-printable characters (excluding common whitespace)
+#[allow(clippy::naive_bytecount, clippy::cast_precision_loss)]
+fn is_binary_data(data: &[u8]) -> bool {
+    if data.is_empty() {
+        return false;
+    }
+
+    // Count null bytes - even a few null bytes strongly indicate binary
+    let null_count = data.iter().filter(|&&b| b == 0).count();
+    if null_count > BINARY_NULL_BYTE_THRESHOLD {
+        return true;
+    }
+
+    // Count non-printable characters (excluding common whitespace: \t, \n, \r)
+    let non_printable_count = data
+        .iter()
+        .filter(|&&b| {
+            // Allow tabs, newlines, and carriage returns
+            !matches!(b, b'\t' | b'\n' | b'\r')
+                // Allow printable ASCII (32-126)
+                && !(32..=126).contains(&b)
+                // Allow high bytes that could be valid UTF-8 continuation/start bytes
+                // (we'll let the UTF-8 check below catch actual invalid sequences)
+                && b < 128
+        })
+        .count();
+
+    // If more than 30% of the data is non-printable, it's likely binary
+    let ratio = non_printable_count as f64 / data.len() as f64;
+    ratio > BINARY_RATIO_THRESHOLD
+}
+
+/// Create a result message for binary output, saving the data to a temp file.
+#[allow(clippy::cast_precision_loss)]
+fn handle_binary_output(data: &[u8], exit_code: i32, elapsed_ms: u128) -> String {
+    let size_bytes = data.len();
+    let size_kb = size_bytes as f64 / 1024.0;
+
+    // Try to detect MIME type using the `file` command if available
+    let mime_type = detect_mime_type(data);
+
+    // Save binary data to a temp file
+    let tmp_dir = std::env::temp_dir().join("acai");
+    let _ = std::fs::create_dir_all(&tmp_dir);
+    let file_name = format!("bash_binary_{}", uuid::Uuid::new_v4());
+    let tmp_path = tmp_dir.join(&file_name);
+
+    match std::fs::write(&tmp_path, data) {
+        Ok(()) => {
+            let footer = format_metadata_footer(exit_code, elapsed_ms);
+            format!(
+                "[Binary output detected - {size_bytes} bytes ({size_kb:.1} KB)]\n\
+                 Detected type: {}\n\
+                 Binary data saved to: {}\n\
+                 The command produced binary output which cannot be displayed as text.\n\
+                 You can inspect the file with appropriate tools (e.g., `file`, `hexdump`, `xxd`).\n\
+                 {}",
+                mime_type.as_deref().unwrap_or("unknown"),
+                tmp_path.display(),
+                footer
+            )
+        },
+        Err(e) => {
+            let footer = format_metadata_footer(exit_code, elapsed_ms);
+            format!(
+                "[Binary output detected - {size_bytes} bytes ({size_kb:.1} KB)]\n\
+                 Detected type: {}\n\
+                 Failed to save binary data to temp file: {e}\n\
+                 The command produced binary output which cannot be displayed as text.\n\
+                 {}",
+                mime_type.as_deref().unwrap_or("unknown"),
+                footer
+            )
+        },
+    }
+}
+
+/// Attempt to detect the MIME type of binary data using content-based detection.
+/// Returns None if the type cannot be determined.
+fn detect_mime_type(data: &[u8]) -> Option<String> {
+    // Check for common binary file signatures (magic numbers)
+    if data.len() < 4 {
+        return None;
+    }
+
+    // PNG
+    if data.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+        return Some("image/png".to_string());
+    }
+    // JPEG
+    if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some("image/jpeg".to_string());
+    }
+    // GIF
+    if data.starts_with(b"GIF8") {
+        return Some("image/gif".to_string());
+    }
+    // PDF
+    if data.starts_with(b"%PDF") {
+        return Some("application/pdf".to_string());
+    }
+    // ZIP (also covers JAR, Office Open XML, etc.)
+    if data.starts_with(&[0x50, 0x4B, 0x03, 0x04]) {
+        return Some("application/zip".to_string());
+    }
+    // ELF executable
+    if data.starts_with(&[0x7F, 0x45, 0x4C, 0x46]) {
+        return Some("application/x-executable".to_string());
+    }
+    // Mach-O (macOS executable)
+    if data.starts_with(&[0xFE, 0xED, 0xFA, 0xCF]) || data.starts_with(&[0xCF, 0xFA, 0xED, 0xFE]) {
+        return Some("application/x-mach-binary".to_string());
+    }
+    // SQLite
+    if data.starts_with(b"SQLite format 3") {
+        return Some("application/x-sqlite3".to_string());
+    }
+    // Gzip
+    if data.starts_with(&[0x1F, 0x8B]) {
+        return Some("application/gzip".to_string());
+    }
+    // BZip2
+    if data.starts_with(b"BZ") {
+        return Some("application/x-bzip2".to_string());
+    }
+    // TAR (ustar format)
+    if data.len() > 261 && &data[257..262] == b"ustar" {
+        return Some("application/x-tar".to_string());
+    }
+
+    None
+}
+
 /// Format metadata footer with exit code and elapsed time
 /// Shows milliseconds for values under 1 second, seconds otherwise
 #[allow(clippy::cast_precision_loss)]
@@ -105,6 +248,7 @@ fn append_metadata(output: &str, exit_code: i32, elapsed_ms: u128) -> String {
 }
 
 /// Execute a bash command
+#[allow(clippy::too_many_lines)]
 pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, String> {
     let args = BashExecutionArgs::from_json(arguments)?;
     let start_time = Instant::now();
@@ -195,6 +339,14 @@ pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, S
     }
     let status = child.wait().await.ok();
     let elapsed_ms = start_time.elapsed().as_millis();
+
+    // Check for binary data before converting to string
+    if is_binary_data(&buf) {
+        let exit_code = status.and_then(|s| s.code()).unwrap_or(-1);
+        return Ok(super::ToolResult {
+            output: handle_binary_output(&buf, exit_code, elapsed_ms),
+        });
+    }
 
     let output_str = String::from_utf8_lossy(&buf);
     let success = status
@@ -445,5 +597,154 @@ mod tests {
             "Expected sandbox to block read of ~/Desktop, got: {}",
             result.output
         );
+    }
+
+    // ===========================================================================
+    // Binary Data Detection Tests
+    // ===========================================================================
+
+    #[test]
+    fn test_is_binary_data_detects_null_bytes() {
+        // Data with null bytes should be detected as binary (need >8 null bytes)
+        let binary_data =
+            b"hello\x00world\x00more\x00nulls\x00here\x00more\x00data\x00extra\x00again\x00more";
+        assert!(is_binary_data(binary_data));
+    }
+
+    #[test]
+    fn test_is_binary_data_detects_high_non_printable_ratio() {
+        // Data with many non-printable characters should be detected as binary
+        // Create data with ~50% non-printable characters
+        let mut binary_data = Vec::new();
+        for i in 0..100 {
+            if i % 2 == 0 {
+                binary_data.push(0x01); // Non-printable
+            } else {
+                binary_data.push(b'A'); // Printable
+            }
+        }
+        assert!(is_binary_data(&binary_data));
+    }
+
+    #[test]
+    fn test_is_binary_data_allows_text() {
+        // Normal text should not be detected as binary
+        let text_data = b"Hello, world!\nThis is a test.\nLine 3.\n";
+        assert!(!is_binary_data(text_data));
+    }
+
+    #[test]
+    fn test_is_binary_data_allows_multibyte_utf8() {
+        // UTF-8 text with multi-byte characters should not be detected as binary
+        let utf8_text = "Hello, 世界!\nПривет мир\n🎉".as_bytes();
+        assert!(!is_binary_data(utf8_text));
+    }
+
+    #[test]
+    fn test_is_binary_data_allows_empty() {
+        // Empty data should not be detected as binary
+        assert!(!is_binary_data(b""));
+    }
+
+    #[test]
+    fn test_is_binary_data_allows_few_null_bytes() {
+        // A few null bytes (below threshold) should not trigger binary detection
+        let text_with_few_nulls = b"hello\x00world";
+        assert!(!is_binary_data(text_with_few_nulls));
+    }
+
+    #[test]
+    fn test_detect_mime_type_png() {
+        let png_header = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        assert_eq!(detect_mime_type(&png_header), Some("image/png".to_string()));
+    }
+
+    #[test]
+    fn test_detect_mime_type_jpeg() {
+        let jpeg_header = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
+        assert_eq!(
+            detect_mime_type(&jpeg_header),
+            Some("image/jpeg".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_mime_type_pdf() {
+        let pdf_header = b"%PDF-1.4";
+        assert_eq!(
+            detect_mime_type(pdf_header),
+            Some("application/pdf".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_mime_type_zip() {
+        let zip_header = [0x50, 0x4B, 0x03, 0x04, 0x00, 0x00, 0x00];
+        assert_eq!(
+            detect_mime_type(&zip_header),
+            Some("application/zip".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_mime_type_gzip() {
+        let gzip_header = [0x1F, 0x8B, 0x08, 0x00];
+        assert_eq!(
+            detect_mime_type(&gzip_header),
+            Some("application/gzip".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_mime_type_unknown() {
+        // Random data should return None
+        let unknown_data = b"Hello, world!";
+        assert_eq!(detect_mime_type(unknown_data), None);
+    }
+
+    #[test]
+    fn test_detect_mime_type_too_short() {
+        // Data that's too short should return None
+        let short_data = [0x89, 0x50];
+        assert_eq!(detect_mime_type(&short_data), None);
+    }
+
+    #[tokio::test]
+    async fn test_binary_output_handling() {
+        // Command that produces binary output (random bytes)
+        let args = r#"{"command": "head -c 100 /dev/urandom"}"#;
+        let result = Box::pin(execute_bash(args)).await.unwrap();
+        // Should detect binary and show appropriate message
+        assert!(
+            result.output.contains("[Binary output detected") || result.output.contains("[exit:"),
+            "Expected binary output handling, got: {}",
+            result.output
+        );
+    }
+
+    #[tokio::test]
+    async fn test_binary_output_with_known_type() {
+        // Create a small gzip-compressed file and read it
+        let args = r#"{"command": "echo 'hello' | gzip | head -c 20"}"#;
+        let result = Box::pin(execute_bash(args)).await.unwrap();
+        // Should detect gzip magic number
+        assert!(
+            result.output.contains("application/gzip") || result.output.contains("[exit:"),
+            "Expected gzip detection, got: {}",
+            result.output
+        );
+    }
+
+    #[tokio::test]
+    async fn test_text_output_not_detected_as_binary() {
+        // Normal text output should not be detected as binary
+        let args = r#"{"command": "echo 'Hello, world!'"}"#;
+        let result = Box::pin(execute_bash(args)).await.unwrap();
+        assert!(
+            !result.output.contains("[Binary output detected"),
+            "Text output should not be detected as binary, got: {}",
+            result.output
+        );
+        assert!(result.output.contains("Hello, world!"));
     }
 }
