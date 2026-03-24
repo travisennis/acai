@@ -459,4 +459,414 @@ mod tests {
         };
         assert!(config.is_none());
     }
+
+    // =========================================================================
+    // Malformed Response Tests
+    // =========================================================================
+
+    #[test]
+    fn parse_output_items_empty_output_array() {
+        let response = ApiResponse {
+            id: None,
+            output: vec![],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn parse_output_items_missing_id_for_reasoning() {
+        // Reasoning without an id should be skipped (id is required for reasoning)
+        let response = ApiResponse {
+            id: None,
+            output: vec![OutputMessage {
+                msg_type: "reasoning".to_string(),
+                id: None, // Missing required id
+                call_id: None,
+                name: None,
+                arguments: None,
+                role: None,
+                status: None,
+                content: Some(vec![OutputContent {
+                    content_type: "reasoning_text".to_string(),
+                    text: Some("thinking...".to_string()),
+                }]),
+                encrypted_content: None,
+                summary: None,
+            }],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        // Reasoning without id is skipped
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn parse_output_items_function_call_missing_fields() {
+        // Function call with missing optional fields should still work
+        let response = ApiResponse {
+            id: None,
+            output: vec![OutputMessage {
+                msg_type: "function_call".to_string(),
+                id: None,
+                call_id: None,
+                name: None,
+                arguments: None,
+                role: None,
+                status: None,
+                content: None,
+                encrypted_content: None,
+                summary: None,
+            }],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert_eq!(items.len(), 1);
+        // Should use default values
+        assert!(matches!(&items[0], ConversationItem::FunctionCall {
+            id,
+            call_id,
+            name,
+            arguments,
+            ..
+        } if id.is_empty() && call_id.is_empty() && name.is_empty() && arguments.is_empty()));
+    }
+
+    #[test]
+    fn parse_output_items_message_with_empty_content_array() {
+        let response = ApiResponse {
+            id: None,
+            output: vec![OutputMessage {
+                msg_type: "message".to_string(),
+                id: Some("msg-1".to_string()),
+                call_id: None,
+                name: None,
+                arguments: None,
+                role: None,
+                status: Some("completed".to_string()),
+                content: Some(vec![]), // Empty content array
+                encrypted_content: None,
+                summary: None,
+            }],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert_eq!(items.len(), 1);
+        // Should default to empty string
+        assert!(matches!(&items[0], ConversationItem::Message {
+            content,
+            ..
+        } if content.is_empty()));
+    }
+
+    #[test]
+    fn parse_output_items_message_with_non_text_content() {
+        // Message with content type that isn't output_text
+        let response = ApiResponse {
+            id: None,
+            output: vec![OutputMessage {
+                msg_type: "message".to_string(),
+                id: Some("msg-1".to_string()),
+                call_id: None,
+                name: None,
+                arguments: None,
+                role: None,
+                status: Some("completed".to_string()),
+                content: Some(vec![OutputContent {
+                    content_type: "image".to_string(), // Not output_text
+                    text: Some("image data".to_string()),
+                }]),
+                encrypted_content: None,
+                summary: None,
+            }],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert_eq!(items.len(), 1);
+        // Should default to empty string since no output_text found
+        assert!(matches!(&items[0], ConversationItem::Message {
+            content,
+            ..
+        } if content.is_empty()));
+    }
+
+    #[test]
+    fn parse_output_items_reasoning_with_summary_fallback() {
+        // Reasoning with summary but no content
+        let response = ApiResponse {
+            id: None,
+            output: vec![OutputMessage {
+                msg_type: "reasoning".to_string(),
+                id: Some("r-1".to_string()),
+                call_id: None,
+                name: None,
+                arguments: None,
+                role: None,
+                status: None,
+                content: None,
+                encrypted_content: None,
+                summary: Some(vec!["step 1".to_string(), "step 2".to_string()]),
+            }],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert_eq!(items.len(), 1);
+        if let ConversationItem::Reasoning { summary, .. } = &items[0] {
+            assert_eq!(summary.len(), 2);
+            assert_eq!(summary[0], "step 1");
+        } else {
+            panic!("Expected Reasoning item");
+        }
+    }
+
+    #[test]
+    fn parse_output_items_reasoning_content_fallback_to_summary() {
+        // Reasoning with content containing reasoning_text
+        let response = ApiResponse {
+            id: None,
+            output: vec![OutputMessage {
+                msg_type: "reasoning".to_string(),
+                id: Some("r-1".to_string()),
+                call_id: None,
+                name: None,
+                arguments: None,
+                role: None,
+                status: None,
+                content: Some(vec![OutputContent {
+                    content_type: "reasoning_text".to_string(),
+                    text: Some("thinking...".to_string()),
+                }]),
+                encrypted_content: None,
+                summary: None, // No summary, should derive from content
+            }],
+            usage: None,
+            status: None,
+            error: None,
+        };
+        let items = parse_output_items(&response);
+        assert_eq!(items.len(), 1);
+        if let ConversationItem::Reasoning { summary, .. } = &items[0] {
+            // Summary should be derived from content
+            assert_eq!(summary.len(), 1);
+            assert_eq!(summary[0], "thinking...");
+        } else {
+            panic!("Expected Reasoning item");
+        }
+    }
+}
+
+/// Tests for parsing raw HTTP responses
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod response_parsing_tests {
+    use super::*;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// Create a minimal valid response JSON
+    fn minimal_valid_response() -> serde_json::Value {
+        serde_json::json!({
+            "output": [{
+                "type": "message",
+                "id": "msg-1",
+                "status": "completed",
+                "content": [{
+                    "type": "output_text",
+                    "text": "Hello!"
+                }]
+            }]
+        })
+    }
+
+    #[tokio::test]
+    async fn parse_response_valid_json() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(minimal_valid_response()))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/responses", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_response(response).await;
+        assert!(result.is_ok());
+        let turn_result = result.unwrap();
+        assert_eq!(turn_result.items.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn parse_response_invalid_json() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not valid json{broken"))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/responses", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_response(response).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn parse_response_empty_body() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(""))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/responses", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_response(response).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn parse_response_missing_output_field_fails() {
+        let mock_server = MockServer::start().await;
+
+        // Response without "output" field - should fail because output is required
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "resp-123",
+                "status": "completed"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/responses", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_response(response).await;
+        // Should fail because "output" is a required field
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn parse_response_with_usage() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "output": [{
+                    "type": "message",
+                    "id": "msg-1",
+                    "status": "completed",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "Hello!"
+                    }]
+                }],
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "total_tokens": 150,
+                    "input_tokens_details": {
+                        "cached_tokens": 20
+                    },
+                    "output_tokens_details": {
+                        "reasoning_tokens": 10
+                    }
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/responses", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_response(response).await;
+        assert!(result.is_ok());
+        let turn_result = result.unwrap();
+        assert!(turn_result.usage.is_some());
+        let usage = turn_result.usage.unwrap();
+        assert_eq!(usage.input_tokens, 100);
+        assert_eq!(usage.output_tokens, 50);
+        assert_eq!(usage.total_tokens, 150);
+        assert_eq!(usage.input_tokens_details.cached_tokens, 20);
+        assert_eq!(usage.output_tokens_details.reasoning_tokens, 10);
+    }
+
+    #[tokio::test]
+    async fn parse_response_partial_usage() {
+        let mock_server = MockServer::start().await;
+
+        // Response with partial usage (some fields missing)
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "output": [{
+                    "type": "message",
+                    "id": "msg-1",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "Hello!"
+                    }]
+                }],
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 50
+                    // total_tokens and details are missing
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/responses", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_response(response).await;
+        assert!(result.is_ok());
+        let turn_result = result.unwrap();
+        let usage = turn_result.usage.unwrap();
+        // Should use defaults for missing fields
+        assert_eq!(usage.input_tokens, 100);
+        assert_eq!(usage.output_tokens, 50);
+        assert_eq!(usage.total_tokens, 0); // Default
+        assert_eq!(usage.input_tokens_details.cached_tokens, 0); // Default
+        assert_eq!(usage.output_tokens_details.reasoning_tokens, 0); // Default
+    }
 }

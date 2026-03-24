@@ -458,4 +458,423 @@ mod tests {
         let msgs = build_messages(&history);
         assert!(msgs.is_empty());
     }
+
+    // =========================================================================
+    // Malformed Response Tests
+    // =========================================================================
+
+    #[test]
+    fn parse_choices_empty_message_content() {
+        let response = ChatResponse {
+            id: Some("chatcmpl-123".to_string()),
+            choices: vec![ChatChoice {
+                index: 0,
+                message: ChatResponseMessage {
+                    role: Some("assistant".to_string()),
+                    content: Some(String::new()), // Empty content
+                    tool_calls: None,
+                },
+                finish_reason: Some("stop".to_string()),
+            }],
+            usage: None,
+        };
+        let items = parse_choices(&response);
+        // Empty content should not create a message item
+        assert_eq!(items.len(), 1);
+        // But it should create an empty assistant message
+        assert!(matches!(&items[0], ConversationItem::Message {
+            role: Role::Assistant,
+            content,
+            ..
+        } if content.is_empty()));
+    }
+
+    #[test]
+    fn parse_choices_none_content_creates_empty_message() {
+        let response = ChatResponse {
+            id: Some("chatcmpl-123".to_string()),
+            choices: vec![ChatChoice {
+                index: 0,
+                message: ChatResponseMessage {
+                    role: Some("assistant".to_string()),
+                    content: None, // No content
+                    tool_calls: None,
+                },
+                finish_reason: Some("stop".to_string()),
+            }],
+            usage: None,
+        };
+        let items = parse_choices(&response);
+        // Should create an empty assistant message
+        assert_eq!(items.len(), 1);
+        assert!(matches!(&items[0], ConversationItem::Message {
+            role: Role::Assistant,
+            content,
+            ..
+        } if content.is_empty()));
+    }
+
+    #[test]
+    fn parse_choices_multiple_tool_calls() {
+        let response = ChatResponse {
+            id: Some("chatcmpl-456".to_string()),
+            choices: vec![ChatChoice {
+                index: 0,
+                message: ChatResponseMessage {
+                    role: Some("assistant".to_string()),
+                    content: None,
+                    tool_calls: Some(vec![
+                        ChatToolCall {
+                            id: "call-1".to_string(),
+                            type_: "function".to_string(),
+                            function: ChatFunctionCall {
+                                name: "bash".to_string(),
+                                arguments: r#"{"cmd":"ls"}"#.to_string(),
+                            },
+                        },
+                        ChatToolCall {
+                            id: "call-2".to_string(),
+                            type_: "function".to_string(),
+                            function: ChatFunctionCall {
+                                name: "read".to_string(),
+                                arguments: r#"{"path":"file.txt"}"#.to_string(),
+                            },
+                        },
+                    ]),
+                },
+                finish_reason: Some("tool_calls".to_string()),
+            }],
+            usage: None,
+        };
+        let items = parse_choices(&response);
+        assert_eq!(items.len(), 2);
+        assert!(matches!(&items[0], ConversationItem::FunctionCall {
+            name, ..
+        } if name == "bash"));
+        assert!(matches!(&items[1], ConversationItem::FunctionCall {
+            name, ..
+        } if name == "read"));
+    }
+
+    #[test]
+    fn parse_choices_tool_calls_with_text_content() {
+        // Some models return both tool calls and text content
+        let response = ChatResponse {
+            id: Some("chatcmpl-789".to_string()),
+            choices: vec![ChatChoice {
+                index: 0,
+                message: ChatResponseMessage {
+                    role: Some("assistant".to_string()),
+                    content: Some("Let me help you with that.".to_string()),
+                    tool_calls: Some(vec![ChatToolCall {
+                        id: "call-1".to_string(),
+                        type_: "function".to_string(),
+                        function: ChatFunctionCall {
+                            name: "bash".to_string(),
+                            arguments: "{}".to_string(),
+                        },
+                    }]),
+                },
+                finish_reason: Some("tool_calls".to_string()),
+            }],
+            usage: None,
+        };
+        let items = parse_choices(&response);
+        // Should have both tool call and message
+        assert_eq!(items.len(), 2);
+        // Tool call comes first
+        assert!(matches!(&items[0], ConversationItem::FunctionCall { .. }));
+        // Then the message
+        assert!(matches!(&items[1], ConversationItem::Message {
+            content,
+            ..
+        } if content == "Let me help you with that."));
+    }
+
+    #[test]
+    fn parse_choices_missing_id_defaults_to_none() {
+        let response = ChatResponse {
+            id: None, // Missing id
+            choices: vec![ChatChoice {
+                index: 0,
+                message: ChatResponseMessage {
+                    role: Some("assistant".to_string()),
+                    content: Some("Hello".to_string()),
+                    tool_calls: None,
+                },
+                finish_reason: Some("stop".to_string()),
+            }],
+            usage: None,
+        };
+        let items = parse_choices(&response);
+        assert_eq!(items.len(), 1);
+        assert!(matches!(&items[0], ConversationItem::Message {
+            id,
+            ..
+        } if id.is_none()));
+    }
+
+    #[test]
+    fn parse_choices_missing_role_defaults_to_none() {
+        let response = ChatResponse {
+            id: Some("chatcmpl-123".to_string()),
+            choices: vec![ChatChoice {
+                index: 0,
+                message: ChatResponseMessage {
+                    role: None, // Missing role
+                    content: Some("Hello".to_string()),
+                    tool_calls: None,
+                },
+                finish_reason: Some("stop".to_string()),
+            }],
+            usage: None,
+        };
+        let items = parse_choices(&response);
+        // Should still create a message item
+        assert_eq!(items.len(), 1);
+    }
+}
+
+/// Tests for parsing raw HTTP responses
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod response_parsing_tests {
+    use super::*;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// Create a minimal valid Chat Completions response
+    fn minimal_valid_response() -> serde_json::Value {
+        serde_json::json!({
+            "id": "chatcmpl-123",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Hello!"
+                },
+                "finish_reason": "stop"
+            }]
+        })
+    }
+
+    #[tokio::test]
+    async fn parse_response_valid_json() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(minimal_valid_response()))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/chat/completions", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_response(response).await;
+        assert!(result.is_ok());
+        let turn_result = result.unwrap();
+        assert_eq!(turn_result.items.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn parse_response_invalid_json() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not valid json{broken"))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/chat/completions", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_response(response).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn parse_response_empty_body() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(""))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/chat/completions", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_response(response).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn parse_response_missing_choices_fails() {
+        let mock_server = MockServer::start().await;
+
+        // Response without "choices" field - should fail because choices is required
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "chatcmpl-123",
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 5
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/chat/completions", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_response(response).await;
+        // Should fail because "choices" is a required field
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn parse_response_with_usage() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "chatcmpl-123",
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "Hello!"
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 50,
+                    "total_tokens": 150
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/chat/completions", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_response(response).await;
+        assert!(result.is_ok());
+        let turn_result = result.unwrap();
+        assert!(turn_result.usage.is_some());
+        let usage = turn_result.usage.unwrap();
+        assert_eq!(usage.input_tokens, 100);
+        assert_eq!(usage.output_tokens, 50);
+        assert_eq!(usage.total_tokens, 150);
+    }
+
+    #[tokio::test]
+    async fn parse_response_partial_usage() {
+        let mock_server = MockServer::start().await;
+
+        // Response with partial usage (some fields missing)
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "chatcmpl-123",
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "Hello!"
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 50
+                    // total_tokens is missing
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/chat/completions", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_response(response).await;
+        assert!(result.is_ok());
+        let turn_result = result.unwrap();
+        let usage = turn_result.usage.unwrap();
+        // Should use defaults for missing fields
+        assert_eq!(usage.input_tokens, 100);
+        assert_eq!(usage.output_tokens, 50);
+        assert_eq!(usage.total_tokens, 0); // Default
+    }
+
+    #[tokio::test]
+    async fn parse_response_with_tool_calls() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "chatcmpl-123",
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": null,
+                        "tool_calls": [{
+                            "id": "call-abc",
+                            "type": "function",
+                            "function": {
+                                "name": "bash",
+                                "arguments": "{\"cmd\":\"ls\"}"
+                            }
+                        }]
+                    },
+                    "finish_reason": "tool_calls"
+                }]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{}/chat/completions", mock_server.uri()))
+            .send()
+            .await
+            .unwrap();
+
+        let result = parse_response(response).await;
+        assert!(result.is_ok());
+        let turn_result = result.unwrap();
+        assert_eq!(turn_result.items.len(), 1);
+        assert!(
+            matches!(&turn_result.items[0], ConversationItem::FunctionCall {
+            name,
+            call_id,
+            ..
+        } if name == "bash" && call_id == "call-abc")
+        );
+    }
 }

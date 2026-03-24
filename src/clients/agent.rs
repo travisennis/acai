@@ -20,6 +20,7 @@ const MAX_RETRIES: u32 = 3;
 const INITIAL_DELAY_SECS: u64 = 1;
 
 /// Result of a single API turn (one request/response cycle).
+#[derive(Debug)]
 pub(super) struct TurnResult {
     pub(super) items: Vec<ConversationItem>,
     pub(super) usage: Option<Usage>,
@@ -695,5 +696,513 @@ mod tests {
         assert!(!is_retryable_status(reqwest::StatusCode::NOT_FOUND));
         assert!(!is_retryable_status(reqwest::StatusCode::OK));
         assert!(!is_retryable_status(reqwest::StatusCode::CREATED));
+    }
+}
+
+/// Error handling tests using wiremock for HTTP mocking
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod error_tests {
+    use super::*;
+    use crate::config::model::{ApiType, ModelConfig};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// Create a test agent configured to use the Responses API with a mock server URL
+    fn test_agent_with_url(base_url: &str) -> Agent {
+        let config = ResolvedModelConfig {
+            config: ModelConfig {
+                model: "test-model".to_string(),
+                api_type: ApiType::Responses,
+                base_url: base_url.to_string(),
+                api_key_env: "TEST_API_KEY".to_string(),
+                temperature: None,
+                top_p: None,
+                max_output_tokens: None,
+                providers: vec![],
+            },
+            api_key: "test-key".to_string(),
+        };
+        Agent {
+            config,
+            history: vec![],
+            tools: vec![],
+            streaming_callback: None,
+            session_id: "test-session".to_string(),
+            total_usage: Usage::default(),
+            turn_count: 0,
+            client: reqwest::Client::new(),
+        }
+    }
+
+    /// Create a test agent configured to use the Chat Completions API with a mock server URL
+    fn test_agent_chat_completions(base_url: &str) -> Agent {
+        let config = ResolvedModelConfig {
+            config: ModelConfig {
+                model: "test-model".to_string(),
+                api_type: ApiType::ChatCompletions,
+                base_url: base_url.to_string(),
+                api_key_env: "TEST_API_KEY".to_string(),
+                temperature: None,
+                top_p: None,
+                max_output_tokens: None,
+                providers: vec![],
+            },
+            api_key: "test-key".to_string(),
+        };
+        Agent {
+            config,
+            history: vec![],
+            tools: vec![],
+            streaming_callback: None,
+            session_id: "test-session".to_string(),
+            total_usage: Usage::default(),
+            turn_count: 0,
+            client: reqwest::Client::new(),
+        }
+    }
+
+    /// Create a successful Responses API response
+    fn success_response() -> serde_json::Value {
+        serde_json::json!({
+            "id": "resp-123",
+            "output": [
+                {
+                    "type": "message",
+                    "id": "msg-1",
+                    "status": "completed",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "Hello!"
+                        }
+                    ]
+                }
+            ],
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15
+            }
+        })
+    }
+
+    /// Create a successful Chat Completions API response
+    fn success_chat_response() -> serde_json::Value {
+        serde_json::json!({
+            "id": "chatcmpl-123",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "Hello!"
+                    },
+                    "finish_reason": "stop"
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15
+            }
+        })
+    }
+
+    // =========================================================================
+    // HTTP Error Response Tests (Non-retryable 4xx errors)
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_400_bad_request_returns_error() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Invalid request: missing required field",
+                    "type": "invalid_request_error"
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("test-model"));
+    }
+
+    #[tokio::test]
+    async fn test_401_unauthorized_returns_error() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Invalid API key",
+                    "type": "authentication_error"
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("test-model"));
+    }
+
+    #[tokio::test]
+    async fn test_403_forbidden_returns_error() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(403).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Access denied",
+                    "type": "permission_error"
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("test-model"));
+    }
+
+    #[tokio::test]
+    async fn test_404_not_found_returns_error() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Model not found",
+                    "type": "not_found_error"
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("test-model"));
+    }
+
+    // =========================================================================
+    // Retry Logic Tests (5xx and 429 errors should retry)
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_429_too_many_requests_retries_and_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        // First request returns 429
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(429).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Rate limit exceeded",
+                    "type": "rate_limit_error"
+                }
+            })))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        // Second request succeeds
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_response()))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_ok());
+        let turn_result = result.unwrap();
+        assert_eq!(turn_result.items.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_500_internal_server_error_retries_and_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        // First request returns 500
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(500).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Internal server error",
+                    "type": "server_error"
+                }
+            })))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        // Second request succeeds
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_response()))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_503_service_unavailable_retries_and_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        // First request returns 503
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(503).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Service temporarily unavailable",
+                    "type": "service_unavailable"
+                }
+            })))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        // Second request succeeds
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_response()))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_max_retries_exceeded_returns_error() {
+        let mock_server = MockServer::start().await;
+
+        // All requests return 429 (exceeds MAX_RETRIES)
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(429).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Rate limit exceeded",
+                    "type": "rate_limit_error"
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("test-model"));
+    }
+
+    // =========================================================================
+    // Chat Completions API Error Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_chat_completions_400_bad_request_returns_error() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Invalid request",
+                    "type": "invalid_request_error"
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_chat_completions(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_chat_completions_429_retries_and_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        // First request returns 429
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(429).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Rate limit exceeded",
+                    "type": "rate_limit_error"
+                }
+            })))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        // Second request succeeds
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_chat_response()))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_chat_completions(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_ok());
+    }
+
+    // =========================================================================
+    // Successful Response Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_successful_responses_api_call() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_response()))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "Hello".to_string(),
+            id: None,
+            status: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_ok());
+        let turn_result = result.unwrap();
+        assert_eq!(turn_result.items.len(), 1);
+        assert!(matches!(&turn_result.items[0], ConversationItem::Message {
+            role: Role::Assistant,
+            content,
+            ..
+        } if content == "Hello!"));
+        assert!(turn_result.usage.is_some());
+        let usage = turn_result.usage.unwrap();
+        assert_eq!(usage.input_tokens, 10);
+        assert_eq!(usage.output_tokens, 5);
+    }
+
+    #[tokio::test]
+    async fn test_successful_chat_completions_api_call() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_chat_response()))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_chat_completions(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "Hello".to_string(),
+            id: None,
+            status: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_ok());
+        let turn_result = result.unwrap();
+        assert_eq!(turn_result.items.len(), 1);
+        assert!(matches!(&turn_result.items[0], ConversationItem::Message {
+            role: Role::Assistant,
+            content,
+            ..
+        } if content == "Hello!"));
     }
 }

@@ -43,6 +43,7 @@ landlock = ["dep:landlock"]
 [dev-dependencies]
 temp-env = "0.3"
 tempfile = "3"
+wiremock = "0.6"
 
 # Enforce code quality standards across the workspace
 [lints.rust]
