@@ -13,13 +13,14 @@ use crate::config::defaults::{
 ///
 /// - `ChatCompletions`: The standard OpenAI-compatible Chat Completions format, which
 ///   is widely supported by most AI providers. Use this for maximum compatibility.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ApiType {
+    /// OpenAI-compatible Chat Completions API - widely supported by most providers
+    #[default]
+    ChatCompletions,
     /// `OpenRouter` Responses API - supports reasoning traces and structured outputs
     Responses,
-    /// OpenAI-compatible Chat Completions API - widely supported by most providers
-    ChatCompletions,
 }
 
 /// Configuration for a model provider.

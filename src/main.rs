@@ -11,7 +11,12 @@ use std::time::Instant;
 
 use crate::cli::CmdRunner;
 use crate::clients::Agent;
-use crate::config::{AgentsFile, DataDir, ModelConfig, ResolvedModelConfig, Session, worktree};
+use std::collections::HashMap;
+
+use crate::config::{
+    AgentsFile, DataDir, ModelConfig, ModelDefinition, ResolvedModelConfig, Session,
+    SettingsLoader, worktree,
+};
 use crate::models::{Message, Role};
 use crate::prompts::build_system_prompt;
 use clap::{Parser, ValueEnum};
@@ -63,6 +68,10 @@ struct CodingAssistant {
     /// Run in an isolated git worktree (optionally provide a name)
     #[arg(short, long, num_args = 0..=1, default_missing_value = "", value_name = "NAME")]
     pub worktree: Option<String>,
+
+    /// Select a model by name from settings.toml
+    #[arg(long)]
+    pub model: Option<String>,
 }
 
 impl CodingAssistant {
@@ -138,15 +147,43 @@ impl CodingAssistant {
     }
 
     /// Resolve the effective `ModelConfig`, applying CLI overrides.
-    fn resolve_model_config(&self) -> ModelConfig {
-        let mut config = ModelConfig::default();
+    fn resolve_model_config(
+        &self,
+        settings: &HashMap<String, ModelDefinition>,
+    ) -> anyhow::Result<ModelConfig> {
+        let mut config = if let Some(ref model_name) = self.model {
+            // Validate model name format
+            if let Err(e) = ModelDefinition::validate_name(model_name) {
+                anyhow::bail!(
+                    "Invalid model name '{model_name}': {e}. Model names must contain only lowercase letters, numbers, and hyphens."
+                );
+            }
+
+            // Look up the model in settings
+            if let Some(def) = settings.get(model_name) {
+                def.to_model_config()
+            } else {
+                let available: Vec<_> = settings.keys().cloned().collect();
+                let available_str = if available.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {}", available.join(", "))
+                };
+                anyhow::bail!(
+                    "Unknown model '{model_name}'{available_str}.- Use a model name from settings.toml, or omit --model to use the default."
+                );
+            }
+        } else {
+            // Use default config (current behavior)
+            ModelConfig::default()
+        };
 
         // Apply CLI overrides
         if let Some(max_tokens) = self.max_tokens {
             config.max_output_tokens = Some(max_tokens);
         }
 
-        config
+        Ok(config)
     }
 
     fn build_client_and_session(
@@ -154,9 +191,10 @@ impl CodingAssistant {
         data_dir: &DataDir,
         current_dir: std::path::PathBuf,
         agents_files: &[AgentsFile],
+        settings: &HashMap<String, ModelDefinition>,
     ) -> anyhow::Result<(Agent, Session)> {
         let system_prompt = build_system_prompt(&current_dir, agents_files);
-        let model_config = self.resolve_model_config();
+        let model_config = self.resolve_model_config(settings)?;
         let resolved = ResolvedModelConfig::resolve(model_config)?;
 
         if self.continue_session {
@@ -267,10 +305,13 @@ impl CmdRunner for CodingAssistant {
         let current_dir = std::env::current_dir()
             .map_err(|e| anyhow::anyhow!("Failed to get current directory: {e}"))?;
 
+        // Load settings from TOML files
+        let settings = SettingsLoader::load(Some(&current_dir), &data_dir.get_cache_dir())?;
+
         let agents_files = data_dir.read_agents_files(&current_dir);
 
         let (mut client, mut session) =
-            self.build_client_and_session(data_dir, current_dir, &agents_files)?;
+            self.build_client_and_session(data_dir, current_dir, &agents_files, &settings)?;
 
         if self.output_format == OutputFormat::StreamJson {
             client = client.with_streaming_json(|json| {
@@ -348,6 +389,7 @@ async fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::model::ApiType;
 
     #[test]
     fn test_cli_parsing_positional_prompt() {
@@ -365,6 +407,89 @@ mod tests {
     fn test_cli_parsing_no_prompt() {
         let args = CodingAssistant::parse_from(["acai"]);
         assert_eq!(args.prompt, None);
+    }
+
+    #[test]
+    fn test_cli_parsing_model_flag() {
+        let args = CodingAssistant::parse_from(["acai", "--model", "claude", "test prompt"]);
+        assert_eq!(args.model, Some("claude".to_string()));
+        assert_eq!(args.prompt, Some("test prompt".to_string()));
+    }
+
+    #[test]
+    fn test_cli_parsing_model_flag_without_prompt() {
+        let args = CodingAssistant::parse_from(["acai", "--model", "deepseek"]);
+        assert_eq!(args.model, Some("deepseek".to_string()));
+        assert_eq!(args.prompt, None);
+    }
+
+    #[test]
+    fn test_cli_parsing_no_model_flag() {
+        let args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        assert_eq!(args.model, None);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_resolve_model_config_default() {
+        let args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        let settings = HashMap::new();
+        let config = args.resolve_model_config(&settings).unwrap();
+        assert_eq!(config.model, "glm-5");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_resolve_model_config_unknown_model() {
+        let mut args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        args.model = Some("nonexistent".to_string());
+
+        let settings = HashMap::new();
+        let result = args.resolve_model_config(&settings);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Unknown model 'nonexistent'"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_resolve_model_config_invalid_name_format() {
+        let mut args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        args.model = Some("Invalid Name!".to_string());
+
+        let settings = HashMap::new();
+        let result = args.resolve_model_config(&settings);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid model name 'Invalid Name!'"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_resolve_model_config_from_settings() {
+        let args = CodingAssistant::parse_from(["acai", "--model", "claude", "test"]);
+
+        let mut settings = HashMap::new();
+        settings.insert(
+            "claude".to_string(),
+            ModelDefinition {
+                name: "claude".to_string(),
+                model: "anthropic/claude-3-sonnet".to_string(),
+                base_url: "https://openrouter.ai/api/v1/".to_string(),
+                api_key_env: "OPENROUTER_API_KEY".to_string(),
+                api_type: ApiType::Responses,
+                temperature: Some(0.7),
+                top_p: Some(0.9),
+                max_output_tokens: Some(8000),
+                providers: vec![],
+            },
+        );
+
+        let config = args.resolve_model_config(&settings).unwrap();
+        assert_eq!(config.model, "anthropic/claude-3-sonnet");
+        assert_eq!(config.api_type, ApiType::Responses);
+        assert_eq!(config.temperature, Some(0.7));
+        assert_eq!(config.top_p, Some(0.9));
     }
 
     #[test]

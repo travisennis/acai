@@ -1,19 +1,19 @@
 # acai
 
-Acai is an AI-powered coding assistant that integrates with your development workflow. It provides intelligent code suggestions and documentation generation to enhance your coding experience.
+acai is a minimal coding harness for headless usage in the terminal.
 
 ## Features
 
 - Send instructions to AI for code generation or documentation
 - Supports multiple AI providers via configurable API endpoints
-- Default model: GLM-5 via OpenCode Zen
+- Default model: GLM-5 via OpenCode
 - OS-level filesystem sandbox for Bash tool commands (macOS sandbox-exec, Linux Landlock)
 - Conversation session management with continue, resume, and fork capabilities
 - Git worktree integration for isolated development environments
 
 ## Installation
 
-To install Acai, you'll need Rust and Cargo installed on your system. Then, follow these steps:
+To install acai, you'll need Rust and Cargo installed on your system. Then, follow these steps:
 
 1. Clone the repository:
    ```bash
@@ -63,7 +63,7 @@ acai --max-tokens 4000 "Your prompt here"
 
 ## Configuration
 
-Acai requires an API key for the AI provider. Set your API key as an environment variable:
+acai requires an API key for the AI provider. Set your API key as an environment variable:
 
 - `OPENCODE_ZEN_API_TOKEN`: Your OpenCode Zen API key (default)
 
@@ -71,16 +71,60 @@ Or configure a different provider by setting the appropriate environment variabl
 
 ### Model Configuration
 
-Model settings (model name, temperature, top_p, API type, etc.) are configured via the `ModelConfig` struct. Only `--max-tokens` can be overridden via CLI flags. Default configuration:
+Model settings can be configured via:
+
+1. **Settings TOML**: Define named models in `settings.toml` files
+2. **Environment variables**: Set your API key (e.g., `OPENCODE_ZEN_API_TOKEN`)
+3. **CLI flags**: `--model` to select a named model, `--max-tokens` to override
+
+#### Settings TOML
+
+Create a `settings.toml` file to define custom model configurations:
+
+- **Project-level**: `.acai/settings.toml` in your project directory
+- **Global**: `~/.cache/acai/settings.toml` for system-wide settings
+
+```toml
+# Example settings.toml
+[[models]]
+name = "claude"                    # Use with --model claude
+model = "anthropic/claude-3-sonnet"
+base_url = "https://openrouter.ai/api/v1/"
+api_key_env = "OPENROUTER_API_KEY"
+api_type = "responses"
+temperature = 0.7
+
+[[models]]
+name = "deepseek"
+model = "deepseek/deepseek-chat-v3"
+base_url = "https://openrouter.ai/api/v1/"
+api_key_env = "OPENROUTER_API_KEY"
+top_p = 0.9
+```
+
+```bash
+# Use a named model from settings.toml
+acai --model claude "Your prompt here"
+
+# Without --model, uses default (GLM-5 via OpenCode)
+acai "Your prompt here"
+```
+
+See `.acai/settings.toml.example` for a complete example.
+
+#### Default Configuration
+
+When not using settings.toml, acai uses these defaults:
 
 - **Model**: `glm-5`
 - **API Endpoint**: `https://opencode.ai/zen/go/v1`
+- **API Key Env**: `OPENCODE_ZEN_API_TOKEN`
 - **Temperature**: 0.8
 - **Max Output Tokens**: 8000
 
 ### Session Management
 
-Acai automatically saves conversation sessions so you can continue conversations across separate invocations. Sessions are tracked per directory.
+acai automatically saves conversation sessions so you can continue conversations across separate invocations. Sessions are tracked per directory.
 
 ```bash
 # Start a conversation
@@ -133,6 +177,7 @@ For more details, see [Filesystem Sandbox](docs/design-docs/sandbox.md).
 - `[PROMPT]` - Your instruction prompt as a positional argument (use `-` to read from stdin)
 - `--max-tokens` - Set maximum tokens in response
 - `--output-format` - Output format: `text` (default) or `stream-json`
+- `--model <NAME>` - Select a named model from settings.toml
 - `--continue` - Continue the most recent session for the current directory
 - `--resume <UUID>` - Resume a specific session by its UUID
 - `--fork [UUID]` - Fork a session (copy history into new session), optionally specify UUID
@@ -148,7 +193,7 @@ acai --max-tokens 4000 "Explain what this code does"
 
 ## Architecture
 
-Acai follows a layered architecture with strict dependency flow:
+acai follows a layered architecture with strict dependency flow:
 
 1. **CLI Layer**: Argument parsing and user interaction
 2. **Clients Layer**: AI service integration, tool execution, and conversation orchestration
@@ -158,7 +203,7 @@ For detailed architecture documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Contributing
 
-Contributions to Acai are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, build commands, code style guidelines, commit conventions, and the pull request process.
+Contributions to acai are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, build commands, code style guidelines, commit conventions, and the pull request process.
 
 ## Testing
 
@@ -170,11 +215,11 @@ cargo test
 
 ## License
 
-Acai is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+acai is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgements
 
-Acai uses several open-source libraries and AI models. We're grateful to the developers and organizations behind these technologies:
+acai uses several open-source libraries and AI models. We're grateful to the developers and organizations behind these technologies:
 
 - Rust and the Rust community for providing excellent tools and libraries that make projects like this possible.
 - OpenCode and OpenRouter for AI model access.

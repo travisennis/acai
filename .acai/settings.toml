@@ -1,0 +1,36 @@
+# Example acai settings
+# Copy to .acai/settings.toml and customize
+# Alternatively, place in ~/.cache/acai/settings.toml for global settings
+# Project settings override global settings for models with the same name
+
+[[models]]
+# Required: unique name for this model (lowercase, alphanumeric, hyphens only)
+name = "glm"
+# Required: model identifier
+model = "glm-5"
+# Optional: defaults to OpenCode default
+# base_url = "https://opencode.ai/zen/go/v1/"
+# Optional: defaults to OpenCode default
+# api_key_env = "OPENCODE_ZEN_API_TOKEN"
+# Optional: "chat_completions" or "responses"
+# api_type = "chat_completions"
+# Optional: sampling temperature
+# temperature = 0.8
+# Optional: maximum output tokens
+# max_output_tokens = 8000
+# Optional: provider routing hints
+# providers = []
+
+[[models]]
+name = "kimi"
+model = "kimi-k2.5"
+
+[[models]]
+name = "nemotron"
+model = "nvidia/nemotron-3-super-120b-a12b:free"
+base_url = "https://openrouter.ai/api/v1/"
+api_key_env = "OPENROUTER_API_KEY"
+api_type = "responses"
+# temperature = 0.7
+# max_output_tokens = 8000
+# providers = []

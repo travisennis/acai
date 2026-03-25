@@ -13,6 +13,7 @@ This directory contains design documents and architectural decisions for the aca
 | [prompts.md](prompts.md) | Prompt engineering and templating |
 | [sandbox.md](sandbox.md) | Sandbox environment design |
 | [session-management.md](session-management.md) | Session lifecycle and state management |
+| [settings.md](settings.md) | Settings TOML configuration |
 | [streaming-json-output.md](streaming-json-output.md) | Streaming JSON output format |
 | [tools.md](tools.md) | Tool system architecture |
 

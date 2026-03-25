@@ -53,12 +53,59 @@ pub struct CodingAssistant {
     #[arg(short, long, num_args = 0..=1, default_missing_value = "", value_name = "NAME")]
     pub worktree: Option<String>,
 
+    /// Select a model by name from settings.toml
+    #[arg(long)]
+    pub model: Option<String>,
 }
 ```
 
 ### Model Configuration
 
-Model-related settings (`model`, `temperature`, `top_p`, `api_type`, etc.) are configured via `ModelConfig` in `config::model`. Only `--max-tokens` remains as a CLI override. Provider defaults are sourced from `config::defaults`.
+Model-related settings (`model`, `temperature`, `top_p`, `api_type`, etc.) are configured via:
+
+1. **Settings TOML** (`settings.toml`): Named models can be defined in settings files (see below)
+2. **`ModelConfig` in `config::model`**: Default values for the built-in model
+3. **CLI flags**: `--model` to select a named model, `--max-tokens` for token override
+
+#### Settings TOML
+
+acai supports loading model configurations from `settings.toml` files:
+
+- **Project-level**: `.acai/settings.toml` in the current working directory
+- **Global**: `~/.cache/acai/settings.toml` for system-wide settings
+
+Settings are merged with project settings overriding global settings for models with the same name. This allows you to define base configurations globally and override specific models per-project.
+
+```toml
+[[models]]
+name = "zen"                    # Required: unique name (lowercase alphanumeric + hyphens)
+model = "glm-5"                 # Required: model identifier
+base_url = "https://opencode.ai/zen/go/v1/"  # Optional
+api_key_env = "OPENCODE_ZEN_API_TOKEN"        # Optional
+api_type = "chat_completions"   # Optional: chat_completions or responses
+temperature = 0.8               # Optional
+top_p = 0.9                    # Optional: nucleus sampling (alternative to temperature)
+max_output_tokens = 8000      # Optional
+providers = []                 # Optional
+
+[[models]]
+name = "claude"
+model = "anthropic/claude-3-sonnet"
+base_url = "https://openrouter.ai/api/v1/"
+api_key_env = "OPENROUTER_API_KEY"
+api_type = "responses"
+temperature = 0.7
+top_p = 0.9
+```
+
+Use `--model <name>` to select a named model from settings:
+
+```bash
+# Use the "claude" model from settings.toml
+acai --model claude "Your prompt here"
+```
+
+If `--model` is not provided, acai uses the default `ModelConfig` (currently GLM-5 via OpenCode).
 
 The struct implements the `CmdRunner` trait for execution:
 
