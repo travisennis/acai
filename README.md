@@ -71,7 +71,7 @@ Or configure a different provider by setting the appropriate environment variabl
 
 ### Model Configuration
 
-Model settings (model name, temperature, top_p, API type, etc.) are configured via the `ModelConfig` struct. Only `--max-tokens` and `--providers` can be overridden via CLI flags. Default configuration:
+Model settings (model name, temperature, top_p, API type, etc.) are configured via the `ModelConfig` struct. Only `--max-tokens` can be overridden via CLI flags. Default configuration:
 
 - **Model**: `glm-5`
 - **API Endpoint**: `https://opencode.ai/zen/go/v1`
@@ -132,7 +132,6 @@ For more details, see [Filesystem Sandbox](docs/design-docs/sandbox.md).
 
 - `[PROMPT]` - Your instruction prompt as a positional argument (use `-` to read from stdin)
 - `--max-tokens` - Set maximum tokens in response
-- `--providers` - Restrict which providers can serve requests (comma-separated or multiple flags, use "all" to allow any)
 - `--output-format` - Output format: `text` (default) or `stream-json`
 - `--continue` - Continue the most recent session for the current directory
 - `--resume <UUID>` - Resume a specific session by its UUID
