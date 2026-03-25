@@ -10,10 +10,6 @@
 
 - **[docs/design-docs/index.md](docs/design-docs/index.md)** — Design document index (technical proposals & architecture decisions)
 
-### Spec
-
-- **[docs/spec/index.md](docs/specs/index.md)** — Production specfiction index
-
 ### References
 
 - **[docs/references/](docs/references/)** — External guides, configuration docs, reference articles
@@ -48,21 +44,6 @@ just clippy-strict
 just update-dependencies
 ```
 
-## Development Setup
-
-Required tools for contributing:
-
-```bash
-# Install prek for git hooks
-cargo install prek
-
-# Install cocogitto for conventional commit validation
-cargo install --locked cocogitto
-
-# Install git hooks
-prek install --hook-type pre-commit --hook-type commit-msg
-```
-
 ## Running the App
 
 ```bash
@@ -87,7 +68,7 @@ cargo run --release -- "Your prompt here"
 
 **Before starting a task:** Check the "Repository Knowledge Map" above, find and read relevant docs before starting work.
 
-**After completing a task:** Run the `managing-docs` skill to validate and update all project documentation (ARCHITECTURE.md, README, design-docs index, tech-debt, specs).
+**After completing a task:** Run the `managing-docs` skill to validate and update all project documentation (ARCHITECTURE.md, README, design-docs index).
 
 ### Task Completion Criteria
 
@@ -95,13 +76,7 @@ A development task is considered "complete" only when ALL of the following are m
 
 1. ✅ CI checks all pass
 2. ✅ Affected docs updated
-3. ✅ New/modified code is traceable to a spec
-4. ✅ Self-review results summary shown to the user
-
-## Rules
-
-- Run all checks (build, formatting, linting, and tests) at the completion of coding tasks. Verify changes compile and pass tests before finishing.
-- If compilation fails, analyze the error output and fix syntax issues
+3. ✅ Results summary shown to the user
 
 ## Code Style Guidelines
 
@@ -111,47 +86,9 @@ A development task is considered "complete" only when ALL of the following are m
 - **Error Handling**: Use `thiserror` for custom errors, `anyhow` for application errors
 - **Async**: Prefer `async fn` with Tokio; use `?` for error propagation
 
-## Git Workflow
-
-- **Never commit directly to the main branch** — verify current branch with `git branch` before committing
-- Merge via feature branch + PR. Naming: `feat/xxx`, `fix/xxx`, `refactor/xxx`, `test/xxx`
-
-## Commit Conventions
-
-This project uses [Conventional Commits](https://www.conventionalcommits.org/). Commit messages are validated by a `commit-msg` hook.
-
-**Format:** `<type>[(scope)]: <description>`
-
-**Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
-
-**Recommended Scopes** (aligned with architecture):
-
-| Scope | Description |
-|-------|-------------|
-| `cli` | Command-line interface and argument parsing |
-| `agent` | Agent orchestration, conversation loop, tool execution |
-| `responses` | Responses API backend |
-| `chat` | Chat Completions API backend |
-| `tools` | Tool definitions (Bash, Read, Edit, Write, etc.) |
-| `sandbox` | Sandbox implementations (Seatbelt, Landlock) |
-| `config` | Configuration, sessions, data directory |
-| `session` | Session persistence and management |
-| `model` | Model configuration and API types |
-| `prompts` | System prompt construction, AGENTS.md integration |
-| `logger` | Logging configuration |
-| `docs` | Documentation changes |
-| `tests` | Test files and test infrastructure |
-
-**Examples:**
-```
-feat(cli): add --verbose flag
-fix(agent): handle timeout correctly
-docs: update ARCHITECTURE.md with new module
-refactor(tools): extract path validation into shared function
-```
-
 ## Additional Notes
 
 - Config stored in `~/.cache/acai/` (see `src/config/data_dir.rs`)
 - Logs at `~/.cache/acai/acai.log`
 - API key required via `OPENROUTER_API_KEY` env var
+- For commit conventions, git workflow, and PR process, see [CONTRIBUTING.md](CONTRIBUTING.md)

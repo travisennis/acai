@@ -159,41 +159,7 @@ For detailed architecture documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Contributing
 
-Contributions to Acai are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a new branch for your feature or bug fix
-3. Make your changes and commit them with clear, descriptive messages
-4. Write tests for your new functionality
-5. Submit a pull request
-
-### Development Setup
-
-Install the required development tools:
-
-```bash
-# Install prek for git hooks (if not already installed)
-cargo install prek
-
-# Install cocogitto for conventional commit validation
-cargo install --locked cocogitto
-
-# Install the git hooks
-prek install --hook-type pre-commit --hook-type commit-msg
-```
-
-Git hooks will automatically run:
-- **pre-commit**: `cargo fmt -- --check` (formatting verification)
-- **pre-commit**: `cargo clippy --all-targets -- -D warnings` (linting)
-- **commit-msg**: `cog verify --file` (conventional commit validation)
-
-See [AGENTS.md](AGENTS.md) for commit conventions and recommended scopes.
-
-Run tests before submitting:
-
-```bash
-cargo test
-```
+Contributions to Acai are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, build commands, code style guidelines, commit conventions, and the pull request process.
 
 ## Testing
 
@@ -212,5 +178,5 @@ Acai is licensed under the MIT License. See the [LICENSE](LICENSE) file for deta
 Acai uses several open-source libraries and AI models. We're grateful to the developers and organizations behind these technologies:
 
 - Rust and the Rust community for providing excellent tools and libraries that make projects like this possible.
-- OpenCode Zen for AI model access.
+- OpenCode and OpenRouter for AI model access.
 - The developers of crates used in this project (tokio, clap, reqwest, and others). Please see the `Cargo.toml` file for a full list of dependencies.
