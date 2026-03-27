@@ -92,3 +92,6 @@ A development task is considered "complete" only when ALL of the following are m
 - Logs at `~/.cache/acai/acai.log`
 - API key required via `OPENROUTER_API_KEY` env var
 - For commit conventions, git workflow, and PR process, see [CONTRIBUTING.md](CONTRIBUTING.md)
+- Please make note of mistakes you make in MISTAKES.md.
+- If you find you wish you had more context or tools, write that down in DESIRES.md.
+- If you learn anything about your environment write that down in LEARNINGS.md.
