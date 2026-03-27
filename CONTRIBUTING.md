@@ -71,32 +71,6 @@ cargo run --release -- "Your prompt here"
 ./target/release/acai --help
 ```
 
-## Development Workflow
-
-### Document-Driven Principle (Mandatory)
-
-> ⛔ This is not a suggestion — it is a hard requirement. Skipping documentation steps = task failure.
-
-**Before starting a task:** Check the "Repository Knowledge Map" in [AGENTS.md](AGENTS.md), find and read relevant docs before starting work.
-
-**After completing a task:** Run the `managing-docs` skill to validate and update all project documentation (ARCHITECTURE.md, README, design-docs index).
-
-### Task Completion Criteria
-
-A development task is considered "complete" only when ALL of the following are met:
-
-1. ✅ CI checks all pass
-2. ✅ Affected docs updated
-3. ✅ Results summary shown to the user
-
-## Code Style Guidelines
-
-- **Imports**: Use absolute paths within crate (`crate::module::Item`)
-- **Types**: Use PascalCase for types, snake_case for functions/variables
-- **Derives**: Always derive `Debug`, `Clone` for structs; use `Serialize`/`Deserialize` for data models
-- **Error Handling**: Use `thiserror` for custom errors, `anyhow` for application errors
-- **Async**: Prefer `async fn` with Tokio; use `?` for error propagation
-
 ## Git Workflow
 
 - **Never commit directly to the master branch** — verify current branch with `git branch` before committing
@@ -145,9 +119,3 @@ refactor(tools): extract path validation into shared function
 5. Ensure all CI checks pass (build, formatting, linting, tests)
 6. Update affected documentation if needed
 7. Submit a pull request
-
-## Additional Notes
-
-- Config stored in `~/.cache/acai/` (see `src/config/data_dir.rs`)
-- Logs at `~/.cache/acai/acai.log`
-- API key required via `OPENROUTER_API_KEY` env var
