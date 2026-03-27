@@ -373,22 +373,22 @@ pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, S
         output_str.into_owned()
     };
 
-    let result = truncate_output(&result);
-
-    // Append metadata footer
-    let result = append_metadata(&result, exit_code, elapsed_ms);
+    let result = truncate_output(&result, exit_code, elapsed_ms);
 
     Ok(super::ToolResult { output: result })
 }
 
 /// If `output` exceeds [`BASH_OUTPUT_MAX_BYTES`], write the full text to a
 /// temporary file and return a summary pointing to that file. Otherwise return
-/// the output unchanged.
-pub(super) fn truncate_output(output: &str) -> String {
+/// the output with the metadata footer appended. The temp file receives only
+/// the raw command output (no footer); the footer is included in the inline
+/// summary so it is always visible in the tool response.
+pub(super) fn truncate_output(output: &str, exit_code: i32, elapsed_ms: u128) -> String {
     if output.len() <= BASH_OUTPUT_MAX_BYTES {
-        return output.to_string();
+        return append_metadata(output, exit_code, elapsed_ms);
     }
 
+    let footer = format_metadata_footer(exit_code, elapsed_ms);
     let total_bytes = output.len();
     let total_lines = output.lines().count();
 
@@ -413,7 +413,7 @@ pub(super) fn truncate_output(output: &str) -> String {
              The command was too verbose; reformulate with less output \
              (e.g. pipe through `head`, `tail`, or `grep`).]\n\n\
              --- first ~{half} bytes ---\n{head}\n\n\
-             --- last ~{half} bytes ---\n{tail}",
+             --- last ~{half} bytes ---\n{tail}\n{footer}",
             head = &output[..head_end],
             tail = &output[tail_start..],
         );
@@ -428,7 +428,7 @@ pub(super) fn truncate_output(output: &str) -> String {
          You can search it with `grep` or view portions with `head`/`tail`.\n\
          Consider reformulating the command to produce less output.\n\n\
          --- first ~{preview} bytes ---\n{head}\n\n\
-         --- last ~{preview} bytes ---\n{tail}",
+         --- last ~{preview} bytes ---\n{tail}\n{footer}",
         path = tmp_path.display(),
         head = &output[..head_end],
         tail = &output[tail_start..],
@@ -443,32 +443,57 @@ mod tests {
     #[test]
     fn truncate_output_passes_through_small_output() {
         let small = "hello world";
-        assert_eq!(truncate_output(small), small);
+        let result = truncate_output(small, 0, 100);
+        assert!(result.contains(small));
+        assert!(result.contains("[exit:0 | 100ms]"));
     }
 
     #[test]
     fn truncate_output_passes_through_at_limit() {
         let exact = "a".repeat(BASH_OUTPUT_MAX_BYTES);
-        assert_eq!(truncate_output(&exact), exact);
+        let result = truncate_output(&exact, 0, 50);
+        assert!(result.contains(&exact));
+        assert!(result.contains("[exit:0 | 50ms]"));
     }
 
     #[test]
     fn truncate_output_truncates_large_output() {
         let large = "x".repeat(BASH_OUTPUT_MAX_BYTES + 1000);
-        let result = truncate_output(&large);
+        let result = truncate_output(&large, 0, 500);
         assert!(result.len() < large.len());
         assert!(result.contains("[Output too long"));
         assert!(result.contains("Full output saved to:"));
+        assert!(result.contains("[exit:0 | 500ms]"));
     }
 
     #[test]
     fn truncate_output_handles_multibyte_chars() {
         // Create output with multi-byte UTF-8 characters that exceeds the limit
         let large = "é".repeat(BASH_OUTPUT_MAX_BYTES); // each 'é' is 2 bytes
-        let result = truncate_output(&large);
+        let result = truncate_output(&large, 1, 2000);
         assert!(result.contains("[Output too long"));
+        assert!(result.contains("[exit:1 | 2.0s]"));
         // Verify the result is valid UTF-8 (would panic if not)
         let _ = result.as_bytes();
+    }
+
+    #[test]
+    fn truncate_output_temp_file_has_no_footer() {
+        let large = "x".repeat(BASH_OUTPUT_MAX_BYTES + 1000);
+        let result = truncate_output(&large, 0, 100);
+        // Extract the temp file path from the result
+        let path_line = result
+            .lines()
+            .find(|l| l.starts_with("Full output saved to:"))
+            .expect("should contain temp file path");
+        let path = path_line
+            .trim_start_matches("Full output saved to: ")
+            .trim();
+        let contents = std::fs::read_to_string(path).expect("should read temp file");
+        assert!(
+            !contents.contains("[exit:"),
+            "temp file should not contain metadata footer"
+        );
     }
 
     // ===========================================================================

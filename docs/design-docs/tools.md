@@ -116,10 +116,42 @@ This allows creating new files in new subdirectories while maintaining security.
 - Binary output detection and handling
 
 **Output Handling**:
-- Small output (< 50KB): Returned inline
-- Large output (> 50KB): Written to temp file, preview returned
+- Small output (≤ 50KB): Returned inline with metadata footer
+- Large output (> 50KB): Truncated with head/tail preview (see below)
 - Binary output: Written to temp file with helpful message and MIME type detection
 - Timeout: Command killed, timeout error returned
+- Read cap: Up to 100KB (2× the inline limit) is read from the process; output beyond this is discarded and marked with `[... output truncated at 100000 bytes ...]`
+
+**Truncated Output**:
+
+When command output exceeds the 50KB inline limit, the full output is saved to a temporary file and a head+tail preview is returned. The preview shows the first ~12.5KB and last ~12.5KB of the output:
+
+```
+[Output too long — 75000 bytes, 1500 lines.]
+Full output saved to: /tmp/acai/bash_output_<uuid>.txt
+You can search it with `grep` or view portions with `head`/`tail`.
+Consider reformulating the command to produce less output.
+
+--- first ~12500 bytes ---
+<first ~12.5KB of output>
+
+--- last ~12500 bytes ---
+<last ~12.5KB of output>
+[exit:0 | 1.2s]
+```
+
+If the temp file cannot be written (e.g., disk full), a fallback inline truncation is used with the first ~25KB and last ~25KB:
+
+```
+[Output too long — 75000 bytes, 1500 lines. The command was too verbose; reformulate with less output (e.g. pipe through `head`, `tail`, or `grep`).]
+
+--- first ~25000 bytes ---
+<first ~25KB of output>
+
+--- last ~25000 bytes ---
+<last ~25KB of output>
+[exit:0 | 1.2s]
+```
 
 **Metadata Footer**:
 
