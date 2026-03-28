@@ -18,6 +18,8 @@ pub(super) struct ChatRequest<'a> {
     pub(super) tools: Option<Vec<ChatTool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) tool_choice: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) reasoning_effort: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -86,10 +88,16 @@ pub(super) struct ChatResponseMessage {
     pub(super) tool_calls: Option<Vec<ChatToolCall>>,
 }
 
+#[derive(Deserialize, Debug, Default)]
+pub(super) struct CompletionTokensDetails {
+    pub(super) reasoning_tokens: Option<u64>,
+}
+
 #[derive(Deserialize, Debug)]
 #[allow(clippy::struct_field_names)]
 pub(super) struct ChatUsage {
     pub(super) prompt_tokens: Option<u64>,
     pub(super) completion_tokens: Option<u64>,
     pub(super) total_tokens: Option<u64>,
+    pub(super) completion_tokens_details: Option<CompletionTokensDetails>,
 }

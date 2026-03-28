@@ -208,6 +208,16 @@ pub(super) struct ProviderConfig {
     pub(super) only: Vec<String>,
 }
 
+#[derive(Clone, Serialize)]
+pub(super) struct ReasoningConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) max_tokens: Option<u32>,
+}
+
 #[derive(Serialize)]
 pub(super) struct Request<'a> {
     pub(super) model: &'a str,
@@ -219,6 +229,8 @@ pub(super) struct Request<'a> {
     pub(super) tool_choice: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) provider: Option<ProviderConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) reasoning: Option<ReasoningConfig>,
 }
 
 #[derive(Deserialize, Debug)]

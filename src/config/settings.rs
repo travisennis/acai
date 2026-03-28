@@ -39,6 +39,18 @@ pub struct ModelDefinition {
     /// Maximum number of output tokens
     #[serde(default)]
     pub max_output_tokens: Option<u32>,
+    /// Reasoning effort level
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
+    /// Reasoning summary mode (Responses API only)
+    #[serde(default)]
+    pub reasoning_summary: Option<String>,
+    /// Maximum reasoning tokens budget
+    #[serde(default)]
+    pub reasoning_max_tokens: Option<u32>,
+    /// Whether to exclude reasoning output from display
+    #[serde(default)]
+    pub reasoning_exclude: Option<bool>,
     /// Provider routing hints
     #[serde(default = "default_providers")]
     pub providers: Vec<String>,
@@ -90,6 +102,10 @@ impl ModelDefinition {
             temperature: self.temperature,
             top_p: self.top_p,
             max_output_tokens: self.max_output_tokens,
+            reasoning_effort: self.reasoning_effort.clone(),
+            reasoning_summary: self.reasoning_summary.clone(),
+            reasoning_max_tokens: self.reasoning_max_tokens,
+            reasoning_exclude: self.reasoning_exclude,
             providers: self.providers.clone(),
         }
     }
@@ -338,6 +354,10 @@ model = "test/model"
         assert_eq!(def.api_key_env, DEFAULT_API_KEY_ENV);
         assert_eq!(def.api_type, ApiType::ChatCompletions);
         assert!(def.providers.is_empty());
+        assert_eq!(def.reasoning_effort, None);
+        assert_eq!(def.reasoning_summary, None);
+        assert_eq!(def.reasoning_max_tokens, None);
+        assert_eq!(def.reasoning_exclude, None);
     }
 
     #[test]
@@ -369,6 +389,10 @@ model = "test/model"
             temperature: Some(0.5),
             top_p: Some(0.9),
             max_output_tokens: Some(4000),
+            reasoning_effort: Some("high".to_string()),
+            reasoning_summary: Some("concise".to_string()),
+            reasoning_max_tokens: Some(8000),
+            reasoning_exclude: Some(false),
             providers: vec!["Provider1".to_string()],
         };
 
@@ -381,6 +405,10 @@ model = "test/model"
         assert_eq!(config.temperature, Some(0.5));
         assert_eq!(config.top_p, Some(0.9));
         assert_eq!(config.max_output_tokens, Some(4000));
+        assert_eq!(config.reasoning_effort, Some("high".to_string()));
+        assert_eq!(config.reasoning_summary, Some("concise".to_string()));
+        assert_eq!(config.reasoning_max_tokens, Some(8000));
+        assert_eq!(config.reasoning_exclude, Some(false));
         assert_eq!(config.providers, vec!["Provider1"]);
     }
 }

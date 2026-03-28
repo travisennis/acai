@@ -7,7 +7,7 @@ use crate::clients::agent::TurnResult;
 use crate::clients::tools::Tool;
 use crate::clients::types::{
     ApiResponse, ApiUsage, ConversationItem, InputTokensDetails, OutputTokensDetails,
-    ProviderConfig, Request, Usage,
+    ProviderConfig, ReasoningConfig, Request, Usage,
 };
 
 // =============================================================================
@@ -35,6 +35,15 @@ pub(super) async fn send_request(
         })
     };
 
+    let reasoning = (config.config.reasoning_effort.is_some()
+        || config.config.reasoning_summary.is_some()
+        || config.config.reasoning_max_tokens.is_some())
+    .then(|| ReasoningConfig {
+        effort: config.config.reasoning_effort.clone(),
+        summary: config.config.reasoning_summary.clone(),
+        max_tokens: config.config.reasoning_max_tokens,
+    });
+
     let prompt = Request {
         model: &config.config.model,
         input: build_input(history),
@@ -44,6 +53,7 @@ pub(super) async fn send_request(
         tools: Some(tools.to_vec()),
         tool_choice: Some("auto".to_string()),
         provider: provider_config,
+        reasoning,
     };
 
     let url = format!("{}/responses", config.config.base_url.trim_end_matches('/'));

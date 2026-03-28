@@ -44,6 +44,7 @@ pub(super) async fn send_request(
         } else {
             Some("auto".to_string())
         },
+        reasoning_effort: config.config.reasoning_effort.clone(),
     };
 
     let url = format!(
@@ -83,7 +84,11 @@ pub(super) async fn parse_response(response: reqwest::Response) -> anyhow::Resul
         total_tokens: u.total_tokens.unwrap_or(0) as u32,
         input_tokens_details: InputTokensDetails { cached_tokens: 0 },
         output_tokens_details: OutputTokensDetails {
-            reasoning_tokens: 0,
+            reasoning_tokens: u
+                .completion_tokens_details
+                .as_ref()
+                .and_then(|d| d.reasoning_tokens)
+                .unwrap_or(0) as u32,
         },
     });
 
@@ -445,6 +450,7 @@ mod tests {
                 prompt_tokens: Some(100),
                 completion_tokens: Some(50),
                 total_tokens: Some(150),
+                completion_tokens_details: None,
             }),
         };
         // parse_choices doesn't handle usage — the caller does

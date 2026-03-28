@@ -77,6 +77,14 @@ struct CodingAssistant {
     /// Show tool call progress on stderr (only applies to text output format)
     #[arg(long)]
     pub verbose: bool,
+
+    /// Override reasoning effort level (none, low, medium, high, xhigh)
+    #[arg(long, value_name = "EFFORT")]
+    pub reasoning_effort: Option<String>,
+
+    /// Override reasoning token budget
+    #[arg(long, value_name = "TOKENS")]
+    pub reasoning_budget: Option<u32>,
 }
 
 impl CodingAssistant {
@@ -186,6 +194,12 @@ impl CodingAssistant {
         // Apply CLI overrides
         if let Some(max_tokens) = self.max_tokens {
             config.max_output_tokens = Some(max_tokens);
+        }
+        if let Some(ref effort) = self.reasoning_effort {
+            config.reasoning_effort = Some(effort.clone());
+        }
+        if let Some(budget) = self.reasoning_budget {
+            config.reasoning_max_tokens = Some(budget);
         }
 
         Ok(config)
@@ -576,6 +590,10 @@ mod tests {
                 temperature: Some(0.7),
                 top_p: Some(0.9),
                 max_output_tokens: Some(8000),
+                reasoning_effort: None,
+                reasoning_summary: None,
+                reasoning_max_tokens: None,
+                reasoning_exclude: None,
                 providers: vec![],
             },
         );
