@@ -6,10 +6,10 @@ use tokio::time::sleep;
 use crate::config::model::{ApiType, ResolvedModelConfig};
 use crate::models::{Message, Role};
 
-use super::chat_completions;
-use super::responses;
-use super::tools::{Tool, bash_tool, edit_tool, execute_tool, read_tool, write_tool};
-use super::types::{ConversationItem, Usage};
+use crate::clients::chat_completions;
+use crate::clients::responses;
+use crate::clients::tools::{Tool, bash_tool, edit_tool, execute_tool, read_tool, write_tool};
+use crate::clients::types::{ConversationItem, Usage};
 
 /// Callback type for streaming JSON output
 type StreamingCallback = Box<dyn Fn(&str) + Send + Sync>;
@@ -416,8 +416,8 @@ fn resolve_assistant_message(items: &[ConversationItem]) -> Message {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::super::types::{InputTokensDetails, OutputTokensDetails};
     use super::*;
+    use crate::clients::types::{InputTokensDetails, OutputTokensDetails};
     use crate::config::model::ModelConfig;
 
     fn test_config() -> ResolvedModelConfig {

@@ -5,7 +5,7 @@
 //! The profile uses a deny-default policy: everything is denied unless
 //! explicitly allowed.
 
-use super::{SandboxConfig, SandboxStrategy};
+use crate::clients::tools::sandbox::{SandboxConfig, SandboxStrategy};
 use std::path::Path;
 use std::process::Stdio;
 

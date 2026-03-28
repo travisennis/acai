@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::Role;
+use crate::models::Role;
 
 /// A structure representing a message.
 ///

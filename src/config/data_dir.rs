@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context, anyhow};
 use sha2::{Digest, Sha256};
 
-use super::Session;
+use crate::config::Session;
 
 /// Represents an AGENTS.md file with its path and content.
 #[derive(Debug, Clone)]

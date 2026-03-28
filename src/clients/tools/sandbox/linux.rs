@@ -6,7 +6,7 @@
 //! This implementation uses `CommandExt::pre_exec` to apply Landlock rules
 //! in the child process after `fork()` but before `exec()`.
 
-use super::{SandboxConfig, SandboxStrategy};
+use crate::clients::tools::sandbox::{SandboxConfig, SandboxStrategy};
 
 /// Linux sandbox strategy using Landlock LSM
 #[derive(Debug, Clone, Copy)]

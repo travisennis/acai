@@ -3,9 +3,9 @@ use log::debug;
 use crate::config::model::ResolvedModelConfig;
 use crate::models::Role;
 
-use super::agent::TurnResult;
-use super::tools::Tool;
-use super::types::{
+use crate::clients::agent::TurnResult;
+use crate::clients::tools::Tool;
+use crate::clients::types::{
     ApiResponse, ApiUsage, ConversationItem, InputTokensDetails, OutputTokensDetails,
     ProviderConfig, Request, Usage,
 };
@@ -180,8 +180,8 @@ fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::super::types::{OutputContent, OutputMessage};
     use super::*;
+    use crate::clients::types::{OutputContent, OutputMessage};
 
     #[test]
     fn build_input_converts_history() {

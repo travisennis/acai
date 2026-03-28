@@ -3,12 +3,12 @@ use log::debug;
 use crate::config::model::ResolvedModelConfig;
 use crate::models::Role;
 
-use super::agent::TurnResult;
-use super::chat_types::{
+use crate::clients::agent::TurnResult;
+use crate::clients::chat_types::{
     ChatFunction, ChatFunctionCall, ChatMessage, ChatRequest, ChatResponse, ChatTool, ChatToolCall,
 };
-use super::tools::Tool;
-use super::types::{ConversationItem, InputTokensDetails, OutputTokensDetails, Usage};
+use crate::clients::tools::Tool;
+use crate::clients::types::{ConversationItem, InputTokensDetails, OutputTokensDetails, Usage};
 
 // =============================================================================
 // Chat Completions API Backend
@@ -242,8 +242,8 @@ fn parse_choices(response: &ChatResponse) -> Vec<ConversationItem> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::super::chat_types::{ChatChoice, ChatResponse, ChatResponseMessage, ChatUsage};
     use super::*;
+    use crate::clients::chat_types::{ChatChoice, ChatResponse, ChatResponseMessage, ChatUsage};
 
     #[test]
     fn build_messages_simple_conversation() {

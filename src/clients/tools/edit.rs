@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::path::Path;
 
-use super::validate_path_in_cwd;
+use crate::clients::tools::validate_path_in_cwd;
 
 // =============================================================================
 // Constants
