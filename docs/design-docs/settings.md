@@ -64,6 +64,18 @@ top_p = 0.9
 # Optional: maximum output tokens (no default if omitted)
 max_output_tokens = 8000
 
+# Optional: reasoning effort level (none, low, medium, high, xhigh)
+reasoning_effort = "high"
+
+# Optional: reasoning summary mode (Responses API only)
+reasoning_summary = "concise"
+
+# Optional: maximum reasoning tokens budget
+reasoning_max_tokens = 10000
+
+# Optional: whether to exclude reasoning output from display
+reasoning_exclude = false
+
 # Optional: provider routing hints (defaults to empty array)
 providers = []
 
@@ -99,6 +111,10 @@ All other fields have defaults matching `ModelConfig::default()`:
 | `top_p` | `None` | Nucleus sampling parameter |
 | `max_output_tokens` | `None` | Maximum output tokens |
 | `providers` | `[]` | Provider routing hints |
+| `reasoning_effort` | `None` | Reasoning effort level (none, low, medium, high, xhigh) |
+| `reasoning_summary` | `None` | Reasoning summary mode (Responses API only) |
+| `reasoning_max_tokens` | `None` | Maximum reasoning tokens budget |
+| `reasoning_exclude` | `None` | Whether to exclude reasoning output from display |
 
 ## Model Name Validation
 
@@ -169,6 +185,10 @@ struct ModelDefinition {
     temperature: Option<f32>,  // Optional
     top_p: Option<f32>,         // Optional
     max_output_tokens: Option<u32>,  // Optional
+    reasoning_effort: Option<String>,  // Optional
+    reasoning_summary: Option<String>,  // Optional
+    reasoning_max_tokens: Option<u32>,  // Optional
+    reasoning_exclude: Option<bool>,  // Optional
     providers: Vec<String>,     // Optional, defaults to []
 }
 ```

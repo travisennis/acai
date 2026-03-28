@@ -60,6 +60,14 @@ pub struct CodingAssistant {
     /// Show tool call progress on stderr (only applies to text output format)
     #[arg(long)]
     pub verbose: bool,
+
+    /// Override reasoning effort level (none, low, medium, high, xhigh)
+    #[arg(long, value_name = "EFFORT")]
+    pub reasoning_effort: Option<String>,
+
+    /// Override reasoning token budget
+    #[arg(long, value_name = "TOKENS")]
+    pub reasoning_budget: Option<u32>,
 }
 ```
 
