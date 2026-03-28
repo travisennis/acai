@@ -53,6 +53,7 @@ missing_docs = "warn"
 
 # Catch common mistakes
 rust_2018_idioms = { level = "warn", priority = -1 }
+missing_debug_implementations = "warn"
 
 [lints.clippy]
 # Error handling - no unwrap/expect in production code

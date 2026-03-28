@@ -18,8 +18,14 @@ clippy-strict:
 test:
     cargo test
 
+# Lint for use of super::/self:: in production code (test modules use super::* is allowed)
+lint-imports:
+    @grep -rn 'use super::' src/ --include='*.rs' | grep -v 'use super::\*;' | { if grep -q .; then echo "ERROR: Use crate:: paths, not super:: in production code. Found:"; grep -rn 'use super::' src/ --include='*.rs' | grep -v 'use super::\*;'; exit 1; fi; }
+    @! grep -rn 'use self::' src/ --include='*.rs' | grep -q . || true
+    @echo "Import lint passed!"
+
 # Run all checks (use in CI)
-ci: fmt-check clippy-strict test
+ci: fmt-check clippy-strict test lint-imports
     echo "All checks passed!"
 
 # Recreate full CI pipeline locally (matches GitHub Actions)
