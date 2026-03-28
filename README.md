@@ -100,6 +100,21 @@ model = "deepseek/deepseek-chat-v3"
 base_url = "https://openrouter.ai/api/v1/"
 api_key_env = "OPENROUTER_API_KEY"
 top_p = 0.9
+
+[[models]]
+name = "o4-mini"
+model = "openai/o4-mini"
+api_type = "responses"
+reasoning_effort = "high"          # none|low|medium|high|xhigh
+reasoning_summary = "concise"      # concise|detailed|auto (Responses API only)
+
+[[models]]
+name = "claude-reasoning"
+model = "anthropic/claude-3.7-sonnet"
+base_url = "https://openrouter.ai/api/v1/"
+api_key_env = "OPENROUTER_API_KEY"
+api_type = "responses"
+reasoning_max_tokens = 8000        # Budget-style for Anthropic via OpenRouter
 ```
 
 ```bash
@@ -110,7 +125,31 @@ acai --model claude "Your prompt here"
 acai "Your prompt here"
 ```
 
-See `.acai/settings.toml.example` for a complete example.
+See `.acai/settings.toml` for a complete example.
+
+#### Reasoning Configuration
+
+Models that support reasoning (e.g., OpenAI o-series, Anthropic Claude with extended thinking) can be configured with these fields:
+
+| Field | Description | Values |
+|-------|-------------|--------|
+| `reasoning_effort` | Controls how much reasoning the model performs | `none`, `low`, `medium`, `high`, `xhigh` |
+| `reasoning_summary` | How reasoning is summarized (Responses API only) | `concise`, `detailed`, `auto` |
+| `reasoning_max_tokens` | Token budget for reasoning (budget-style) | Any positive integer |
+| `reasoning_exclude` | Hide reasoning traces from output | `true`, `false` |
+
+These can also be overridden at runtime with CLI flags:
+
+```bash
+# Override reasoning effort for a single run
+acai --reasoning-effort high "Solve this math problem"
+
+# Set a reasoning token budget
+acai --reasoning-budget 4000 "Analyze this code"
+
+# Combine with a named model
+acai --model claude --reasoning-effort medium "Explain this algorithm"
+```
 
 #### Default Configuration
 
@@ -184,6 +223,8 @@ For more details, see [Filesystem Sandbox](docs/design-docs/sandbox.md).
 - `--verbose` - Show tool call progress on stderr (only with `text` output format)
 - `--no-session` - Do not save the session to disk
 - `--worktree` (`-w`) - Run in an isolated git worktree (optionally provide a name)
+- `--reasoning-effort <EFFORT>` - Override reasoning effort level (none, low, medium, high, xhigh)
+- `--reasoning-budget <TOKENS>` - Override reasoning token budget
 
 ### Example
 

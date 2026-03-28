@@ -18,6 +18,14 @@ model = "glm-5"
 # temperature = 0.8
 # Optional: maximum output tokens
 # max_output_tokens = 8000
+# Optional: reasoning effort level (none, low, medium, high, xhigh)
+# reasoning_effort = "high"
+# Optional: reasoning summary mode (concise, detailed, auto) - Responses API only
+# reasoning_summary = "concise"
+# Optional: reasoning token budget (budget-style for Anthropic/Gemini via OpenRouter)
+# reasoning_max_tokens = 8000
+# Optional: hide reasoning traces from output
+# reasoning_exclude = false
 # Optional: provider routing hints
 # providers = []
 
@@ -34,3 +42,8 @@ api_type = "responses"
 # temperature = 0.7
 # max_output_tokens = 8000
 # providers = []
+
+[[models]]
+name = "mimo-pro"
+model = "mimo-v2-pro-free"
+base_url = "https://opencode.ai/zen/v1/"
