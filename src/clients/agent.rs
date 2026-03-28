@@ -14,6 +14,9 @@ use crate::clients::types::{ConversationItem, Usage};
 /// Callback type for streaming JSON output
 type StreamingCallback = Box<dyn Fn(&str) + Send + Sync>;
 
+/// Callback type for progress reporting (receives conversation items as they occur)
+type ProgressCallback = Box<dyn Fn(&ConversationItem) + Send + Sync>;
+
 /// Maximum number of retries for transient API errors
 const MAX_RETRIES: u32 = 3;
 /// Initial delay in seconds for exponential backoff
@@ -44,6 +47,8 @@ pub struct Agent {
     tools: Vec<Tool>,
     /// Callback for streaming JSON output
     streaming_callback: Option<StreamingCallback>,
+    /// Callback for human-readable progress reporting
+    progress_callback: Option<ProgressCallback>,
     /// Session ID for tracking
     pub session_id: String,
     /// Accumulated usage across all API calls
@@ -67,6 +72,7 @@ impl Agent {
             }],
             tools: vec![bash_tool(), edit_tool(), read_tool(), write_tool()],
             streaming_callback: None,
+            progress_callback: None,
             session_id: uuid::Uuid::new_v4().to_string(),
             total_usage: Usage::default(),
             turn_count: 0,
@@ -77,6 +83,12 @@ impl Agent {
     /// Get the model name.
     pub fn model(&self) -> &str {
         &self.config.config.model
+    }
+
+    /// Get the number of registered tools.
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn tool_count(&self) -> usize {
+        self.tools.len()
     }
 
     /// Replace the auto-generated session ID with a restored session's ID.
@@ -110,6 +122,22 @@ impl Agent {
     pub fn with_streaming_json(mut self, callback: impl Fn(&str) + Send + Sync + 'static) -> Self {
         self.streaming_callback = Some(Box::new(callback));
         self
+    }
+
+    /// Enable progress reporting - callback receives conversation items for human-readable output
+    pub fn with_progress_callback(
+        mut self,
+        callback: impl Fn(&ConversationItem) + Send + Sync + 'static,
+    ) -> Self {
+        self.progress_callback = Some(Box::new(callback));
+        self
+    }
+
+    /// Report a conversation item via the progress callback, if set.
+    fn report_progress(&self, item: &ConversationItem) {
+        if let Some(ref callback) = self.progress_callback {
+            callback(item);
+        }
     }
 
     /// Stream a conversation item as JSON via the streaming callback, if set.
@@ -225,9 +253,10 @@ impl Agent {
             // Accumulate usage
             self.accumulate_usage(turn_result.usage.as_ref());
 
-            // Stream each item as JSON if callback is set
+            // Stream each item as JSON if callback is set, and report progress
             for item in &turn_result.items {
                 self.stream_item(item);
+                self.report_progress(item);
             }
 
             // Collect function calls from the items
@@ -434,6 +463,7 @@ mod tests {
             history: vec![],
             tools: vec![],
             streaming_callback: None,
+            progress_callback: None,
             session_id: "test-session".to_string(),
             total_usage: Usage::default(),
             turn_count: 0,
@@ -728,6 +758,7 @@ mod error_tests {
             history: vec![],
             tools: vec![],
             streaming_callback: None,
+            progress_callback: None,
             session_id: "test-session".to_string(),
             total_usage: Usage::default(),
             turn_count: 0,
@@ -755,6 +786,7 @@ mod error_tests {
             history: vec![],
             tools: vec![],
             streaming_callback: None,
+            progress_callback: None,
             session_id: "test-session".to_string(),
             total_usage: Usage::default(),
             turn_count: 0,

@@ -10,8 +10,9 @@ mod prompts;
 use std::time::Instant;
 
 use crate::cli::CmdRunner;
-use crate::clients::Agent;
+use crate::clients::{Agent, ConversationItem};
 use std::collections::HashMap;
+use std::io::Write;
 
 use crate::config::{
     AgentsFile, DataDir, ModelConfig, ModelDefinition, ResolvedModelConfig, Session,
@@ -72,6 +73,10 @@ struct CodingAssistant {
     /// Select a model by name from settings.toml
     #[arg(long)]
     pub model: Option<String>,
+
+    /// Show tool call progress on stderr (only applies to text output format)
+    #[arg(long)]
+    pub verbose: bool,
 }
 
 impl CodingAssistant {
@@ -319,6 +324,24 @@ impl CmdRunner for CodingAssistant {
             });
         }
 
+        let verbose = self.verbose && self.output_format == OutputFormat::Text;
+
+        if verbose {
+            let model = client.model().to_string();
+            let tool_count = client.tool_count();
+            let start_time = Instant::now();
+
+            client = client.with_progress_callback(move |item| {
+                let elapsed = start_time.elapsed().as_secs_f64();
+                let line = format_progress_item(item, elapsed);
+                if !line.is_empty() {
+                    let _ = writeln!(std::io::stderr(), "{line}");
+                }
+            });
+
+            eprintln!("\x1b[1;36m--\x1b[0m model: {model}, tools: {tool_count}");
+        }
+
         let msg = Message {
             role: Role::User,
             content,
@@ -342,6 +365,14 @@ impl CmdRunner for CodingAssistant {
                     client.emit_result_message(false, duration_ms, Some(e.to_string().as_ref()));
                 },
             }
+        }
+
+        if verbose {
+            #[allow(clippy::cast_precision_loss)]
+            let secs = duration_ms as f64 / 1000.0;
+            let turns = client.turn_count;
+            let tokens = client.total_usage.total_tokens;
+            eprintln!("\x1b[1;36m--\x1b[0m done: {secs:.1}s, {turns} turns, {tokens} tokens");
         }
 
         if !self.no_session {
@@ -369,6 +400,70 @@ impl CmdRunner for CodingAssistant {
         }
 
         Ok(())
+    }
+}
+
+/// Format a conversation item as a human-readable progress line for verbose mode.
+fn format_progress_item(item: &ConversationItem, elapsed_secs: f64) -> String {
+    // ANSI: dim white for timestamp, bold cyan for separator, default for content
+    let ts = format!("\x1b[2m[{elapsed_secs:>6.1}s]\x1b[0m");
+
+    match item {
+        ConversationItem::FunctionCall {
+            name, arguments, ..
+        } => {
+            let summary = summarize_tool_args(name, arguments);
+            format!("{ts} \x1b[1;36m>\x1b[0m {name}: {summary}")
+        },
+        // Skip message, reasoning, and function output items
+        _ => String::new(),
+    }
+}
+
+/// Extract the most relevant argument from a tool call's JSON arguments.
+fn summarize_tool_args(tool_name: &str, arguments: &str) -> String {
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(arguments) else {
+        return String::new();
+    };
+
+    let raw = match tool_name {
+        "bash" => parsed
+            .get("command")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        "read" | "write" => parsed
+            .get("path")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        "edit" => {
+            let path = parsed
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            let old_len = parsed
+                .get("old_string")
+                .and_then(serde_json::Value::as_str)
+                .map_or(0, str::len);
+            let new_len = parsed
+                .get("new_string")
+                .and_then(serde_json::Value::as_str)
+                .map_or(0, str::len);
+            format!("{path} ({old_len}B -> {new_len}B)")
+        },
+        _ => String::new(),
+    };
+
+    truncate_display(&raw, 120)
+}
+
+/// Truncate a string for display, appending "..." if needed.
+fn truncate_display(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max])
     }
 }
 
