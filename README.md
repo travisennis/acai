@@ -181,6 +181,7 @@ For more details, see [Filesystem Sandbox](docs/design-docs/sandbox.md).
 - `--continue` - Continue the most recent session for the current directory
 - `--resume <UUID>` - Resume a specific session by its UUID
 - `--fork [UUID]` - Fork a session (copy history into new session), optionally specify UUID
+- `--verbose` - Show tool call progress on stderr (only with `text` output format)
 - `--no-session` - Do not save the session to disk
 - `--worktree` (`-w`) - Run in an isolated git worktree (optionally provide a name)
 

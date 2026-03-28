@@ -56,6 +56,10 @@ pub struct CodingAssistant {
     /// Select a model by name from settings.toml
     #[arg(long)]
     pub model: Option<String>,
+
+    /// Show tool call progress on stderr (only applies to text output format)
+    #[arg(long)]
+    pub verbose: bool,
 }
 ```
 
@@ -161,7 +165,23 @@ echo "Hello" | acai -
 
 Two output formats are supported:
 
-- **`text`** (default): Human-readable text output
+- **`text`** (default): Human-readable text output. The final assistant message is printed to stdout.
 - **`stream-json`**: Machine-readable JSON streaming with events for each conversation item
 
 When using `stream-json`, console logging is automatically suppressed to avoid polluting stdout.
+
+### Verbose Mode (`--verbose`)
+
+When combined with `--output-format text`, the `--verbose` flag streams human-readable progress to stderr while keeping only the final assistant message on stdout. This preserves pipe-ability while giving visibility into tool execution.
+
+Each tool call is printed with elapsed time and key arguments. Init and completion bookends show model info and usage stats.
+
+```
+-- model: glm-5, tools: 4
+[   1.2s] > bash: rg -l "auth" src/
+[   2.8s] > read: src/auth/mod.rs
+[   3.4s] > edit: src/auth/mod.rs (45B -> 62B)
+-- done: 5.1s, 2 turns, 2891 tokens
+```
+
+The `--verbose` flag has no effect when used with `--output-format stream-json`.
