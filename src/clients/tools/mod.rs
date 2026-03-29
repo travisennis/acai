@@ -1,7 +1,31 @@
 use serde::Serialize;
+use std::cell::RefCell;
 use std::path::Path;
 
 mod sandbox;
+
+// =============================================================================
+// Thread-Local Additional Directories
+// =============================================================================
+
+// Thread-local storage for additional directories added via --add-dir flag.
+// These directories are read-only for the agent.
+thread_local! {
+    static ADDITIONAL_DIRS: RefCell<Vec<std::path::PathBuf>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Set the additional directories for the current thread.
+/// This should be called once at startup from main.
+pub fn set_additional_dirs(dirs: Vec<std::path::PathBuf>) {
+    ADDITIONAL_DIRS.with(|cell| {
+        *cell.borrow_mut() = dirs;
+    });
+}
+
+/// Get the additional directories for the current thread.
+pub fn get_additional_dirs() -> Vec<std::path::PathBuf> {
+    ADDITIONAL_DIRS.with(|cell| cell.borrow().clone())
+}
 
 // =============================================================================
 // Module Declarations
@@ -36,7 +60,8 @@ pub struct ToolResult {
 // Path Validation
 // =============================================================================
 
-/// Validate that a path exists and is within the current working directory or allowed temp directories
+/// Validate that a path exists and is within the current working directory, allowed temp directories,
+/// or directories added via --add-dir flag (read-only access).
 pub(super) fn validate_path_in_cwd(path_str: &str) -> Result<std::path::PathBuf, String> {
     let path = Path::new(path_str);
 
@@ -58,6 +83,14 @@ pub(super) fn validate_path_in_cwd(path_str: &str) -> Result<std::path::PathBuf,
     let temp_dirs = get_temp_directories();
     for temp_dir in &temp_dirs {
         if canonical.starts_with(temp_dir) {
+            return Ok(canonical);
+        }
+    }
+
+    // Allow paths in directories added via --add-dir flag (read-only)
+    let additional_dirs = get_additional_dirs();
+    for add_dir in &additional_dirs {
+        if canonical.starts_with(add_dir) {
             return Ok(canonical);
         }
     }

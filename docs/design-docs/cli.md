@@ -68,6 +68,10 @@ pub struct CodingAssistant {
     /// Override reasoning token budget
     #[arg(long, value_name = "TOKENS")]
     pub reasoning_budget: Option<u32>,
+
+    /// Add a directory to the sandbox config (read-only access). Can be repeated.
+    #[arg(long, value_name = "DIR")]
+    pub add_dir: Vec<String>,
 }
 ```
 

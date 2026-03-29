@@ -10,7 +10,7 @@ mod prompts;
 use std::time::Instant;
 
 use crate::cli::CmdRunner;
-use crate::clients::{Agent, ConversationItem};
+use crate::clients::{Agent, ConversationItem, set_additional_dirs};
 use std::collections::HashMap;
 use std::io::Write;
 
@@ -85,6 +85,10 @@ struct CodingAssistant {
     /// Override reasoning token budget
     #[arg(long, value_name = "TOKENS")]
     pub reasoning_budget: Option<u32>,
+
+    /// Add a directory to the sandbox config (read-only access). Can be repeated.
+    #[arg(long, value_name = "DIR")]
+    pub add_dir: Vec<String>,
 }
 
 impl CodingAssistant {
@@ -490,6 +494,23 @@ async fn main() -> anyhow::Result<()> {
     info!("data dir: {}", data_dir.get_cache_dir().display());
 
     let args = CodingAssistant::parse();
+
+    // Process --add-dir flags and set them in thread-local storage
+    let additional_dirs: Vec<std::path::PathBuf> = args
+        .add_dir
+        .iter()
+        .filter_map(|dir| {
+            let path = std::path::PathBuf::from(dir);
+            if path.exists() && path.is_dir() {
+                Some(path)
+            } else {
+                log::warn!("--add-dir path '{dir}' does not exist or is not a directory, ignoring");
+                None
+            }
+        })
+        .collect();
+    set_additional_dirs(additional_dirs);
+
     args.run(&data_dir).await?;
 
     Ok(())
@@ -536,6 +557,33 @@ mod tests {
     fn test_cli_parsing_no_model_flag() {
         let args = CodingAssistant::parse_from(["acai", "test prompt"]);
         assert_eq!(args.model, None);
+    }
+
+    #[test]
+    fn test_cli_parsing_add_dir_single() {
+        let args =
+            CodingAssistant::parse_from(["acai", "--add-dir", "/path/to/dir", "test prompt"]);
+        assert_eq!(args.add_dir, vec!["/path/to/dir"]);
+        assert_eq!(args.prompt, Some("test prompt".to_string()));
+    }
+
+    #[test]
+    fn test_cli_parsing_add_dir_multiple() {
+        let args = CodingAssistant::parse_from([
+            "acai",
+            "--add-dir",
+            "/path/to/dir1",
+            "--add-dir",
+            "/path/to/dir2",
+            "test prompt",
+        ]);
+        assert_eq!(args.add_dir, vec!["/path/to/dir1", "/path/to/dir2"]);
+    }
+
+    #[test]
+    fn test_cli_parsing_add_dir_none() {
+        let args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        assert!(args.add_dir.is_empty());
     }
 
     #[test]

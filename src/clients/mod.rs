@@ -6,4 +6,5 @@ mod tools;
 mod types;
 
 pub use agent::Agent;
+pub use tools::set_additional_dirs;
 pub use types::ConversationItem;

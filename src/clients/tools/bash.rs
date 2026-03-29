@@ -253,9 +253,11 @@ pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, S
     let args = BashExecutionArgs::from_json(arguments)?;
     let start_time = Instant::now();
 
-    // Build sandbox configuration
+    // Build sandbox configuration with additional directories
     let cwd = std::env::current_dir().map_err(|e| format!("Failed to get cwd: {e}"))?;
-    let sandbox_config = super::sandbox::SandboxConfig::build(&cwd)?;
+    let additional_dirs = super::get_additional_dirs();
+    let sandbox_config =
+        super::sandbox::SandboxConfig::build_with_additional_dirs(&cwd, &additional_dirs)?;
 
     // Create command with proper stdio configuration
     let mut command = Command::new("bash");

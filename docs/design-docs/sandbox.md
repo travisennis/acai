@@ -10,7 +10,7 @@ When the Bash tool executes a command, acai wraps it in an OS-level sandbox that
 |---|---|---|
 | **Read-write** | Current working directory, temp directories, `~/.cargo`, `~/.rustup`, `~/.cache/sccache`, `~/.config/gh`, `~/.config/glab-cli`, `~/.config/mise`, `~/.asdf`, `~/.volta`, and related cache/state directories | Project files, build artifacts, toolchain caches, SCM CLI configs |
 | **Read-only + execute** | `/usr`, `/bin`, `/sbin`, system paths, `/Library`, `/System`, `/Applications`, `/opt/homebrew`, `/opt/local` (macOS); `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc/alternatives`, `/snap` (Linux) | Running system tools and compilers |
-| **Read-only** | `/etc`, `/dev`, `/var`, `/proc`, `/sys` (Linux); `/etc`, `/private/etc`, `/private/var`, `/dev`, `/var` (macOS); `~/.config/git`, `~/.gitattributes` | Configuration, device access, git config |
+| **Read-only** | `/etc`, `/dev`, `/var`, `/proc`, `/sys` (Linux); `/etc`, `/private/etc`, `/private/var`, `/dev`, `/var` (macOS); `~/.config/git`, `~/.gitattributes`; **plus any directories added via `--add-dir`** | Configuration, device access, git config, user-specified reference directories |
 | **Denied** | Everything else | Home directory (except allowed paths), other projects, etc. |
 
 ## Platform Support
@@ -64,6 +64,30 @@ export ACAI_SANDBOX=no
 When disabled, a warning is logged and all commands run with full filesystem access.
 
 The `warn` value is recognized but currently falls back to enforce mode.
+
+### Adding Read-Only Directories (--add-dir)
+
+Use the `--add-dir` CLI flag to grant the agent read-only access to directories outside the project directory:
+
+```bash
+# Add a single directory
+acai --add-dir /path/to/reference/docs "Use the documentation in /path/to/reference/docs"
+
+# Add multiple directories
+acai --add-dir ~/Documents/specs --add-dir ~/Projects/shared-utils "Analyze the code"
+```
+
+**Key points:**
+
+- Directories are added as **read-only** — the agent cannot write to them
+- The flag can be repeated to add multiple directories
+- Invalid or non-existent directories are logged as warnings and ignored
+- Both the original path and its canonical (symlink-resolved) path are added to ensure access
+
+This is useful when you want the agent to:
+- Reference documentation or specifications stored elsewhere
+- Read shared utility code from another project
+- Access configuration files or templates
 
 ### Additional Read-Write Paths
 

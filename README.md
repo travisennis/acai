@@ -208,6 +208,20 @@ Commands executed by the Bash tool run inside an OS-level filesystem sandbox tha
 
 The sandbox can be disabled by setting `ACAI_SANDBOX=off`.
 
+#### Adding Read-Only Directories
+
+Use `--add-dir` to grant the agent read-only access to directories outside the project:
+
+```bash
+# Allow the agent to read from a shared library directory
+acai --add-dir /path/to/shared/libs "Use the utilities in /path/to/shared/libs"
+
+# Multiple directories can be added
+acai --add-dir ~/Documents/references --add-dir ~/Projects/shared "Review the code"
+```
+
+The agent will be able to **read** files from these directories but **not write** to them.
+
 For more details, see [Filesystem Sandbox](docs/design-docs/sandbox.md).
 
 ### Options
@@ -224,6 +238,7 @@ For more details, see [Filesystem Sandbox](docs/design-docs/sandbox.md).
 - `--worktree` (`-w`) - Run in an isolated git worktree (optionally provide a name)
 - `--reasoning-effort <EFFORT>` - Override reasoning effort level (none, low, medium, high, xhigh)
 - `--reasoning-budget <TOKENS>` - Override reasoning token budget
+- `--add-dir <DIR>` - Add a directory to the sandbox config (read-only access). Can be repeated.
 
 ### Example
 

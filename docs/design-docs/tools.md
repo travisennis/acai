@@ -77,7 +77,8 @@ pub(super) fn validate_path_in_cwd(path_str: &str) -> Result<PathBuf, String>
 Validation rules:
 - Path must exist and be accessible
 - Path must be within the current working directory, OR
-- Path must be within allowed temp directories (`/tmp`, `/var/folders`, `TMPDIR`)
+- Path must be within allowed temp directories (`/tmp`, `/var/folders`, `TMPDIR`), OR
+- Path must be within directories added via `--add-dir` CLI flag (read-only access)
 
 This prevents the AI from accessing sensitive files outside the project.
 

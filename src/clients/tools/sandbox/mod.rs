@@ -43,8 +43,17 @@ pub(super) struct SandboxConfig {
 
 impl SandboxConfig {
     /// Build a sandbox configuration for the current context
-    #[allow(clippy::unnecessary_wraps)]
+    #[allow(clippy::unnecessary_wraps, dead_code)]
     pub fn build(cwd: &std::path::Path) -> Result<Self, String> {
+        Self::build_with_additional_dirs(cwd, &[])
+    }
+
+    /// Build a sandbox configuration with additional read-only directories
+    #[allow(clippy::unnecessary_wraps)]
+    pub fn build_with_additional_dirs(
+        cwd: &std::path::Path,
+        additional_dirs: &[std::path::PathBuf],
+    ) -> Result<Self, String> {
         let mut read_write = vec![cwd.to_path_buf()];
 
         // Add temp directories
@@ -104,7 +113,18 @@ impl SandboxConfig {
         let read_write = deduplicated_with_canonical(&read_write);
 
         let read_only_exec = Self::get_system_paths();
-        let read_only = Self::get_read_only_paths();
+        let mut read_only = Self::get_read_only_paths();
+
+        // Add additional directories from --add-dir flag as read-only
+        for dir in additional_dirs {
+            if dir.exists() {
+                read_only.push(dir.clone());
+                // Also add canonical path to handle symlinks
+                if let Ok(canonical) = dir.canonicalize() {
+                    read_only.push(canonical);
+                }
+            }
+        }
 
         Ok(Self {
             read_write,
