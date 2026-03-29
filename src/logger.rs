@@ -23,7 +23,17 @@ pub enum Error {
 /// If not set, defaults to INFO level for the acai crate.
 /// Set `RUST_LOG=acai=trace` for verbose debugging.
 ///
-/// Log files rotate daily and are retained for up to 7 days.
+/// # Log File Naming
+///
+/// With daily rotation, log files are named `acai.YYYY-MM-DD.log` where the date
+/// is the current day. For example, logs for March 29, 2026 are written to
+/// `acai.2026-03-29.log`. At midnight, a new file is created for the next day.
+///
+/// There is no "current" log file without a date - the dated file IS the current
+/// log file for that day. This is the standard behavior of tracing-appender's
+/// rolling file appender.
+///
+/// Log files are retained for up to 7 days.
 pub fn configure(log_path: &Path) -> Result<(), Error> {
     // Default to INFO level for acai, but allow RUST_LOG to override
     let env_filter =

@@ -72,30 +72,37 @@ jq 'select(.type == "message" and .role == "user") | select(.content | contains(
 ```
 
 ### Search Logs
+
+Log files use daily rotation with naming `acai.YYYY-MM-DD.log`. The dated file IS the current
+log file for that day - there is no separate "current" file without a date.
+
 ```bash
-# View recent log entries
-tail -100 ~/.cache/acai/acai.log
+# View today's log entries
+tail -100 ~/.cache/acai/acai.$(date +%Y-%m-%d).log
 
 # View logs in real-time
-tail -f ~/.cache/acai/acai.log
+tail -f ~/.cache/acai/acai.$(date +%Y-%m-%d).log
 
 # View recent errors (one-liner)
-tail -50 ~/.cache/acai/acai.log | grep -i error
+tail -50 ~/.cache/acai/acai.$(date +%Y-%m-%d).log | grep -i error
 
-# Search for errors
-grep -i "error" ~/.cache/acai/acai.log
+# Search for errors in today's log
+grep -i "error" ~/.cache/acai/acai.$(date +%Y-%m-%d).log
 
 # Search for warnings
-grep -i "warn" ~/.cache/acai/acai.log
+grep -i "warn" ~/.cache/acai/acai.$(date +%Y-%m-%d).log
 
-# Filter logs by date (when you know roughly when the issue occurred)
-grep "2026-03-07" ~/.cache/acai/acai.log
+# Search across all log files
+grep -i "error" ~/.cache/acai/acai.*.log
 
 # Find all API requests
-grep "https://openrouter.ai" ~/.cache/acai/acai.log
+grep "https://openrouter.ai" ~/.cache/acai/acai.*.log
 
 # Find truncated outputs
-grep "output truncated" ~/.cache/acai/acai.log
+grep "output truncated" ~/.cache/acai/acai.*.log
+
+# List all log files
+ls -la ~/.cache/acai/acai.*.log
 ```
 
 ## Session Storage Structure
@@ -196,7 +203,7 @@ jq 'select(.type == "function_call_output") | {call_id, output: .output[0:200]}'
 **Symptom**: CLI returns just "Tool error:" with no context.
 
 **Investigation steps**:
-1. Check the acai.log file around the time of the error
+1. Check the log file for that day: `~/.cache/acai/acai.YYYY-MM-DD.log`
 2. Look for the specific tool that failed
 3. Check if it's a transient issue (network, file permissions, etc.)
 
@@ -234,7 +241,7 @@ TIMESTAMP=$(head -1 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq -r '.timesta
 echo "Session start: $TIMESTAMP"
 
 # 3. Search logs for that session's activity
-grep "$SESSION_ID" ~/.cache/acai/acai.log
+grep "$SESSION_ID" ~/.cache/acai/acai.*.log
 ```
 
 ## Quick Reference Commands
@@ -250,7 +257,7 @@ tail -5 ~/.cache/acai/sessions/*/latest | jq '.'
 tail -1 ~/.cache/acai/sessions/*/latest | jq '{type, status}'
 
 # View recent errors in logs (one-liner)
-tail -50 ~/.cache/acai/acai.log | grep -i error
+tail -50 ~/.cache/acai/acai.$(date +%Y-%m-%d).log | grep -i error
 
 # View full session file
 less ~/.cache/acai/sessions/*/latest
@@ -283,7 +290,7 @@ When the user reports an issue:
    - Look for where things went wrong
 
 4. **Check logs**
-   - `tail -100 ~/.cache/acai/acai.log | grep -i error`
+   - `tail -100 ~/.cache/acai/acai.$(date +%Y-%m-%d).log | grep -i error`
    - Look for tool failures or API errors
 
 5. **Identify patterns**
@@ -357,7 +364,7 @@ cat /tmp/sandbox_trace.log
 
 ```bash
 # View the actual profile being used (check acai logs)
-grep "Generated sandbox profile" ~/.cache/acai/acai.log
+grep "Generated sandbox profile" ~/.cache/acai/acai.*.log
 
 # Or find the latest profile file
 ls -lt /tmp/acai/sandbox_profiles/ | head -5
@@ -370,7 +377,7 @@ cat /tmp/acai/sandbox_profiles/acai_sandbox_*.sb
 |-----------|----------|
 | Sessions | `~/.cache/acai/sessions/{hash}/{uuid}.jsonl` |
 | Latest session symlink | `~/.cache/acai/sessions/{hash}/latest` |
-| Logs | `~/.cache/acai/acai.log` |
+| Logs | `~/.cache/acai/acai.YYYY-MM-DD.log` |
 | Config | `~/.cache/acai/` and `.acai` |
 | User-level AGENTS.md | `~/.acai/AGENTS.md` |
 | Project-level AGENTS.md | `./AGENTS.md` |
@@ -378,7 +385,7 @@ cat /tmp/acai/sandbox_profiles/acai_sandbox_*.sb
 ## Configuration
 
 - **Config directory**: `~/.cache/acai/` and `.acai` (see `src/config/data_dir.rs`)
-- **Logs**: `~/.cache/acai/acai.log`
+- **Logs**: `~/.cache/acai/acai.YYYY-MM-DD.log` (daily rotation)
 - **API key**: Required via environment variable (default: `OPENCODE_ZEN_API_TOKEN`)
 
 ## Session Restoration and Continuation
