@@ -445,31 +445,21 @@ fn summarize_tool_args(tool_name: &str, arguments: &str) -> String {
     };
 
     let raw = match tool_name {
-        "bash" => parsed
+        "Bash" => parsed
             .get("command")
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default()
             .to_string(),
-        "read" | "write" => parsed
+        "Read" | "Edit" => parsed
             .get("path")
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default()
             .to_string(),
-        "edit" => {
-            let path = parsed
-                .get("path")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default();
-            let old_len = parsed
-                .get("old_string")
-                .and_then(serde_json::Value::as_str)
-                .map_or(0, str::len);
-            let new_len = parsed
-                .get("new_string")
-                .and_then(serde_json::Value::as_str)
-                .map_or(0, str::len);
-            format!("{path} ({old_len}B -> {new_len}B)")
-        },
+        "Write" => parsed
+            .get("file_path")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         _ => String::new(),
     };
 
