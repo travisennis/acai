@@ -1,10 +1,10 @@
-use log::debug;
 use serde::Deserialize;
 use std::process::Stdio;
 use std::time::Instant;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::time::{Duration, timeout};
+use tracing::debug;
 
 /// Maximum number of null bytes or control characters (excluding common whitespace)
 /// allowed before considering output as binary.
@@ -281,7 +281,7 @@ pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, S
             strategy.apply(&mut command, &sandbox_config)?;
         }
     } else {
-        log::debug!("Sandbox disabled; running without filesystem restrictions");
+        tracing::debug!("Sandbox disabled; running without filesystem restrictions");
     }
 
     // Spawn the command with piped stdout/stderr for streaming

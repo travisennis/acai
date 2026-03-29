@@ -65,7 +65,7 @@ These types are intentionally simple—most of the system uses `ConversationItem
 
 ### Layer 1: Foundation
 
-**`logger`**: Dual logging configuration (file + stderr) using log4rs. Automatically suppresses console logging when output format is machine-readable (streaming JSON).
+**`logger`**: File-only logging using tracing with daily rotation and 7-day retention. Defaults to INFO level, with debug/trace available via `RUST_LOG` environment variable.
 
 External crates: `anyhow` for error handling, `tokio` for async runtime, `serde` for serialization, `reqwest` for HTTP.
 
@@ -115,9 +115,11 @@ The sandbox configuration defines a strict boundary between what the host proces
 
 ### Logging
 
-- File appender: all levels to `~/.cache/acai/acai.log`
-- Console appender: info+ to stderr (unless quiet mode)
+- File appender with daily rotation: `~/.cache/acai/acai.YYYY-MM-DD.log`
+- Maximum 7 files retained (older files automatically deleted)
+- Default level: INFO (debug/trace require `RUST_LOG=acai=debug` or `RUST_LOG=acai=trace`)
 - Pattern includes timestamps, levels, file:line for debugging
+- Non-blocking writes (async-safe)
 
 ### Session Management
 

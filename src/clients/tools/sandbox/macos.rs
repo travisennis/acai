@@ -184,7 +184,7 @@ impl MacOsSandbox {
             .write_all(profile.as_bytes())
             .map_err(|e| format!("Failed to write sandbox profile: {e}"))?;
 
-        log::debug!(
+        tracing::debug!(
             "Generated sandbox profile at: {}",
             temp_file.path().display()
         );
@@ -200,7 +200,7 @@ impl SandboxStrategy for MacOsSandbox {
         config: &SandboxConfig,
     ) -> Result<(), String> {
         let profile = Self::generate_profile(config);
-        log::debug!("Generated sandbox profile:\n{profile}");
+        tracing::debug!("Generated sandbox profile:\n{profile}");
 
         // Write profile to temp file — persist so sandbox-exec can read it at spawn time
         let temp_file = Self::write_profile_to_temp(&profile)?;
@@ -234,7 +234,7 @@ impl SandboxStrategy for MacOsSandbox {
         // The OS will clean up temp files.
         std::mem::forget(profile_path);
 
-        log::debug!("Sandboxed command configured with deny-default profile");
+        tracing::debug!("Sandboxed command configured with deny-default profile");
 
         Ok(())
     }

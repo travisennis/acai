@@ -21,7 +21,7 @@ use crate::config::{
 use crate::models::{Message, Role};
 use crate::prompts::build_system_prompt;
 use clap::{Parser, ValueEnum};
-use log::info;
+use tracing::info;
 
 /// Output format for the response
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -287,7 +287,7 @@ impl CodingAssistant {
     /// Clean up a worktree after the session ends.
     fn cleanup_worktree(wt: &worktree::Worktree, original_dir: &std::path::Path) {
         if let Err(e) = std::env::set_current_dir(original_dir) {
-            log::warn!(
+            tracing::warn!(
                 "Failed to restore original directory '{}': {e}",
                 original_dir.display()
             );
@@ -297,7 +297,7 @@ impl CodingAssistant {
             Ok(false) => {
                 eprintln!("No changes in worktree '{}', removing.", wt.name);
                 if let Err(e) = worktree::remove(original_dir, &wt.name, false) {
-                    log::warn!("Failed to clean up worktree '{}': {e}", wt.name);
+                    tracing::warn!("Failed to clean up worktree '{}': {e}", wt.name);
                 }
             },
             Ok(true) => {
@@ -308,7 +308,7 @@ impl CodingAssistant {
                 );
             },
             Err(e) => {
-                log::warn!(
+                tracing::warn!(
                     "Could not check worktree '{}' for changes, keeping it: {e}",
                     wt.name
                 );
@@ -397,7 +397,7 @@ impl CmdRunner for CodingAssistant {
             session.messages = client.get_history_without_system();
             session.model = Some(client.model().to_string());
             if let Err(e) = data_dir.save_session(&session) {
-                log::error!("Failed to save session: {e}");
+                tracing::error!("Failed to save session: {e}");
             }
         }
 
@@ -457,7 +457,9 @@ async fn main() -> anyhow::Result<()> {
             if path.exists() && path.is_dir() {
                 Some(path)
             } else {
-                log::warn!("--add-dir path '{dir}' does not exist or is not a directory, ignoring");
+                tracing::warn!(
+                    "--add-dir path '{dir}' does not exist or is not a directory, ignoring"
+                );
                 None
             }
         })

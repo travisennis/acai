@@ -1,21 +1,14 @@
 use std::path::Path;
 
-use log::{LevelFilter, SetLoggerError};
-use log4rs::{
-    Config,
-    append::file::FileAppender,
-    config::{Appender, Logger, Root},
-    encode::pattern::PatternEncoder,
-};
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Failed to set logger: {0}")]
-    SetLogger(#[from] SetLoggerError),
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Configuration error: {0}")]
-    Configuration(String),
+    SetLogger(#[from] tracing::subscriber::SetGlobalDefaultError),
+    #[error("Failed to initialize log file: {0}")]
+    Init(#[from] tracing_appender::rolling::InitError),
 }
 
 /// Configure the logging system.
@@ -25,31 +18,35 @@ pub enum Error {
 ///
 /// All logs go to the log file only. No stderr output.
 /// This keeps user-facing output clean while preserving detailed logs for debugging.
+///
+/// Log level is controlled by the `RUST_LOG` environment variable.
+/// If not set, defaults to INFO level for the acai crate.
+/// Set `RUST_LOG=acai=trace` for verbose debugging.
+///
+/// Log files rotate daily and are retained for up to 7 days.
 pub fn configure(log_path: &Path) -> Result<(), Error> {
-    let log_line_pattern = "{d(%Y-%m-%d %H:%M:%S)} | {({l}):5.5} | {f}:{L} — {m}{n}\n";
-    let file_path = log_path.join("acai.log");
+    // Default to INFO level for acai, but allow RUST_LOG to override
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("acai=info"));
 
-    // Logging to log file.
-    let logfile = FileAppender::builder()
-        .encoder(Box::new(PatternEncoder::new(log_line_pattern)))
-        .build(file_path)
-        .map_err(|e| Error::Configuration(format!("Failed to build file appender: {e}")))?;
+    // Daily rotation with 7-day retention
+    let file_appender = RollingFileAppender::builder()
+        .rotation(Rotation::DAILY)
+        .filename_prefix("acai")
+        .filename_suffix("log")
+        .max_log_files(7)
+        .build(log_path)?;
 
-    let config = Config::builder()
-        .appender(Appender::builder().build("logfile", Box::new(logfile)))
-        .logger(
-            Logger::builder()
-                .appender("logfile")
-                .build("acai", LevelFilter::Trace),
-        )
-        .build(Root::builder().build(LevelFilter::Trace))
-        .map_err(|e| Error::Configuration(format!("Failed to build config: {e}")))?;
+    let subscriber = tracing_subscriber::registry().with(env_filter).with(
+        fmt::layer()
+            .with_writer(file_appender)
+            .with_target(false)
+            .with_thread_ids(false)
+            .with_line_number(true)
+            .with_timer(fmt::time::time()),
+    );
 
-    // Use this to change log levels at runtime.
-    // This means you can change the default log level to trace
-    // if you are trying to debug an issue and need more logs on then turn it off
-    // once you are done.
-    let _handle = log4rs::init_config(config)?;
+    tracing::subscriber::set_global_default(subscriber)?;
 
     Ok(())
 }

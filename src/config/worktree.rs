@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, anyhow};
-use log::info;
+use tracing::info;
 
 /// Adjectives for random worktree name generation.
 const ADJECTIVES: &[&str] = &[
@@ -229,7 +229,7 @@ pub fn remove(from: &Path, name: &str, force: bool) -> anyhow::Result<()> {
         let stderr = String::from_utf8_lossy(&branch_output.stderr);
         // Don't fail if branch was already deleted
         if !stderr.contains("not found") {
-            log::warn!("Failed to delete branch '{branch}': {stderr}");
+            tracing::warn!("Failed to delete branch '{branch}': {stderr}");
         }
     }
 

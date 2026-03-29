@@ -1,4 +1,4 @@
-use log::{debug, trace};
+use tracing::{debug, trace};
 
 use crate::config::model::ResolvedModelConfig;
 use crate::models::Role;

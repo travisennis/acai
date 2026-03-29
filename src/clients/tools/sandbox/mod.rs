@@ -237,10 +237,10 @@ pub(super) fn detect_platform() -> Option<Box<dyn SandboxStrategy>> {
     #[cfg(target_os = "macos")]
     {
         if std::path::Path::new("/usr/bin/sandbox-exec").exists() {
-            log::debug!("Using macOS sandbox-exec for filesystem sandboxing");
+            tracing::debug!("Using macOS sandbox-exec for filesystem sandboxing");
             Some(Box::new(MacOsSandbox))
         } else {
-            log::warn!(
+            tracing::warn!(
                 "sandbox-exec not found at /usr/bin/sandbox-exec; bash commands will run unsandboxed"
             );
             None
@@ -249,13 +249,13 @@ pub(super) fn detect_platform() -> Option<Box<dyn SandboxStrategy>> {
 
     #[cfg(target_os = "linux")]
     {
-        log::debug!("Using Linux Landlock LSM for filesystem sandboxing");
+        tracing::debug!("Using Linux Landlock LSM for filesystem sandboxing");
         Some(Box::new(LandlockSandbox))
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        log::warn!(
+        tracing::warn!(
             "No sandbox available for this platform ({}); bash commands will run unsandboxed",
             std::env::consts::OS
         );
@@ -267,11 +267,11 @@ pub(super) fn detect_platform() -> Option<Box<dyn SandboxStrategy>> {
 pub(super) fn is_sandbox_disabled() -> bool {
     match std::env::var("ACAI_SANDBOX").as_deref() {
         Ok("off" | "0" | "false" | "no") => {
-            log::warn!("Sandbox disabled via ACAI_SANDBOX environment variable");
+            tracing::warn!("Sandbox disabled via ACAI_SANDBOX environment variable");
             true
         },
         Ok("warn") => {
-            log::warn!("Sandbox 'warn' mode requested; falling back to enforce mode");
+            tracing::warn!("Sandbox 'warn' mode requested; falling back to enforce mode");
             false
         },
         _ => false,

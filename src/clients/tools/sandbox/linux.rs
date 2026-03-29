@@ -122,7 +122,7 @@ impl SandboxStrategy for LandlockSandbox {
         #[cfg(not(feature = "landlock"))]
         {
             let _ = config;
-            log::warn!(
+            tracing::warn!(
                 "Landlock feature not enabled during compilation; \
                  bash commands will run without filesystem sandboxing. \
                  Rebuild with --features landlock to enable."

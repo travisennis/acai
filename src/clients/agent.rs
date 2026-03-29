@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use log::debug;
 use tokio::time::sleep;
+use tracing::debug;
 
 use crate::config::model::{ApiType, ResolvedModelConfig};
 use crate::models::{Message, Role};
