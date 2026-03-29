@@ -53,6 +53,9 @@ just clippy-strict
 
 # Update dependencies
 just update-dependencies
+
+# Full CI check
+just ci
 ```
 
 ## Running the App
