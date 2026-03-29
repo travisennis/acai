@@ -24,8 +24,6 @@ model = "glm-5"
 # reasoning_summary = "concise"
 # Optional: reasoning token budget (budget-style for Anthropic/Gemini via OpenRouter)
 # reasoning_max_tokens = 8000
-# Optional: hide reasoning traces from output
-# reasoning_exclude = false
 # Optional: provider routing hints
 # providers = []
 

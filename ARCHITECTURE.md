@@ -49,7 +49,7 @@ Foundation modules that provide data persistence, core types, and prompt generat
 - `DataDir`: Manages the `~/.cache/acai/` directory, session storage, and AGENTS.md discovery
 - `Session`: In-memory session state with JSONL serialization
 - `worktree`: Git worktree utilities for isolated execution environments
-- `model`: Contains `ApiType` enum (`Responses`/`ChatCompletions`), `ModelConfig` struct (model, api_type, base_url, api_key_env, temperature, top_p, max_output_tokens, reasoning_effort, reasoning_summary, reasoning_max_tokens, reasoning_exclude, providers), and `ResolvedModelConfig` (resolves API key from env var)
+- `model`: Contains `ApiType` enum (`Responses`/`ChatCompletions`), `ModelConfig` struct (model, api_type, base_url, api_key_env, temperature, top_p, max_output_tokens, reasoning_effort, reasoning_summary, reasoning_max_tokens, providers), and `ResolvedModelConfig` (resolves API key from env var)
 - `settings`: TOML-based configuration loading from `settings.toml` files. Supports loading from both project-level (`.acai/settings.toml`) and global (`~/.cache/acai/settings.toml`) with merge semantics where project settings override global settings for the same model name.
 - `defaults`: Default values for model, base URL, API key env var, and providers
 

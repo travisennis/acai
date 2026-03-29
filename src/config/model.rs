@@ -52,9 +52,6 @@ pub struct ModelConfig {
     /// Maximum reasoning tokens budget (for budget-style reasoning)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_max_tokens: Option<u32>,
-    /// Whether to exclude reasoning output from display
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reasoning_exclude: Option<bool>,
     /// Provider routing hints
     pub providers: Vec<String>,
 }
@@ -72,7 +69,6 @@ impl Default for ModelConfig {
             reasoning_effort: None,
             reasoning_summary: None,
             reasoning_max_tokens: None,
-            reasoning_exclude: None,
             providers: DEFAULT_PROVIDERS.iter().map(|s| (*s).to_string()).collect(),
         }
     }
@@ -130,7 +126,6 @@ mod tests {
         assert_eq!(config.reasoning_effort, None);
         assert_eq!(config.reasoning_summary, None);
         assert_eq!(config.reasoning_max_tokens, None);
-        assert_eq!(config.reasoning_exclude, None);
     }
 
     #[test]

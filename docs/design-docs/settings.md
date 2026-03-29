@@ -73,9 +73,6 @@ reasoning_summary = "concise"
 # Optional: maximum reasoning tokens budget
 reasoning_max_tokens = 10000
 
-# Optional: whether to exclude reasoning output from display
-reasoning_exclude = false
-
 # Optional: provider routing hints (defaults to empty array)
 providers = []
 
@@ -114,7 +111,6 @@ All other fields have defaults matching `ModelConfig::default()`:
 | `reasoning_effort` | `None` | Reasoning effort level (none, low, medium, high, xhigh) |
 | `reasoning_summary` | `None` | Reasoning summary mode (Responses API only) |
 | `reasoning_max_tokens` | `None` | Maximum reasoning tokens budget |
-| `reasoning_exclude` | `None` | Whether to exclude reasoning output from display |
 
 ## Model Name Validation
 
@@ -188,7 +184,6 @@ struct ModelDefinition {
     reasoning_effort: Option<String>,  // Optional
     reasoning_summary: Option<String>,  // Optional
     reasoning_max_tokens: Option<u32>,  // Optional
-    reasoning_exclude: Option<bool>,  // Optional
     providers: Vec<String>,     // Optional, defaults to []
 }
 ```

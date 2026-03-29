@@ -136,7 +136,6 @@ Models that support reasoning (e.g., OpenAI o-series, Anthropic Claude with exte
 | `reasoning_effort` | Controls how much reasoning the model performs | `none`, `low`, `medium`, `high`, `xhigh` |
 | `reasoning_summary` | How reasoning is summarized (Responses API only) | `concise`, `detailed`, `auto` |
 | `reasoning_max_tokens` | Token budget for reasoning (budget-style) | Any positive integer |
-| `reasoning_exclude` | Hide reasoning traces from output | `true`, `false` |
 
 These can also be overridden at runtime with CLI flags:
 

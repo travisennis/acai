@@ -593,7 +593,6 @@ mod tests {
                 reasoning_effort: None,
                 reasoning_summary: None,
                 reasoning_max_tokens: None,
-                reasoning_exclude: None,
                 providers: vec![],
             },
         );
