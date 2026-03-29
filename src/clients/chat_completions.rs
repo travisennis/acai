@@ -1,4 +1,4 @@
-use log::debug;
+use log::{debug, trace};
 
 use crate::config::model::ResolvedModelConfig;
 use crate::models::Role;
@@ -53,7 +53,7 @@ pub(super) async fn send_request(
     );
     debug!(target: "acai", "{url}");
     let request_json = serde_json::to_string(&request)?;
-    debug!(target: "acai", "{request_json}");
+    trace!(target: "acai", "{request_json}");
 
     let response = client
         .post(&url)
@@ -75,7 +75,7 @@ pub(super) async fn send_request(
 /// Returns an error if the response body cannot be deserialized.
 pub(super) async fn parse_response(response: reqwest::Response) -> anyhow::Result<TurnResult> {
     let chat_response = response.json::<ChatResponse>().await?;
-    debug!(target: "acai", "{chat_response:?}");
+    trace!(target: "acai", "{chat_response:?}");
 
     #[allow(clippy::cast_possible_truncation)]
     let usage = chat_response.usage.as_ref().map(|u| Usage {

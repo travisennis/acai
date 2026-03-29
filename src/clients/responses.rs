@@ -1,4 +1,4 @@
-use log::debug;
+use log::{debug, trace};
 
 use crate::config::model::ResolvedModelConfig;
 use crate::models::Role;
@@ -59,7 +59,7 @@ pub(super) async fn send_request(
     let url = format!("{}/responses", config.config.base_url.trim_end_matches('/'));
     debug!(target: "acai", "{url}");
     let prompt_json = serde_json::to_string(&prompt)?;
-    debug!(target: "acai", "{prompt_json}");
+    trace!(target: "acai", "{prompt_json}");
 
     let response = client
         .post(&url)
@@ -81,7 +81,7 @@ pub(super) async fn send_request(
 /// Returns an error if the response body cannot be deserialized.
 pub(super) async fn parse_response(response: reqwest::Response) -> anyhow::Result<TurnResult> {
     let api_response = response.json::<ApiResponse>().await?;
-    debug!(target: "acai", "{api_response:?}");
+    trace!(target: "acai", "{api_response:?}");
 
     let usage = api_response.usage.as_ref().map(map_usage);
     let items = parse_output_items(&api_response);
