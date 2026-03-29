@@ -30,42 +30,45 @@ ls -la ~/.cache/acai/sessions/*/latest
 ```
 
 ### View Session Files
-```bash
-# View full session (pretty-printed)
-jq '.' ~/.cache/acai/sessions/{hash}/{uuid}.json
 
-# View session metadata (quick overview)
-jq '{id, working_dir, created_at, updated_at}' ~/.cache/acai/sessions/{hash}/{uuid}.json
+Sessions use JSON Lines (`.jsonl`) format. Use `jq -c` to process each line:
+
+```bash
+# View full session (all lines, pretty-printed)
+jq '.' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+
+# View session header (first line - metadata)
+head -1 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq '.'
 
 # View last 5 messages (most useful)
-jq '.messages[-5:]' ~/.cache/acai/sessions/{hash}/{uuid}.json
+tail -5 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq '.'
 
 # View all user prompts (see what was asked)
-jq '.messages[] | select(.type == "message" and .role == "user") | .content' ~/.cache/acai/sessions/{hash}/{uuid}.json
+jq 'select(.type == "message" and .role == "user") | .content' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
 
 # View all assistant responses (see what was returned)
-jq '.messages[] | select(.role == "assistant") | .content' ~/.cache/acai/sessions/{hash}/{uuid}.json
+jq 'select(.role == "assistant") | .content' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
 
-# Check if response was complete
-jq '.messages[-1] | {type, status}' ~/.cache/acai/sessions/{hash}/{uuid}.json
+# Check if response was complete (last line)
+tail -1 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq '{type, status}'
 
 # View all reasoning messages
-jq '.messages[] | select(.type == "reasoning")' ~/.cache/acai/sessions/{hash}/{uuid}.json
+jq 'select(.type == "reasoning")' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
 
 # View all tool calls
-jq '.messages[] | select(.type == "function_call")' ~/.cache/acai/sessions/{hash}/{uuid}.json
+jq 'select(.type == "function_call")' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
 
 # View all tool outputs
-jq '.messages[] | select(.type == "function_call_output")' ~/.cache/acai/sessions/{hash}/{uuid}.json
+jq 'select(.type == "function_call_output")' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
 
 # View tool calls AND outputs together (correlate calls with results)
-jq '.messages[] | select(.type == "function_call" or .type == "function_call_output")' ~/.cache/acai/sessions/{hash}/{uuid}.json
+jq 'select(.type == "function_call" or .type == "function_call_output")' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
 
 # Count messages by type (see conversation structure)
-jq '[.messages[].type] | group_by(.) | map({type: .[0], count: length})' ~/.cache/acai/sessions/{hash}/{uuid}.json
+jq -r '.type' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | sort | uniq -c
 
 # Find what prompt caused a specific behavior (search by content)
-jq '.messages[] | select(.type == "message" and .role == "user") | select(.content | contains("refactor"))' ~/.cache/acai/sessions/{hash}/{uuid}.json
+jq 'select(.type == "message" and .role == "user") | select(.content | contains("refactor"))' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
 ```
 
 ### Search Logs
@@ -102,8 +105,8 @@ Sessions are stored in `~/.cache/acai/sessions/` organized by a hash of the work
 ```
 ~/.cache/acai/sessions/
   {dir_hash}/           # First 16 hex chars of SHA-256 of working dir path
-    {uuid}.json         # Individual session files
-    latest -> {uuid}.json  # Symlink to most recent session
+    {uuid}.jsonl        # Individual session files (JSON Lines format)
+    latest -> {uuid}.jsonl  # Symlink to most recent session
 ```
 
 ### Finding Your Session Directory
@@ -119,16 +122,34 @@ done
 
 ### Session File Structure
 
+Sessions use JSON Lines (`.jsonl`) format. Each line is a valid JSON object:
+
+**Line 1: Session Header**
 ```json
 {
-  "format_version": 1,
-  "id": "uuid-v4",
-  "working_dir": "/absolute/path/to/project",
-  "created_at": 1772918641731,    // Unix timestamp in milliseconds
-  "updated_at": 1772918724253,
-  "messages": [...]
+  "format_version": 2,
+  "session_id": "uuid-v4",
+  "timestamp": "2026-03-28T12:00:00Z",
+  "working_directory": "/absolute/path/to/project",
+  "model": "model-name",
+  "type": "session_start"
 }
 ```
+
+**Subsequent Lines: Conversation Items**
+```json
+{
+  "format_version": 2,
+  "session_id": "uuid-v4",
+  "timestamp": "2026-03-28T12:00:01Z",
+  "working_directory": "/absolute/path/to/project",
+  "type": "message",
+  "role": "user",
+  "content": "Hello"
+}
+```
+
+Each conversation item (message, function_call, function_call_output, reasoning) is on its own line.
 
 ### Message Types
 
@@ -147,17 +168,14 @@ done
 ```bash
 # A complete response ends with type: "message" and status: "completed"
 # If it ends with "reasoning" or has no status, it was truncated
-jq '.messages[-1] | {type, status}' ~/.cache/acai/sessions/{hash}/{uuid}.json
+tail -1 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq '{type, status}'
 ```
 
-**Example truncated response**:
+**Example truncated response** (last line of `.jsonl` file):
 ```json
-{
-  "type": "reasoning",
-  "id": "rs_tmp_tf8nkow8vrp",
-  "summary": ["Now"]  // Cut off mid-sentence!
-}
+{"format_version":2,"session_id":"abc-123","timestamp":"2026-03-28T12:00:00Z","working_directory":"/work","type":"reasoning","id":"rs_tmp_tf8nkow8vrp","summary":["Now"]}
 ```
+Note: The `summary` array is cut off mid-sentence (incomplete reasoning).
 
 **How to investigate**:
 1. Find the session directory
@@ -170,7 +188,7 @@ jq '.messages[-1] | {type, status}' ~/.cache/acai/sessions/{hash}/{uuid}.json
 **Check**:
 ```bash
 # Find all function_call_output messages and check for errors
-jq '.messages[] | select(.type == "function_call_output") | {call_id, output: .output[0:200]}' ~/.cache/acai/sessions/{hash}/{uuid}.json
+jq 'select(.type == "function_call_output") | {call_id, output: .output[0:200]}' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
 ```
 
 ### 3. "Tool Error" Without Explanation
@@ -187,13 +205,13 @@ jq '.messages[] | select(.type == "function_call_output") | {call_id, output: .o
 **Check**:
 ```bash
 # Check session file size
-ls -lh ~/.cache/acai/sessions/{hash}/{uuid}.json
+ls -lh ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
 
-# Count total messages
-jq '.messages | length' ~/.cache/acai/sessions/{hash}/{uuid}.json
+# Count total lines (messages + header)
+wc -l ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
 
-# Count total characters in all messages
-jq '[.messages[].content // ""] | add | length' ~/.cache/acai/sessions/{hash}/{uuid}.json
+# Count total characters in all content fields
+jq -r '.content // ""' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | wc -c
 ```
 
 ### 5. Model Made Unexpected Tool Calls
@@ -201,19 +219,19 @@ jq '[.messages[].content // ""] | add | length' ~/.cache/acai/sessions/{hash}/{u
 **Check**:
 ```bash
 # List all tool calls made
-jq '.messages[] | select(.type == "function_call") | {name, arguments}' ~/.cache/acai/sessions/{hash}/{uuid}.json
+jq 'select(.type == "function_call") | {name, arguments}' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
 ```
 
 ## Correlating Sessions with Logs
 
 ```bash
-# 1. Get the session ID
-SESSION_ID=$(jq -r '.id' ~/.cache/acai/sessions/{hash}/{uuid}.json)
+# 1. Get the session ID from the header line
+SESSION_ID=$(head -1 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq -r '.session_id')
 echo "Session ID: $SESSION_ID"
 
 # 2. Find log entries around session creation time
-CREATED_AT=$(jq -r '.created_at' ~/.cache/acai/sessions/{hash}/{uuid}.json)
-date -r $((CREATED_AT / 1000))  # Convert to human-readable
+TIMESTAMP=$(head -1 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq -r '.timestamp')
+echo "Session start: $TIMESTAMP"
 
 # 3. Search logs for that session's activity
 grep "$SESSION_ID" ~/.cache/acai/acai.log
@@ -226,10 +244,10 @@ grep "$SESSION_ID" ~/.cache/acai/acai.log
 ls -la ~/.cache/acai/sessions/*/latest
 
 # View last 5 messages (most common debugging command)
-jq '.messages[-5:]' ~/.cache/acai/sessions/*/latest
+tail -5 ~/.cache/acai/sessions/*/latest | jq '.'
 
-# Check if response was complete
-jq '.messages[-1] | {type, status}' ~/.cache/acai/sessions/*/latest
+# Check if response was complete (last line)
+tail -1 ~/.cache/acai/sessions/*/latest | jq '{type, status}'
 
 # View recent errors in logs (one-liner)
 tail -50 ~/.cache/acai/acai.log | grep -i error
@@ -257,11 +275,11 @@ When the user reports an issue:
    - Check the `latest` symlink
 
 2. **Check for truncation**
-   - `jq '.messages[-1]'` - should end with a completed message
+   - `tail -1 session.jsonl | jq '{type, status}'` - should end with a completed message
    - If it ends with reasoning or has no status, the response was truncated
 
 3. **Review the conversation flow**
-   - `jq '.messages[-5:]'` - see the last few interactions
+   - `tail -5 session.jsonl | jq '.'` - see the last few interactions
    - Look for where things went wrong
 
 4. **Check logs**
@@ -350,10 +368,18 @@ cat /tmp/acai/sandbox_profiles/acai_sandbox_*.sb
 
 | File Type | Location |
 |-----------|----------|
-| Sessions | `~/.cache/acai/sessions/{hash}/{uuid}.json` |
+| Sessions | `~/.cache/acai/sessions/{hash}/{uuid}.jsonl` |
 | Latest session symlink | `~/.cache/acai/sessions/{hash}/latest` |
 | Logs | `~/.cache/acai/acai.log` |
-| Config | `~/.cache/acai/` |
+| Config | `~/.cache/acai/` and `.acai` |
+| User-level AGENTS.md | `~/.acai/AGENTS.md` |
+| Project-level AGENTS.md | `./AGENTS.md` |
+
+## Configuration
+
+- **Config directory**: `~/.cache/acai/` and `.acai` (see `src/config/data_dir.rs`)
+- **Logs**: `~/.cache/acai/acai.log`
+- **API key**: Required via environment variable (default: `OPENCODE_ZEN_API_TOKEN`)
 
 ## Session Restoration and Continuation
 
