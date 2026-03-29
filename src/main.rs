@@ -430,48 +430,11 @@ fn format_progress_item(item: &ConversationItem, elapsed_secs: f64) -> String {
         ConversationItem::FunctionCall {
             name, arguments, ..
         } => {
-            let summary = summarize_tool_args(name, arguments);
+            let summary = clients::summarize_tool_args(name, arguments);
             format!("{ts} \x1b[1;36m>\x1b[0m {name}: {summary}")
         },
         // Skip message, reasoning, and function output items
         _ => String::new(),
-    }
-}
-
-/// Extract the most relevant argument from a tool call's JSON arguments.
-fn summarize_tool_args(tool_name: &str, arguments: &str) -> String {
-    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(arguments) else {
-        return String::new();
-    };
-
-    let raw = match tool_name {
-        "Bash" => parsed
-            .get("command")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        "Read" | "Edit" => parsed
-            .get("path")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        "Write" => parsed
-            .get("file_path")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        _ => String::new(),
-    };
-
-    truncate_display(&raw, 120)
-}
-
-/// Truncate a string for display, appending "..." if needed.
-fn truncate_display(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max])
     }
 }
 

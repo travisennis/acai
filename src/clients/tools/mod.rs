@@ -156,6 +156,34 @@ pub(super) async fn execute_tool(name: &str, arguments: &str) -> Result<ToolResu
 }
 
 // =============================================================================
+// Tool Argument Summarization
+// =============================================================================
+
+/// Summarize tool arguments for display.
+/// This function uses the same typed argument structs as the tool execution,
+/// ensuring that parameter names stay in sync.
+pub fn summarize_tool_args(tool_name: &str, arguments: &str) -> String {
+    let raw = match tool_name {
+        "Bash" => bash::summarize_args(arguments),
+        "Read" => read::summarize_args(arguments),
+        "Edit" => edit::summarize_args(arguments),
+        "Write" => write::summarize_args(arguments),
+        _ => String::new(),
+    };
+
+    truncate_display(&raw, 120)
+}
+
+/// Truncate a string for display, appending "..." if needed.
+fn truncate_display(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max])
+    }
+}
+
+// =============================================================================
 // Tool Definitions (Re-exports)
 // =============================================================================
 

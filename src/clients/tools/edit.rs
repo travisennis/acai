@@ -66,7 +66,15 @@ struct Edit {
 #[derive(Debug, Deserialize)]
 struct EditArgs {
     path: String,
+    #[allow(dead_code)]
     edits: Vec<Edit>,
+}
+
+/// Summarize edit arguments for display
+pub fn summarize_args(arguments: &str) -> String {
+    serde_json::from_str::<EditArgs>(arguments)
+        .map(|args| args.path)
+        .unwrap_or_default()
 }
 
 /// A matched edit with position information

@@ -45,15 +45,25 @@ pub(super) fn read_tool() -> super::Tool {
 // Read Execution
 // =============================================================================
 
+/// Arguments for the Read tool
+#[derive(Deserialize)]
+struct ReadArgs {
+    path: String,
+    #[allow(dead_code)]
+    start_line: Option<usize>,
+    #[allow(dead_code)]
+    end_line: Option<usize>,
+}
+
+/// Summarize read arguments for display
+pub fn summarize_args(arguments: &str) -> String {
+    serde_json::from_str::<ReadArgs>(arguments)
+        .map(|args| args.path)
+        .unwrap_or_default()
+}
+
 /// Execute a read command
 pub(super) fn execute_read(arguments: &str) -> Result<super::ToolResult, String> {
-    #[derive(Deserialize)]
-    struct ReadArgs {
-        path: String,
-        start_line: Option<usize>,
-        end_line: Option<usize>,
-    }
-
     let args: ReadArgs =
         serde_json::from_str(arguments).map_err(|e| format!("Invalid read arguments: {e}"))?;
 

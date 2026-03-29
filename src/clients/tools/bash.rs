@@ -247,6 +247,13 @@ fn append_metadata(output: &str, exit_code: i32, elapsed_ms: u128) -> String {
     }
 }
 
+/// Summarize bash arguments for display
+pub fn summarize_args(arguments: &str) -> String {
+    BashExecutionArgs::from_json(arguments)
+        .map(|args| args.command)
+        .unwrap_or_default()
+}
+
 /// Execute a bash command
 #[allow(clippy::too_many_lines)]
 pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, String> {

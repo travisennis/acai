@@ -17,7 +17,7 @@ pub(super) fn write_tool() -> super::Tool {
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
-                "file_path": {
+                "path": {
                     "type": "string",
                     "description": "Absolute path to the file to create or overwrite."
                 },
@@ -26,7 +26,7 @@ pub(super) fn write_tool() -> super::Tool {
                     "description": "The full content to write to the file."
                 }
             },
-            "required": ["file_path", "content"]
+            "required": ["path", "content"]
         }),
     }
 }
@@ -35,23 +35,32 @@ pub(super) fn write_tool() -> super::Tool {
 // Write Execution
 // =============================================================================
 
+/// Arguments for the Write tool
+#[derive(Deserialize)]
+struct WriteArgs {
+    path: String,
+    #[allow(dead_code)]
+    content: String,
+}
+
+/// Summarize write arguments for display
+pub fn summarize_args(arguments: &str) -> String {
+    serde_json::from_str::<WriteArgs>(arguments)
+        .map(|args| args.path)
+        .unwrap_or_default()
+}
+
 /// Execute a write command
 pub(super) fn execute_write(arguments: &str) -> Result<super::ToolResult, String> {
-    #[derive(Deserialize)]
-    struct WriteArgs {
-        file_path: String,
-        content: String,
-    }
-
     let args: WriteArgs =
         serde_json::from_str(arguments).map_err(|e| format!("Invalid write arguments: {e}"))?;
 
     // Check if file exists to determine if it's a create or overwrite
-    let file_existed = Path::new(&args.file_path).exists();
+    let file_existed = Path::new(&args.path).exists();
 
     // Validate path is within working directory
     // For new files, we need to handle the case where the file doesn't exist yet
-    let path = validate_path_for_write(&args.file_path)?;
+    let path = validate_path_for_write(&args.path)?;
 
     // Create parent directories if they don't exist
     if let Some(parent) = path.parent()
@@ -167,7 +176,7 @@ mod tests {
         let file_path = temp_dir.path().join("new_file.txt");
 
         let args = serde_json::json!({
-            "file_path": file_path.to_str().unwrap(),
+            "path": file_path.to_str().unwrap(),
             "content": "Hello, world!"
         })
         .to_string();
@@ -187,7 +196,7 @@ mod tests {
         fs::write(&file_path, "old content").unwrap();
 
         let args = serde_json::json!({
-            "file_path": file_path.to_str().unwrap(),
+            "path": file_path.to_str().unwrap(),
             "content": "new content"
         })
         .to_string();
@@ -206,7 +215,7 @@ mod tests {
         let nested_path = temp_dir.path().join("a/b/c/deep_file.txt");
 
         let args = serde_json::json!({
-            "file_path": nested_path.to_str().unwrap(),
+            "path": nested_path.to_str().unwrap(),
             "content": "Deep content"
         })
         .to_string();
@@ -221,7 +230,7 @@ mod tests {
     #[test]
     fn error_on_path_outside_working_directory() {
         let args = serde_json::json!({
-            "file_path": "/etc/passwd",
+            "path": "/etc/passwd",
             "content": "test"
         })
         .to_string();
@@ -241,7 +250,7 @@ mod tests {
         let file_path = temp_dir.path().join("empty.txt");
 
         let args = serde_json::json!({
-            "file_path": file_path.to_str().unwrap(),
+            "path": file_path.to_str().unwrap(),
             "content": ""
         })
         .to_string();
