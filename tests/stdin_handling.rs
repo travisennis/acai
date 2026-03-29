@@ -62,7 +62,7 @@ fn test_positional_prompt_parsing() {
     // It will fail on API key, but that's expected
     let output = Command::new(get_binary_path())
         .arg("test prompt here")
-        .env_remove("OPENROUTER_API_KEY")
+        .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -84,7 +84,7 @@ fn test_dash_prompt_parsing() {
     // It will fail on no stdin + API key, but that's expected
     let output = Command::new(get_binary_path())
         .arg("-")
-        .env_remove("OPENROUTER_API_KEY")
+        .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -95,7 +95,7 @@ fn test_dash_prompt_parsing() {
     // When using '-' without stdin, should get specific error
     assert!(
         stderr.contains("No input provided via stdin")
-            || stderr.contains("OPENROUTER_API_KEY")
+            || stderr.contains("OPENCODE_ZEN_API_TOKEN")
             || stderr.contains("config"),
         "Should either fail on no stdin or proceed to API. Stderr: {stderr}"
     );
@@ -105,7 +105,7 @@ fn test_dash_prompt_parsing() {
 fn test_no_prompt_no_stdin_error() {
     // Verify that running without any input produces a clear error
     let output = Command::new(get_binary_path())
-        .env_remove("OPENROUTER_API_KEY")
+        .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
