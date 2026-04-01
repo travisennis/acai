@@ -47,6 +47,10 @@ Without the `landlock` feature, a warning is logged and commands run without fil
 
 System paths on Linux include `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc/alternatives`, and `/snap`.
 
+## Layered Defense
+
+The sandbox provides OS-level filesystem restriction as the primary enforcement mechanism. In addition, the Bash tool includes a pre-execution command safety check that blocks known-destructive commands (e.g., `git reset --hard`, `git push --force`, `rm -rf` outside temp dirs) before they reach the shell. This complements the sandbox by catching destructive operations that are technically allowed within the sandbox's permitted zones—for example, destructive git operations inside the repository directory. See [tools.md](./tools.md) for the full list of blocked commands.
+
 ## Configuration
 
 ### Disabling the Sandbox

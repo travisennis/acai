@@ -192,6 +192,46 @@ You can inspect the file with appropriate tools (e.g., `file`, `hexdump`, `xxd`)
 [exit:0 | 15ms]
 ```
 
+**Destructive Command Blocking**:
+
+The Bash tool includes a pre-execution safety check that blocks known-destructive commands before they reach the sandbox or process spawn. This complements the OS-level sandbox by catching destructive operations that are allowed within the sandbox's permitted zones — for example, destructive git operations inside the repo or remote-affecting operations like force-push.
+
+Blocked git commands:
+
+| Blocked Command | Reason | Allowed Alternative |
+|---|---|---|
+| `git reset --hard` / `--merge` | Discards uncommitted changes | `git stash` or `git reset --soft` |
+| `git checkout -- <file>` | Discards working tree changes | `git restore --staged` |
+| `git restore <file>` (without `--staged`), `git restore --worktree` | Discards working tree changes | `git restore --staged` |
+| `git clean -f` / `--force` (including combined flags like `-fd`, `-fdx`) | Permanently deletes untracked files | `git clean -n` (dry run) |
+| `git push --force` / `-f` | Rewrites remote history | `--force-with-lease` (allowed) |
+| `git branch -D` (uppercase) | Force-deletes unmerged branch | `git branch -d` (lowercase, allowed) |
+| `git stash drop` / `clear` | Permanently deletes stashed changes | `git stash pop` or `git stash list` |
+
+Blocked filesystem commands:
+
+| Blocked Command | Reason |
+|---|---|
+| `rm -rf` outside temp directories (`/tmp`, `/var/tmp`, `$TMPDIR`) | Irreversible recursive deletion |
+
+Additional protections:
+- **Wrapper detection**: `bash -c` / `sh -c` wrappers are detected and the inner script is recursively checked
+- **Command chaining**: Commands joined via `&&`, `||`, `;`, or newlines are split and each segment is checked independently
+- **False positive avoidance**: Commit messages, `echo`, `printf`, and similar data contexts are skipped to avoid flagging non-destructive uses
+
+Error format:
+
+When a command is blocked, the tool returns a `BLOCKED` message with structured fields:
+
+```
+⚠️ BLOCKED: <summary>
+Reason: <why the command is dangerous>
+Command: <the matched command fragment>
+Tip: <safe alternative>
+```
+
+> **Note**: Destructive command blocking is a best-effort guard, not a security boundary. The OS-level sandbox remains the primary enforcement mechanism. See [sandbox.md](./sandbox.md) for details.
+
 ### Read Tool
 
 **Purpose**: Read file contents or list directory entries.
@@ -315,7 +355,7 @@ Examples:
 
 Each tool has comprehensive tests:
 
-- **Bash**: Output streaming, timeout, sandbox blocking, stderr capture, metadata footer formatting, binary output detection
+- **Bash**: Output streaming, timeout, sandbox blocking, stderr capture, metadata footer formatting, binary output detection, destructive command blocking (git operations, filesystem operations, wrapper detection, command chaining, false positive avoidance)
 - **Read**: Small files, line ranges, directories, binary detection
 - **Edit**: Multiple edits, overlap detection, line ending preservation, BOM handling, binary files, no-op detection, path validation
 - **Write**: Create, overwrite, nested directories, path validation
