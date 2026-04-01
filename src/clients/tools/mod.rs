@@ -1,8 +1,48 @@
 use serde::Serialize;
 use std::cell::RefCell;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 mod sandbox;
+
+// =============================================================================
+// Cached Directory Lookups
+// =============================================================================
+
+static CWD: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+static TEMP_DIRS: OnceLock<Vec<PathBuf>> = OnceLock::new();
+
+fn cached_cwd() -> Result<&'static PathBuf, String> {
+    CWD.get_or_init(|| {
+        std::env::current_dir().map_err(|e| format!("Failed to get working directory: {e}"))
+    })
+    .as_ref()
+    .map_err(String::clone)
+}
+
+fn cached_temp_dirs() -> &'static [PathBuf] {
+    TEMP_DIRS.get_or_init(compute_temp_directories)
+}
+
+fn compute_temp_directories() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Ok(tmp) = std::fs::canonicalize("/tmp") {
+        dirs.push(tmp);
+    }
+
+    if let Ok(tmp) = std::fs::canonicalize("/var/folders") {
+        dirs.push(tmp);
+    }
+
+    if let Ok(tmpdir) = std::env::var("TMPDIR")
+        && let Ok(canonical) = std::fs::canonicalize(&tmpdir)
+    {
+        dirs.push(canonical);
+    }
+
+    dirs
+}
 
 // =============================================================================
 // Thread-Local Additional Directories
@@ -11,19 +51,19 @@ mod sandbox;
 // Thread-local storage for additional directories added via --add-dir flag.
 // These directories are read-only for the agent.
 thread_local! {
-    static ADDITIONAL_DIRS: RefCell<Vec<std::path::PathBuf>> = const { RefCell::new(Vec::new()) };
+    static ADDITIONAL_DIRS: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Set the additional directories for the current thread.
 /// This should be called once at startup from main.
-pub fn set_additional_dirs(dirs: Vec<std::path::PathBuf>) {
+pub fn set_additional_dirs(dirs: Vec<PathBuf>) {
     ADDITIONAL_DIRS.with(|cell| {
         *cell.borrow_mut() = dirs;
     });
 }
 
 /// Get the additional directories for the current thread.
-pub fn get_additional_dirs() -> Vec<std::path::PathBuf> {
+pub fn get_additional_dirs() -> Vec<PathBuf> {
     ADDITIONAL_DIRS.with(|cell| cell.borrow().clone())
 }
 
@@ -65,9 +105,7 @@ pub struct ToolResult {
 pub(super) fn validate_path_in_cwd(path_str: &str) -> Result<std::path::PathBuf, String> {
     let path = Path::new(path_str);
 
-    // Get the current working directory
-    let cwd =
-        std::env::current_dir().map_err(|e| format!("Failed to get working directory: {e}"))?;
+    let cwd = cached_cwd()?;
 
     // Canonicalize the path (resolve symlinks, relative paths, etc.)
     let canonical = path
@@ -75,13 +113,12 @@ pub(super) fn validate_path_in_cwd(path_str: &str) -> Result<std::path::PathBuf,
         .map_err(|e| format!("Path not found or not accessible '{}': {e}", path.display()))?;
 
     // Check if path is within working directory
-    if canonical.starts_with(&cwd) {
+    if canonical.starts_with(cwd) {
         return Ok(canonical);
     }
 
     // Allow paths in standard temp directories
-    let temp_dirs = get_temp_directories();
-    for temp_dir in &temp_dirs {
+    for temp_dir in cached_temp_dirs() {
         if canonical.starts_with(temp_dir) {
             return Ok(canonical);
         }
@@ -101,28 +138,9 @@ pub(super) fn validate_path_in_cwd(path_str: &str) -> Result<std::path::PathBuf,
     ))
 }
 
-/// Get standard temporary directory paths
-pub(super) fn get_temp_directories() -> Vec<std::path::PathBuf> {
-    let mut dirs = Vec::new();
-
-    // /tmp on Unix-like systems
-    if let Ok(tmp) = std::fs::canonicalize("/tmp") {
-        dirs.push(tmp);
-    }
-
-    // macOS temp directory (/var/folders/...)
-    if let Ok(tmp) = std::fs::canonicalize("/var/folders") {
-        dirs.push(tmp);
-    }
-
-    // TMPDIR environment variable
-    if let Ok(tmpdir) = std::env::var("TMPDIR")
-        && let Ok(canonical) = std::fs::canonicalize(&tmpdir)
-    {
-        dirs.push(canonical);
-    }
-
-    dirs
+/// Get standard temporary directory paths (cached)
+pub(super) fn get_temp_directories() -> &'static [PathBuf] {
+    cached_temp_dirs()
 }
 
 // =============================================================================

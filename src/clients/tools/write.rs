@@ -102,9 +102,7 @@ pub(super) fn execute_write(arguments: &str) -> Result<super::ToolResult, String
 fn validate_path_for_write(path_str: &str) -> Result<std::path::PathBuf, String> {
     let path = Path::new(path_str);
 
-    // Get the current working directory
-    let cwd =
-        std::env::current_dir().map_err(|e| format!("Failed to get working directory: {e}"))?;
+    let cwd = super::cached_cwd()?;
 
     // If the file exists, canonicalize the full path using the shared validation
     if path.exists() {
@@ -138,7 +136,7 @@ fn validate_path_for_write(path_str: &str) -> Result<std::path::PathBuf, String>
     })?;
 
     // Check if the existing parent is within allowed directories
-    let is_in_cwd = canonical_parent.starts_with(&cwd);
+    let is_in_cwd = canonical_parent.starts_with(cwd);
     let is_in_temp = super::get_temp_directories()
         .iter()
         .any(|temp_dir| canonical_parent.starts_with(temp_dir));

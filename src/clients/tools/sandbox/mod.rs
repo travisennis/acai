@@ -58,7 +58,7 @@ impl SandboxConfig {
 
         // Add temp directories
         let temp_dirs = super::get_temp_directories();
-        read_write.extend(temp_dirs);
+        read_write.extend(temp_dirs.iter().cloned());
 
         // Add user home toolchain and integration paths
         if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
