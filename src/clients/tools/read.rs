@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::io::{BufRead, BufReader, Read as _};
 use std::path::Path;
 
 use crate::clients::tools::validate_path_in_cwd;
@@ -107,49 +108,69 @@ fn read_directory(path: &Path) -> Result<super::ToolResult, String> {
     Ok(super::ToolResult { output })
 }
 
+/// Check the first 8KB of a file for null bytes (binary detection)
+fn is_binary(path: &Path) -> Result<bool, String> {
+    let file = std::fs::File::open(path)
+        .map_err(|e| format!("Failed to open file '{}': {e}", path.display()))?;
+    let mut buf = [0u8; 8192];
+    let n = (&file)
+        .take(8192)
+        .read(&mut buf)
+        .map_err(|e| format!("Failed to read file '{}': {e}", path.display()))?;
+    Ok(buf[..n].contains(&0))
+}
+
 /// Read and format a file with line numbers
 fn read_file(
     path: &Path,
     start_line: Option<usize>,
     end_line: Option<usize>,
 ) -> Result<super::ToolResult, String> {
-    // Read file content
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read file '{}': {e}", path.display()))?;
-
     // Check for binary files (null bytes in first 8KB)
-    let check_len = content.len().min(8192);
-    if content.as_bytes()[..check_len].contains(&0) {
+    if is_binary(path)? {
         return Err(format!(
             "Cannot read binary file: {} (detected null bytes)",
             path.display()
         ));
     }
 
-    let lines: Vec<&str> = content.lines().collect();
-    let total_lines = lines.len();
+    // Default line range (1-indexed from caller, convert to 0-indexed)
+    let start = start_line.unwrap_or(1).saturating_sub(1);
+    let end_requested = end_line.unwrap_or(DEFAULT_END_LINE).saturating_sub(1);
 
-    // Default line range
-    let start = start_line.unwrap_or(1).saturating_sub(1); // Convert to 0-indexed
-    let end = end_line.unwrap_or(DEFAULT_END_LINE).saturating_sub(1); // Convert to 0-indexed
+    // Read only the lines we need using a buffered reader
+    let file = std::fs::File::open(path)
+        .map_err(|e| format!("Failed to read file '{}': {e}", path.display()))?;
+    let reader = BufReader::new(file);
 
-    // Clamp to valid range
-    let start = start.min(total_lines);
-    let end = end.min(total_lines.saturating_sub(1));
+    let mut numbered_lines: Vec<String> = Vec::new();
+    let mut total_lines: usize = 0;
 
-    if start > end {
+    for (i, line_result) in reader.lines().enumerate() {
+        let line =
+            line_result.map_err(|e| format!("Failed to read file '{}': {e}", path.display()))?;
+        total_lines = i + 1;
+
+        if i < start {
+            continue;
+        }
+        if i > end_requested {
+            // Keep counting for total_lines but don't store content
+            continue;
+        }
+        numbered_lines.push(format!("{:>6}: {line}", i + 1));
+    }
+
+    // Clamp end to actual file length
+    let end = end_requested.min(total_lines.saturating_sub(1));
+
+    if start > end || start >= total_lines {
         return Ok(super::ToolResult {
             output: format!(
                 "File: {}\n{total_lines} lines total\n(start_line > end_line, no content to show)",
                 path.display()
             ),
         });
-    }
-
-    // Build numbered output
-    let mut numbered_lines: Vec<String> = Vec::new();
-    for (i, line) in lines.iter().enumerate().take(end + 1).skip(start) {
-        numbered_lines.push(format!("{:>6}: {line}", i + 1));
     }
 
     let mut output = format!(
