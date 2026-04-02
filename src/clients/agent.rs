@@ -76,7 +76,11 @@ impl Agent {
             session_id: uuid::Uuid::new_v4().to_string(),
             total_usage: Usage::default(),
             turn_count: 0,
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(300))
+                .build()
+                .unwrap_or_default(),
         }
     }
 
