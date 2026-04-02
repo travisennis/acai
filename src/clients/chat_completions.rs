@@ -52,8 +52,10 @@ pub(super) async fn send_request(
         config.config.base_url.trim_end_matches('/')
     );
     debug!(target: "acai", "{url}");
-    let request_json = serde_json::to_string(&request)?;
-    trace!(target: "acai", "{request_json}");
+    if tracing::enabled!(tracing::Level::TRACE) {
+        let request_json = serde_json::to_string(&request)?;
+        trace!(target: "acai", "{request_json}");
+    }
 
     let response = client
         .post(&url)

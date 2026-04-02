@@ -58,8 +58,10 @@ pub(super) async fn send_request(
 
     let url = format!("{}/responses", config.config.base_url.trim_end_matches('/'));
     debug!(target: "acai", "{url}");
-    let prompt_json = serde_json::to_string(&prompt)?;
-    trace!(target: "acai", "{prompt_json}");
+    if tracing::enabled!(tracing::Level::TRACE) {
+        let prompt_json = serde_json::to_string(&prompt)?;
+        trace!(target: "acai", "{prompt_json}");
+    }
 
     let response = client
         .post(&url)
