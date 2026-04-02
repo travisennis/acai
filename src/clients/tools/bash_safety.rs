@@ -17,15 +17,16 @@ pub(super) fn validate_command_safety(command: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    // 1. Check for shell -c wrappers and recurse into the inner script
-    if let Some(inner) = extract_inline_script(trimmed) {
-        return validate_command_safety(&inner);
-    }
-
-    // 2. Split on top-level command separators and check each segment
+    // Split on top-level command separators and check each segment
     for segment in split_segments(trimmed) {
         let seg = segment.trim();
         if seg.is_empty() {
+            continue;
+        }
+
+        // Check for shell -c wrappers and recurse into the inner script
+        if let Some(inner) = extract_inline_script(seg) {
+            validate_command_safety(&inner)?;
             continue;
         }
 
@@ -67,31 +68,65 @@ fn normalize_whitespace(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Split a command string on top-level separators (`;`, `&&`, `||`, `\n`).
-/// This is intentionally naive — quoted separators will cause extra splits,
-/// which errs on the side of caution (fail closed).
+/// Split a command string on top-level separators (`;`, `&&`, `||`, `|`, `\n`).
+/// Tracks single and double quotes so that separators inside quoted strings
+/// are not treated as split points.
 fn split_segments(command: &str) -> Vec<&str> {
     let mut segments = Vec::new();
     let bytes = command.as_bytes();
     let len = bytes.len();
     let mut start = 0;
     let mut i = 0;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
 
     while i < len {
-        if bytes[i] == b'\n' || bytes[i] == b';' {
-            segments.push(&command[start..i]);
-            start = i + 1;
+        // Track quote state (skip escaped quotes in double-quote context)
+        if bytes[i] == b'\'' && !in_double_quote {
+            in_single_quote = !in_single_quote;
             i += 1;
-        } else if i + 1 < len
-            && ((bytes[i] == b'&' && bytes[i + 1] == b'&')
-                || (bytes[i] == b'|' && bytes[i + 1] == b'|'))
-        {
-            segments.push(&command[start..i]);
-            start = i + 2;
-            i += 2;
-        } else {
-            i += 1;
+            continue;
         }
+        if bytes[i] == b'"' && !in_single_quote {
+            in_double_quote = !in_double_quote;
+            i += 1;
+            continue;
+        }
+        if bytes[i] == b'\\' && in_double_quote && i + 1 < len {
+            i += 2; // skip escaped char
+            continue;
+        }
+
+        // Only split when outside quotes
+        if !in_single_quote && !in_double_quote {
+            if bytes[i] == b'\n' || bytes[i] == b';' {
+                segments.push(&command[start..i]);
+                start = i + 1;
+                i += 1;
+                continue;
+            }
+            if i + 1 < len && bytes[i] == b'&' && bytes[i + 1] == b'&' {
+                segments.push(&command[start..i]);
+                start = i + 2;
+                i += 2;
+                continue;
+            }
+            if i + 1 < len && bytes[i] == b'|' && bytes[i + 1] == b'|' {
+                segments.push(&command[start..i]);
+                start = i + 2;
+                i += 2;
+                continue;
+            }
+            // Single pipe — also a command boundary
+            if bytes[i] == b'|' {
+                segments.push(&command[start..i]);
+                start = i + 1;
+                i += 1;
+                continue;
+            }
+        }
+
+        i += 1;
     }
 
     if start < len {
@@ -115,16 +150,22 @@ fn is_data_context(lower: &str) -> bool {
 
 /// Extract the inner script from `bash -c "..."` or `sh -c "..."`.
 /// Returns `None` if the command is not a shell -c invocation.
+/// Handles flexible whitespace between the shell name and `-c`.
 fn extract_inline_script(command: &str) -> Option<String> {
-    let lower = command.to_lowercase();
+    let normalized = normalize_whitespace(command);
+    let lower = normalized.to_lowercase();
 
     // Match: bash -c or sh -c (with optional leading env/path)
     let idx = lower.find("bash -c ").or_else(|| lower.find("sh -c "))?;
-    let after_flag = if lower[idx..].starts_with("bash") {
-        &command[idx + 8..] // len("bash -c ")
+    let shell_len = if lower[idx..].starts_with("bash") {
+        8 // len("bash -c ")
     } else {
-        &command[idx + 6..] // len("sh -c ")
+        6 // len("sh -c ")
     };
+
+    // Map back to original command: count the corresponding characters
+    // by finding the same position accounting for whitespace normalization
+    let after_flag = skip_to_after_flag(command, idx, shell_len)?;
 
     let trimmed = after_flag.trim();
     if trimmed.is_empty() {
@@ -158,6 +199,33 @@ fn extract_inline_script(command: &str) -> Option<String> {
 
     // Unquoted — take everything
     Some(trimmed.to_string())
+}
+
+/// Map a position in the whitespace-normalized string back to the original,
+/// then skip past `shell_len` normalized tokens to find where the script starts.
+fn skip_to_after_flag(original: &str, norm_pos: usize, shell_len: usize) -> Option<&str> {
+    // Count how many non-whitespace characters precede norm_pos in the normalized string
+    let normalized = normalize_whitespace(original);
+    let prefix = &normalized[..norm_pos + shell_len];
+    let token_count = prefix.split_whitespace().count();
+
+    // Walk the original string, skipping that many whitespace-separated tokens
+    let mut seen = 0;
+    let mut i = 0;
+    let bytes = original.as_bytes();
+    while i < bytes.len() && seen < token_count {
+        // Skip whitespace
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        // Skip token
+        while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        seen += 1;
+    }
+
+    (i <= original.len()).then(|| &original[i..])
 }
 
 // =============================================================================
@@ -651,6 +719,18 @@ mod tests {
     }
 
     #[test]
+    fn blocks_inline_script_with_extra_whitespace() {
+        assert_blocked("bash  -c \"git reset --hard\"");
+        assert_blocked("bash\t-c \"git reset --hard\"");
+    }
+
+    #[test]
+    fn blocks_destructive_after_inline_script() {
+        assert_blocked("bash -c 'echo safe' ; rm -rf /");
+        assert_blocked("bash -c 'echo safe' && git reset --hard");
+    }
+
+    #[test]
     fn allows_inline_script_with_safe_command() {
         assert_allowed("bash -c \"echo hello\"");
         assert_allowed("sh -c \"git status\"");
@@ -665,6 +745,13 @@ mod tests {
         assert_blocked("echo done && git reset --hard");
         assert_blocked("git add . && git reset --hard HEAD~1");
         assert_blocked("git stash; git reset --hard; git stash pop");
+    }
+
+    #[test]
+    fn blocks_destructive_via_pipe() {
+        // Pipe splits segments so each side is checked independently
+        assert_blocked("git status | tee log.txt && git reset --hard");
+        assert_blocked("git log | head -5 ; rm -rf /");
     }
 
     #[test]
@@ -686,6 +773,12 @@ mod tests {
     #[test]
     fn allows_echo_containing_destructive_text() {
         assert_allowed("echo \"git reset --hard\"");
+    }
+
+    #[test]
+    fn allows_quoted_separators_in_commit_messages() {
+        assert_allowed("git commit -m \"fix: updated stuff ; git reset --hard\"");
+        assert_allowed("git commit -m 'refactor && git clean -f'");
     }
 
     // =========================================================================
