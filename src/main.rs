@@ -357,7 +357,11 @@ impl CmdRunner for CodingAssistant {
                 }
             });
 
-            eprintln!("\x1b[1;36m--\x1b[0m model: {model}, tools: {tool_count}");
+            eprintln!(
+                "\x1b[1;36m--\x1b[0m dir: {}, session: {}, model: {model}, tools: {tool_count}",
+                original_dir.display(),
+                session.id
+            );
         }
 
         let msg = Message {
