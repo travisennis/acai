@@ -1,13 +1,14 @@
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 
 // =============================================================================
-// Chat Completions API Request DTOs
+// Chat Completions API Request DTOs (serialization only - can borrow)
 // =============================================================================
 
 #[derive(Serialize)]
 pub(super) struct ChatRequest<'a> {
     pub(super) model: &'a str,
-    pub(super) messages: Vec<ChatMessage>,
+    pub(super) messages: Vec<ChatMessage<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -22,14 +23,15 @@ pub(super) struct ChatRequest<'a> {
     pub(super) reasoning_effort: Option<String>,
 }
 
+/// Request message type that borrows strings from history to avoid cloning.
 #[derive(Serialize, Clone, Debug)]
-pub(super) struct ChatMessage {
-    pub(super) role: String,
-    pub(super) content: Option<String>,
+pub(super) struct ChatMessage<'a> {
+    pub(super) role: Cow<'a, str>,
+    pub(super) content: Option<Cow<'a, str>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) tool_calls: Option<Vec<ChatToolCall>>,
+    pub(super) tool_calls: Option<Vec<ChatToolCallRef<'a>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) tool_call_id: Option<String>,
+    pub(super) tool_call_id: Option<Cow<'a, str>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -46,22 +48,24 @@ pub(super) struct ChatFunction {
     pub(super) parameters: serde_json::Value,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub(super) struct ChatToolCall {
-    pub(super) id: String,
+/// Borrowed tool call type for request serialization.
+#[derive(Serialize, Clone, Debug)]
+pub(super) struct ChatToolCallRef<'a> {
+    pub(super) id: Cow<'a, str>,
     #[serde(rename = "type")]
-    pub(super) type_: String,
-    pub(super) function: ChatFunctionCall,
+    pub(super) type_: Cow<'a, str>,
+    pub(super) function: ChatFunctionCallRef<'a>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub(super) struct ChatFunctionCall {
-    pub(super) name: String,
-    pub(super) arguments: String,
+/// Borrowed function call type for request serialization.
+#[derive(Serialize, Clone, Debug)]
+pub(super) struct ChatFunctionCallRef<'a> {
+    pub(super) name: Cow<'a, str>,
+    pub(super) arguments: Cow<'a, str>,
 }
 
 // =============================================================================
-// Chat Completions API Response DTOs
+// Chat Completions API Response DTOs (deserialization - owned types)
 // =============================================================================
 
 #[derive(Deserialize, Debug)]
@@ -86,6 +90,23 @@ pub(super) struct ChatResponseMessage {
     pub(super) role: Option<String>,
     pub(super) content: Option<String>,
     pub(super) tool_calls: Option<Vec<ChatToolCall>>,
+}
+
+/// Owned tool call type for response deserialization.
+#[derive(Deserialize, Clone, Debug)]
+pub(super) struct ChatToolCall {
+    pub(super) id: String,
+    #[serde(rename = "type")]
+    #[expect(dead_code)]
+    pub(super) type_: String,
+    pub(super) function: ChatFunctionCall,
+}
+
+/// Owned function call type for response deserialization.
+#[derive(Deserialize, Clone, Debug)]
+pub(super) struct ChatFunctionCall {
+    pub(super) name: String,
+    pub(super) arguments: String,
 }
 
 #[derive(Deserialize, Debug, Default)]

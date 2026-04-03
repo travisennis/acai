@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use tracing::{debug, trace};
 
 use crate::config::model::ResolvedModelConfig;
@@ -5,7 +6,8 @@ use crate::models::Role;
 
 use crate::clients::agent::TurnResult;
 use crate::clients::chat_types::{
-    ChatFunction, ChatFunctionCall, ChatMessage, ChatRequest, ChatResponse, ChatTool, ChatToolCall,
+    ChatFunction, ChatFunctionCallRef, ChatMessage, ChatRequest, ChatResponse, ChatTool,
+    ChatToolCallRef,
 };
 use crate::clients::tools::Tool;
 use crate::clients::types::{ConversationItem, InputTokensDetails, OutputTokensDetails, Usage};
@@ -106,9 +108,9 @@ pub(super) async fn parse_response(response: reqwest::Response) -> anyhow::Resul
 /// - Consecutive `FunctionCall` items → one assistant message with `tool_calls`
 /// - `FunctionCallOutput` → tool role message with `tool_call_id`
 /// - `Reasoning` → skipped (not supported by Chat Completions API)
-fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage> {
-    let mut messages: Vec<ChatMessage> = Vec::new();
-    let mut pending_tool_calls: Vec<ChatToolCall> = Vec::new();
+fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage<'_>> {
+    let mut messages: Vec<ChatMessage<'_>> = Vec::new();
+    let mut pending_tool_calls: Vec<ChatToolCallRef<'_>> = Vec::new();
 
     for item in history {
         match item {
@@ -124,8 +126,8 @@ fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage> {
                 };
 
                 messages.push(ChatMessage {
-                    role: role_str.to_string(),
-                    content: Some(content.clone()),
+                    role: Cow::Borrowed(role_str),
+                    content: Some(Cow::Borrowed(content)),
                     tool_calls: None,
                     tool_call_id: None,
                 });
@@ -136,12 +138,12 @@ fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage> {
                 arguments,
                 ..
             } => {
-                pending_tool_calls.push(ChatToolCall {
-                    id: call_id.clone(),
-                    type_: "function".to_string(),
-                    function: ChatFunctionCall {
-                        name: name.clone(),
-                        arguments: arguments.clone(),
+                pending_tool_calls.push(ChatToolCallRef {
+                    id: Cow::Borrowed(call_id),
+                    type_: Cow::Borrowed("function"),
+                    function: ChatFunctionCallRef {
+                        name: Cow::Borrowed(name),
+                        arguments: Cow::Borrowed(arguments),
                     },
                 });
             },
@@ -150,10 +152,10 @@ fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage> {
                 flush_tool_calls(&mut messages, &mut pending_tool_calls);
 
                 messages.push(ChatMessage {
-                    role: "tool".to_string(),
-                    content: Some(output.clone()),
+                    role: Cow::Borrowed("tool"),
+                    content: Some(Cow::Borrowed(output)),
                     tool_calls: None,
-                    tool_call_id: Some(call_id.clone()),
+                    tool_call_id: Some(Cow::Borrowed(call_id)),
                 });
             },
             ConversationItem::Reasoning { .. } => {
@@ -169,13 +171,16 @@ fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage> {
 }
 
 /// Flush accumulated tool calls into an assistant message.
-fn flush_tool_calls(messages: &mut Vec<ChatMessage>, tool_calls: &mut Vec<ChatToolCall>) {
+fn flush_tool_calls<'a>(
+    messages: &mut Vec<ChatMessage<'a>>,
+    tool_calls: &mut Vec<ChatToolCallRef<'a>>,
+) {
     if tool_calls.is_empty() {
         return;
     }
 
     messages.push(ChatMessage {
-        role: "assistant".to_string(),
+        role: Cow::Borrowed("assistant"),
         content: None,
         tool_calls: Some(std::mem::take(tool_calls)),
         tool_call_id: None,
@@ -250,7 +255,9 @@ fn parse_choices(response: &ChatResponse) -> Vec<ConversationItem> {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::clients::chat_types::{ChatChoice, ChatResponse, ChatResponseMessage, ChatUsage};
+    use crate::clients::chat_types::{
+        ChatChoice, ChatFunctionCall, ChatResponse, ChatResponseMessage, ChatToolCall, ChatUsage,
+    };
 
     #[test]
     fn build_messages_simple_conversation() {
