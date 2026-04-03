@@ -98,15 +98,14 @@ pub(super) fn execute_write(arguments: &str) -> Result<super::ToolResult, String
     Ok(super::ToolResult { output: result })
 }
 
-/// Validate a path for writing - allows non-existent paths as long as parent is in cwd or temp directories
+/// Validate a path for writing - allows non-existent paths as long as parent is in cwd or temp directories.
+/// Rejects paths in read-only additional directories (--add-dir).
 fn validate_path_for_write(path_str: &str) -> Result<std::path::PathBuf, String> {
     let path = Path::new(path_str);
 
-    let cwd = super::cached_cwd()?;
-
-    // If the file exists, canonicalize the full path using the shared validation
+    // If the file exists, use the shared validation which checks read-only status
     if path.exists() {
-        return super::validate_path_in_cwd(path_str);
+        return super::validate_path_for_write(path_str);
     }
 
     // For new files, find the deepest existing parent directory
@@ -136,10 +135,24 @@ fn validate_path_for_write(path_str: &str) -> Result<std::path::PathBuf, String>
     })?;
 
     // Check if the existing parent is within allowed directories
+    let cwd = super::cached_cwd()?;
     let is_in_cwd = canonical_parent.starts_with(cwd);
     let is_in_temp = super::get_temp_directories()
         .iter()
         .any(|temp_dir| canonical_parent.starts_with(temp_dir));
+
+    // Check if parent is in a read-only additional directory
+    let additional_dirs = super::get_additional_dirs();
+    let is_in_read_only = additional_dirs
+        .iter()
+        .any(|add_dir| canonical_parent.starts_with(add_dir));
+
+    if is_in_read_only {
+        return Err(format!(
+            "Path '{}' is in a read-only directory (added via --add-dir). Write operations are not allowed.",
+            path.display()
+        ));
+    }
 
     if !is_in_cwd && !is_in_temp {
         return Err(format!(

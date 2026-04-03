@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::path::Path;
 
-use crate::clients::tools::validate_path_in_cwd;
+use crate::clients::tools::validate_path_for_write;
 
 // =============================================================================
 // Constants
@@ -129,8 +129,8 @@ pub(super) fn execute_edit(arguments: &str) -> Result<super::ToolResult, String>
         }
     }
 
-    // Validate and canonicalize the path
-    let path = validate_path_in_cwd(&args.path)?;
+    // Validate and canonicalize the path (ensures it's not read-only)
+    let path = validate_path_for_write(&args.path)?;
 
     // Check if file exists and is a file
     let metadata = std::fs::metadata(&path)

@@ -101,9 +101,27 @@ pub struct ToolResult {
 // Path Validation
 // =============================================================================
 
+/// Access level for a validated path
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PathAccess {
+    /// Path is in a read-write location (cwd, temp dirs)
+    ReadWrite,
+    /// Path is in a read-only location (--add-dir directories)
+    ReadOnly,
+}
+
+/// Result of path validation containing the canonical path and access level
+#[derive(Debug)]
+pub(super) struct ValidatedPath {
+    pub canonical: std::path::PathBuf,
+    pub access: PathAccess,
+}
+
 /// Validate that a path exists and is within the current working directory, allowed temp directories,
 /// or directories added via --add-dir flag (read-only access).
-pub(super) fn validate_path_in_cwd(path_str: &str) -> Result<std::path::PathBuf, String> {
+///
+/// Returns the canonical path along with its access level.
+pub(super) fn validate_path(path_str: &str) -> Result<ValidatedPath, String> {
     let path = Path::new(path_str);
 
     let cwd = cached_cwd()?;
@@ -113,15 +131,21 @@ pub(super) fn validate_path_in_cwd(path_str: &str) -> Result<std::path::PathBuf,
         .canonicalize()
         .map_err(|e| format!("Path not found or not accessible '{}': {e}", path.display()))?;
 
-    // Check if path is within working directory
+    // Check if path is within working directory (read-write)
     if canonical.starts_with(cwd) {
-        return Ok(canonical);
+        return Ok(ValidatedPath {
+            canonical,
+            access: PathAccess::ReadWrite,
+        });
     }
 
-    // Allow paths in standard temp directories
+    // Allow paths in standard temp directories (read-write)
     for temp_dir in cached_temp_dirs() {
         if canonical.starts_with(temp_dir) {
-            return Ok(canonical);
+            return Ok(ValidatedPath {
+                canonical,
+                access: PathAccess::ReadWrite,
+            });
         }
     }
 
@@ -129,7 +153,10 @@ pub(super) fn validate_path_in_cwd(path_str: &str) -> Result<std::path::PathBuf,
     let additional_dirs = get_additional_dirs();
     for add_dir in &additional_dirs {
         if canonical.starts_with(add_dir) {
-            return Ok(canonical);
+            return Ok(ValidatedPath {
+                canonical,
+                access: PathAccess::ReadOnly,
+            });
         }
     }
 
@@ -137,6 +164,27 @@ pub(super) fn validate_path_in_cwd(path_str: &str) -> Result<std::path::PathBuf,
         "Path '{}' is outside the working directory",
         canonical.display()
     ))
+}
+
+/// Validate that a path exists and is within the current working directory, allowed temp directories,
+/// or directories added via --add-dir flag (read-only access).
+///
+/// This is a convenience function for read operations that don't need to check access level.
+pub(super) fn validate_path_in_cwd(path_str: &str) -> Result<std::path::PathBuf, String> {
+    validate_path(path_str).map(|vp| vp.canonical)
+}
+
+/// Validate that a path is writable (not in a read-only additional directory).
+/// Returns the canonical path if valid, or an error if the path is read-only.
+pub(super) fn validate_path_for_write(path_str: &str) -> Result<std::path::PathBuf, String> {
+    let validated = validate_path(path_str)?;
+    if validated.access == PathAccess::ReadOnly {
+        return Err(format!(
+            "Path '{}' is read-only (added via --add-dir). Write operations are not allowed.",
+            validated.canonical.display()
+        ));
+    }
+    Ok(validated.canonical)
 }
 
 /// Get standard temporary directory paths (cached)
