@@ -1,10 +1,13 @@
 use std::fmt::Write;
 use std::path::Path;
 
+use chrono::Local;
+
 use crate::config::AgentsFile;
 
 /// Build the system prompt including AGENTS.md content from user and project levels.
-pub fn build_system_prompt(_working_dir: &Path, agents_files: &[AgentsFile]) -> String {
+#[allow(clippy::expect_used)]
+pub fn build_system_prompt(working_dir: &Path, agents_files: &[AgentsFile]) -> String {
     let mut prompt = String::from(
         "You are acai. You are running as a coding agent in a CLI on the user's computer.",
     );
@@ -14,6 +17,15 @@ pub fn build_system_prompt(_working_dir: &Path, agents_files: &[AgentsFile]) -> 
         prompt.push_str("\n\n");
         prompt.push_str(&context);
     }
+
+    // Append current working directory and today's date
+    let today = Local::now().format("%Y-%m-%d").to_string();
+    let working_dir_str = working_dir.to_string_lossy();
+    write!(
+        prompt,
+        "\n\nCurrent working directory: {working_dir_str}\nToday's date: {today}"
+    )
+    .expect("write to String cannot fail");
 
     prompt
 }
@@ -55,10 +67,11 @@ mod tests {
     #[test]
     fn empty_agents_files() {
         let prompt = build_system_prompt(Path::new("/tmp"), &[]);
-        assert_eq!(
-            prompt,
+        assert!(prompt.starts_with(
             "You are acai. You are running as a coding agent in a CLI on the user's computer."
-        );
+        ));
+        assert!(prompt.contains("Current working directory: /tmp"));
+        assert!(prompt.contains("Today's date:"));
     }
 
     #[test]
@@ -80,6 +93,8 @@ mod tests {
         assert!(prompt.contains("<instructions>"));
         assert!(prompt.contains("User level instructions"));
         assert!(prompt.contains("Project level instructions"));
+        assert!(prompt.contains("Current working directory: /tmp"));
+        assert!(prompt.contains("Today's date:"));
     }
 
     #[test]
@@ -92,6 +107,8 @@ mod tests {
         assert!(prompt.contains("## Project Context:"));
         assert!(prompt.contains("~/.acai/AGENTS.md"));
         assert!(!prompt.contains("./AGENTS.md"));
+        assert!(prompt.contains("Current working directory: /tmp"));
+        assert!(prompt.contains("Today's date:"));
     }
 
     #[test]
@@ -109,5 +126,8 @@ mod tests {
         let prompt = build_system_prompt(Path::new("/tmp"), &files);
         // Should not include Project Context section since all files are empty
         assert!(!prompt.contains("## Project Context:"));
+        // But should still include working directory and date
+        assert!(prompt.contains("Current working directory: /tmp"));
+        assert!(prompt.contains("Today's date:"));
     }
 }
