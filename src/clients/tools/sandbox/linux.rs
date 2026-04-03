@@ -13,7 +13,7 @@ use crate::clients::tools::sandbox::{SandboxConfig, SandboxStrategy};
 pub struct LandlockSandbox;
 
 impl LandlockSandbox {
-    /// Apply Landlock rules in the current process (to be called in pre_exec)
+    /// Apply Landlock rules in the current process (to be called in `pre_exec`)
     #[cfg(feature = "landlock")]
     fn apply_landlock_rules(config: &SandboxConfig) -> Result<(), std::io::Error> {
         use landlock::{
@@ -24,18 +24,10 @@ impl LandlockSandbox {
 
         let mut ruleset = Ruleset::default()
             .handle_access(AccessFs::from_all(abi))
-            .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to configure ruleset access: {e}"),
-                )
-            })?
+            .map_err(|e| std::io::Error::other(format!("Failed to configure ruleset access: {e}")))?
             .create()
             .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to create Landlock ruleset: {e}"),
-                )
+                std::io::Error::other(format!("Failed to create Landlock ruleset: {e}"))
             })?;
 
         // Add read-write rules for cwd and temp dirs
@@ -45,10 +37,10 @@ impl LandlockSandbox {
                 ruleset = ruleset
                     .add_rules(landlock::path_beneath_rules(&[path], rw_access))
                     .map_err(|e| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("Failed to add rw rule for {}: {e}", path.display()),
-                        )
+                        std::io::Error::other(format!(
+                            "Failed to add rw rule for {}: {e}",
+                            path.display()
+                        ))
                     })?;
             }
         }
@@ -60,43 +52,38 @@ impl LandlockSandbox {
                 ruleset = ruleset
                     .add_rules(landlock::path_beneath_rules(&[path], ro_exec_access))
                     .map_err(|e| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("Failed to add ro+exec rule for {}: {e}", path.display()),
-                        )
+                        std::io::Error::other(format!(
+                            "Failed to add ro+exec rule for {}: {e}",
+                            path.display()
+                        ))
                     })?;
             }
         }
 
         // Add read-only rules
-        let ro_access = AccessFs::ReadFile | AccessFs::ReadDir;
+        let read_access = AccessFs::ReadFile | AccessFs::ReadDir;
         for path in &config.read_only {
             if path.exists() {
                 ruleset = ruleset
-                    .add_rules(landlock::path_beneath_rules(&[path], ro_access))
+                    .add_rules(landlock::path_beneath_rules(&[path], read_access))
                     .map_err(|e| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("Failed to add ro rule for {}: {e}", path.display()),
-                        )
+                        std::io::Error::other(format!(
+                            "Failed to add ro rule for {}: {e}",
+                            path.display()
+                        ))
                     })?;
             }
         }
 
         let status = ruleset.restrict_self().map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to restrict process with Landlock: {e}"),
-            )
+            std::io::Error::other(format!("Failed to restrict process with Landlock: {e}"))
         })?;
 
         match status.ruleset {
-            RulesetStatus::FullyEnforced => {},
-            RulesetStatus::PartiallyEnforced => {
+            RulesetStatus::FullyEnforced
+            | RulesetStatus::PartiallyEnforced
+            | RulesetStatus::NotEnforced => {
                 // Can't use log in pre_exec (async-signal-unsafe), just continue
-            },
-            RulesetStatus::NotEnforced => {
-                // Kernel doesn't support Landlock; allow execution to proceed
             },
         }
 
@@ -115,7 +102,7 @@ impl SandboxStrategy for LandlockSandbox {
         {
             let config = config.clone();
             unsafe {
-                command.pre_exec(move || LandlockSandbox::apply_landlock_rules(&config));
+                command.pre_exec(move || Self::apply_landlock_rules(&config));
             }
         }
 
