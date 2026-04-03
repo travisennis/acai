@@ -258,6 +258,10 @@ pub fn summarize_args(arguments: &str) -> String {
 #[allow(clippy::too_many_lines)]
 pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, String> {
     let args = BashExecutionArgs::from_json(arguments)?;
+
+    // Pre-execution safety check: block known-destructive commands
+    super::bash_safety::validate_command_safety(&args.command)?;
+
     let start_time = Instant::now();
 
     // Build sandbox configuration with additional directories

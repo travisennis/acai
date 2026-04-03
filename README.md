@@ -208,6 +208,10 @@ Commands executed by the Bash tool run inside an OS-level filesystem sandbox tha
 
 The sandbox can be disabled by setting `ACAI_SANDBOX=off`.
 
+#### Destructive Command Protection
+
+The Bash tool also blocks known-destructive commands before execution, covering destructive git operations (`git reset --hard`, `git push --force`, `git clean -f`, etc.) and `rm -rf` outside temp directories. This includes detection of commands wrapped in `bash -c` or `sh -c`. A blocked command returns an error explaining the reason and suggesting a safe alternative.
+
 #### Adding Read-Only Directories
 
 Use `--add-dir` to grant the agent read-only access to directories outside the project:

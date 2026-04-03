@@ -72,6 +72,7 @@ pub fn get_additional_dirs() -> Vec<PathBuf> {
 // =============================================================================
 
 mod bash;
+mod bash_safety;
 mod edit;
 mod read;
 mod write;

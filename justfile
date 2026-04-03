@@ -12,7 +12,7 @@ clippy:
 
 # Ultra-strict clippy for CI (deny all warnings, lint all targets)
 clippy-strict:
-    cargo clippy --all-targets -- -D warnings
+    cargo clippy --all-targets --all-features -- -D warnings
 
 # Run tests
 test:

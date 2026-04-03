@@ -37,7 +37,7 @@ The bridge to external AI services and the orchestration layer for tool executio
 
 **`types`**: Core conversation abstraction. The `ConversationItem` enum represents all possible items in a conversation: user messages, assistant messages, tool calls, tool outputs, and reasoning traces. This is the fundamental data structure that flows through the entire system.
 
-**`tools`**: Tool definitions and execution. Each tool (Bash, Read, Edit, Write) defines its JSON schema for the API and its execution logic. The `execute_tool` function dispatches to the appropriate implementation. Tools validate that paths are within the working directory or allowed temp directories before operating.
+**`tools`**: Tool definitions and execution. Each tool (Bash, Read, Edit, Write) defines its JSON schema for the API and its execution logic. The `execute_tool` function dispatches to the appropriate implementation. Tools validate that paths are within the working directory or allowed temp directories before operating. The Bash tool also performs pre-execution command safety checks that block known-destructive commands (destructive git operations and dangerous `rm -rf`) before they reach the shell.
 
 **`tools::sandbox`**: Cross-platform sandboxing abstraction. Provides `SandboxConfig` and `SandboxStrategy` for restricting filesystem and network access. Platform-specific implementations use sandbox-exec (macOS) or Landlock LSM (Linux).
 
@@ -81,11 +81,13 @@ These constraints guide the design and are unlikely to change:
 
 4. **Tools validate paths before execution**: Every filesystem operation checks that the target path is within the working directory or an allowed temp directory (`/tmp`, `/var/folders`, etc.).
 
-5. **Session writes are atomic**: Sessions are written to a temp file, then renamed to the final path. The "latest" session is tracked via a symlink that is also updated atomically.
+5. **Bash tool blocks destructive commands**: Known-destructive commands (e.g. `git reset --hard`, `git push --force`, `rm -rf` outside temp dirs) are rejected before execution as a best-effort safety guard.
 
-6. **Sandboxing is opt-out, not opt-in**: Sandboxing applies to all bash commands unless explicitly disabled via `ACAI_SANDBOX=0`.
+6. **Session writes are atomic**: Sessions are written to a temp file, then renamed to the final path. The "latest" session is tracked via a symlink that is also updated atomically.
 
-7. **No unwrap/expect in production code**: The clippy configuration denies these, enforced at compile time.
+7. **Sandboxing is opt-out, not opt-in**: Sandboxing applies to all bash commands unless explicitly disabled via `ACAI_SANDBOX=0`.
+
+8. **No unwrap/expect in production code**: The clippy configuration denies these, enforced at compile time.
 
 ## System Boundaries
 
