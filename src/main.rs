@@ -437,7 +437,13 @@ fn format_progress_item(item: &ConversationItem, elapsed_secs: f64) -> String {
             let summary = clients::summarize_tool_args(name, arguments);
             format!("{ts} \x1b[1;36m>\x1b[0m {name}: {summary}")
         },
-        // Skip message, reasoning, and function output items
+        ConversationItem::Reasoning { .. } => {
+            format!("{ts} \x1b[1;35m*\x1b[0m thinking/reasoning...")
+        },
+        ConversationItem::Message { role, content, .. } if *role == Role::Assistant => {
+            format!("{ts} \x1b[1;33m<\x1b[0m {content}")
+        },
+        // Skip user messages, system messages, and function output items
         _ => String::new(),
     }
 }
@@ -716,5 +722,67 @@ mod tests {
             result.unwrap(),
             "prompt line 1\nprompt line 2\n\nstdin line 1\nstdin line 2"
         );
+    }
+
+    // Tests for format_progress_item
+    #[test]
+    fn test_format_progress_item_function_call() {
+        let item = ConversationItem::FunctionCall {
+            id: "fc-1".to_string(),
+            call_id: "call-1".to_string(),
+            name: "Bash".to_string(),
+            arguments: r#"{"command":"ls -la"}"#.to_string(),
+        };
+        let output = format_progress_item(&item, 1.5);
+        assert!(output.contains("Bash:"));
+        assert!(output.contains("ls -la"));
+    }
+
+    #[test]
+    fn test_format_progress_item_reasoning() {
+        let item = ConversationItem::Reasoning {
+            id: "r-1".to_string(),
+            summary: vec!["thinking...".to_string()],
+            encrypted_content: None,
+            content: None,
+        };
+        let output = format_progress_item(&item, 2.0);
+        assert!(output.contains("thinking/reasoning"));
+    }
+
+    #[test]
+    fn test_format_progress_item_assistant_message() {
+        let item = ConversationItem::Message {
+            role: Role::Assistant,
+            content: "Here is the answer".to_string(),
+            id: Some("msg-1".to_string()),
+            status: Some("completed".to_string()),
+        };
+        let output = format_progress_item(&item, 3.0);
+        assert!(output.contains("Here is the answer"));
+    }
+
+    #[test]
+    fn test_format_progress_item_user_message_empty() {
+        let item = ConversationItem::Message {
+            role: Role::User,
+            content: "Hello".to_string(),
+            id: None,
+            status: None,
+        };
+        let output = format_progress_item(&item, 1.0);
+        // User messages should return empty string (not shown in verbose)
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn test_format_progress_item_function_call_output_empty() {
+        let item = ConversationItem::FunctionCallOutput {
+            call_id: "call-1".to_string(),
+            output: "result".to_string(),
+        };
+        let output = format_progress_item(&item, 1.0);
+        // Function call outputs should return empty string (not shown in verbose)
+        assert!(output.is_empty());
     }
 }
