@@ -148,3 +148,32 @@ cargo build --release --features landlock
 ### Sandbox not enforced on older Linux kernels
 
 Landlock requires kernel 5.13 or later. On older kernels, Landlock reports `NotEnforced` status and commands run without restrictions. Check your kernel version with `uname -r`.
+
+### SSH git operations fail with host key verification
+
+The sandbox grants read-only access to `~/.ssh/known_hosts` so the sandboxed process cannot modify it. If you use SSH for git operations (e.g., `git clone git@github.com:...`), you need to populate `known_hosts` before running acai. Choose one of the following approaches:
+
+**Option 1: Pre-populate known_hosts with ssh-keyscan**
+
+Run once to fetch host keys for common providers:
+
+```bash
+ssh-keyscan -t ed25519,rsa github.com gitlab.com bitbucket.org >> ~/.ssh/known_hosts
+```
+
+Add any self-hosted or additional git servers the same way:
+
+```bash
+ssh-keyscan -t ed25519,rsa your-git-server.example.com >> ~/.ssh/known_hosts
+```
+
+**Option 2: Use StrictHostKeyChecking accept-new**
+
+Add to `~/.ssh/config`:
+
+```
+Host github.com gitlab.com bitbucket.org
+    StrictHostKeyChecking accept-new
+```
+
+This auto-accepts host keys on first connection, then pins them for future connections. Works for any host you add. This is the more flexible option since it handles new hosts without manual pre-population.

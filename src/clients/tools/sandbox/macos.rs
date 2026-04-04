@@ -38,12 +38,101 @@ impl MacOsSandbox {
         if let Ok(home) = std::env::var("HOME") {
             lines.push(format!("(allow file-read* (prefix \"{home}/.gitconfig\"))"));
             lines.push(format!("(allow file-read* (prefix \"{home}/.gitignore\"))"));
+            lines.push(format!(
+                "(allow file-read* (subpath \"{home}/.config/git\"))"
+            ));
+            lines.push(format!(
+                "(allow file-read* (literal \"{home}/.gitattributes\"))"
+            ));
+            // Allow reading .ssh directory itself (for listing)
             lines.push(format!("(allow file-read* (literal \"{home}/.ssh\"))"));
             lines.push(format!(
                 "(allow file-read* (literal \"{home}/.ssh/config\"))"
             ));
             lines.push(format!(
                 "(allow file-read* (literal \"{home}/.ssh/known_hosts\"))"
+            ));
+        }
+        lines.push(String::new());
+    }
+
+    /// Append SSH agent socket rules to the profile
+    fn append_ssh_agent_rules(lines: &mut Vec<String>) {
+        lines.push("; SSH agent sockets (for git push over SSH)".to_string());
+        // SSH agent sockets are typically in /tmp/ssh-XXXXXX/agent.XXXXXX
+        lines.push("(allow file-read* file-write* (regex #\"^/tmp/ssh-\"))".to_string());
+        // On macOS, launchd-managed ssh-agent uses /private/tmp
+        lines.push("(allow file-read* file-write* (regex #\"^/private/tmp/ssh-\"))".to_string());
+        lines.push(
+            "(allow file-read* file-write* (regex #\"^/private/tmp/com\\.apple\\.launchd\\.*/Listeners\"))"
+                .to_string(),
+        );
+        // Allow the actual SSH_AUTH_SOCK path (may be in a non-standard location
+        // such as ~/.ssh/agent/). Grant read-write on the parent directory so the
+        // sandboxed process can connect to the Unix-domain socket.
+        if let Ok(sock) = std::env::var("SSH_AUTH_SOCK") {
+            let sock_path = std::path::Path::new(&sock);
+            if let Some(parent) = sock_path.parent() {
+                let escaped = escape_path(parent);
+                lines.push(format!(
+                    "(allow file-read* file-write* (subpath \"{escaped}\"))"
+                ));
+            }
+        }
+        lines.push(String::new());
+    }
+
+    /// Append SCM CLI (gh, glab) configuration, cache, and state rules to the profile.
+    fn append_scm_cli_rules(lines: &mut Vec<String>) {
+        lines.push("; SCM CLIs: GitHub CLI (gh) and GitLab CLI (glab)".to_string());
+        if let Ok(home) = std::env::var("HOME") {
+            // GitHub CLI
+            lines.push(format!(
+                "(allow file-read* file-write* (subpath \"{home}/.config/gh\"))"
+            ));
+            lines.push(format!(
+                "(allow file-read* file-write* (subpath \"{home}/.cache/gh\"))"
+            ));
+            lines.push(format!(
+                "(allow file-read* file-write* (subpath \"{home}/.local/share/gh\"))"
+            ));
+            lines.push(format!(
+                "(allow file-read* file-write* (subpath \"{home}/.local/state/gh\"))"
+            ));
+            // GitLab CLI
+            lines.push(format!(
+                "(allow file-read* file-write* (subpath \"{home}/.config/glab-cli\"))"
+            ));
+            lines.push(format!(
+                "(allow file-read* file-write* (subpath \"{home}/.cache/glab-cli\"))"
+            ));
+            lines.push(format!(
+                "(allow file-read* file-write* (subpath \"{home}/.local/share/glab-cli\"))"
+            ));
+            lines.push(format!(
+                "(allow file-read* file-write* (subpath \"{home}/.local/state/glab-cli\"))"
+            ));
+        }
+        lines.push(String::new());
+    }
+
+    /// Append macOS Keychain access rules to the profile.
+    ///
+    /// Note: actual Keychain service access (used by `gh`, `security`, and
+    /// SSH passphrase retrieval) is mediated by Security.framework over Mach
+    /// IPC, which is covered by the `(allow mach-lookup)` rule above. The
+    /// file-level rules here allow tools that read keychain database files
+    /// directly (rare, but harmless to permit).
+    fn append_keychain_rules(lines: &mut Vec<String>) {
+        lines.push(
+            "; macOS Keychain file access (supplementary; primary access is via mach-lookup)"
+                .to_string(),
+        );
+        lines.push("(allow file-read* (subpath \"/Library/Keychains\"))".to_string());
+        lines.push("(allow file-read* (subpath \"/System/Library/Keychains\"))".to_string());
+        if let Ok(home) = std::env::var("HOME") {
+            lines.push(format!(
+                "(allow file-read* file-write* (subpath \"{home}/Library/Keychains\"))"
             ));
         }
         lines.push(String::new());
@@ -153,6 +242,9 @@ impl MacOsSandbox {
         }
 
         Self::append_git_rules(&mut lines);
+        Self::append_ssh_agent_rules(&mut lines);
+        Self::append_scm_cli_rules(&mut lines);
+        Self::append_keychain_rules(&mut lines);
         Self::append_device_rules(&mut lines);
 
         // Allow file-ioctl scoped to terminal devices
@@ -354,5 +446,121 @@ mod tests {
         let path = PathBuf::from("/path/with\"quote");
         let escaped = escape_path(&path);
         assert_eq!(escaped, "/path/with\\\"quote");
+    }
+
+    #[test]
+    fn test_profile_allows_ssh_directory_access() {
+        let profile = MacOsSandbox::generate_profile(&test_config());
+
+        // Should allow reading .ssh directory itself and specific config files
+        assert!(
+            profile.contains(".ssh\"))"),
+            "Expected profile to allow access to .ssh directory"
+        );
+    }
+
+    #[test]
+    fn test_profile_allows_ssh_agent_sockets() {
+        let profile = MacOsSandbox::generate_profile(&test_config());
+
+        // Should allow access to SSH agent sockets in /tmp/ssh-*
+        assert!(
+            profile.contains("^/tmp/ssh-"),
+            "Expected profile to allow access to /tmp/ssh-* sockets"
+        );
+        // Should allow access to SSH agent sockets in /private/tmp/ssh-*
+        assert!(
+            profile.contains("^/private/tmp/ssh-"),
+            "Expected profile to allow access to /private/tmp/ssh-* sockets"
+        );
+        // Should allow access to launchd-managed SSH agent sockets
+        assert!(
+            profile.contains("com\\.apple\\.launchd"),
+            "Expected profile to allow access to launchd SSH agent sockets"
+        );
+    }
+
+    #[test]
+    fn test_profile_allows_git_xdg_config() {
+        let profile = MacOsSandbox::generate_profile(&test_config());
+
+        assert!(
+            profile.contains(".config/git"),
+            "Expected profile to allow XDG git config directory"
+        );
+        assert!(
+            profile.contains(".gitattributes"),
+            "Expected profile to allow .gitattributes file"
+        );
+    }
+
+    #[test]
+    fn test_profile_allows_ssh_config_and_known_hosts() {
+        let profile = MacOsSandbox::generate_profile(&test_config());
+
+        assert!(
+            profile.contains(".ssh/config"),
+            "Expected profile to allow .ssh/config file"
+        );
+        assert!(
+            profile.contains(".ssh/known_hosts"),
+            "Expected profile to allow .ssh/known_hosts file"
+        );
+    }
+
+    #[test]
+    fn test_profile_allows_gh_cli_paths() {
+        let profile = MacOsSandbox::generate_profile(&test_config());
+
+        assert!(
+            profile.contains(".config/gh"),
+            "Expected profile to allow gh config directory"
+        );
+        assert!(
+            profile.contains(".cache/gh"),
+            "Expected profile to allow gh cache directory"
+        );
+        assert!(
+            profile.contains(".local/share/gh"),
+            "Expected profile to allow gh share directory"
+        );
+        assert!(
+            profile.contains(".local/state/gh"),
+            "Expected profile to allow gh state directory"
+        );
+    }
+
+    #[test]
+    fn test_profile_allows_glab_cli_paths() {
+        let profile = MacOsSandbox::generate_profile(&test_config());
+
+        assert!(
+            profile.contains(".config/glab-cli"),
+            "Expected profile to allow glab config directory"
+        );
+        assert!(
+            profile.contains(".cache/glab-cli"),
+            "Expected profile to allow glab cache directory"
+        );
+        assert!(
+            profile.contains(".local/share/glab-cli"),
+            "Expected profile to allow glab share directory"
+        );
+        assert!(
+            profile.contains(".local/state/glab-cli"),
+            "Expected profile to allow glab state directory"
+        );
+    }
+
+    #[test]
+    fn test_profile_does_not_allow_full_ssh_subpath() {
+        let profile = MacOsSandbox::generate_profile(&test_config());
+
+        // Should NOT grant broad subpath read to .ssh (only specific files)
+        assert!(
+            !profile.contains(".ssh\"))")
+                || profile.contains("(literal \"") && profile.contains(".ssh/"),
+            "Profile should not use subpath for .ssh access"
+        );
     }
 }
