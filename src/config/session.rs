@@ -16,28 +16,17 @@ const CURRENT_FORMAT_VERSION: u32 = 2;
 
 /// A single line in a JSONL session file.
 /// Contains per-line metadata plus the flattened `ConversationItem`.
+/// Note: The timestamp is stored within the `ConversationItem` itself to avoid
+/// duplicate field issues during serialization.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SessionLine {
     pub format_version: u32,
     pub session_id: String,
-    pub timestamp: DateTime<Utc>,
     pub working_directory: PathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(flatten)]
     pub item: ConversationItem,
-}
-
-/// Extract the timestamp from a `ConversationItem`, falling back to the provided default.
-fn item_timestamp_or(item: &ConversationItem, default: DateTime<Utc>) -> DateTime<Utc> {
-    let ts_str = match item {
-        ConversationItem::Message { timestamp, .. }
-        | ConversationItem::FunctionCall { timestamp, .. }
-        | ConversationItem::FunctionCallOutput { timestamp, .. }
-        | ConversationItem::Reasoning { timestamp, .. } => timestamp.as_ref(),
-    };
-
-    ts_str.map_or(default, |s| s.parse::<DateTime<Utc>>().unwrap_or(default))
 }
 
 /// A metadata-only line written as the first entry in every session file.
@@ -155,13 +144,48 @@ impl Session {
                 continue;
             }
 
-            let entry: SessionLine = serde_json::from_str(trimmed).with_context(|| {
-                format!(
-                    "Failed to parse line {} of session file: {}",
-                    line_num + 1,
-                    path.display()
-                )
-            })?;
+            // Handle backward compatibility: old session files may have a duplicate
+            // `timestamp` field at the SessionLine level (in addition to the one in
+            // the flattened ConversationItem). We need to remove the duplicate.
+            let entry: SessionLine = if trimmed.contains("\"timestamp\"") {
+                // Parse as generic Value to handle potential duplicates
+                let mut value: serde_json::Value =
+                    serde_json::from_str(trimmed).with_context(|| {
+                        format!(
+                            "Failed to parse line {} of session file: {}",
+                            line_num + 1,
+                            path.display()
+                        )
+                    })?;
+
+                // If there's a top-level timestamp field, remove it
+                // (the ConversationItem already has its own timestamp)
+                if let Some(obj) = value.as_object_mut() {
+                    // Check if this looks like a SessionLine (has 'item' type fields)
+                    let has_item_fields = obj.contains_key("role")
+                        || obj.contains_key("type")
+                        || obj.contains_key("call_id");
+                    if has_item_fields && obj.contains_key("timestamp") {
+                        obj.remove("timestamp");
+                    }
+                }
+
+                serde_json::from_value(value).with_context(|| {
+                    format!(
+                        "Failed to parse line {} of session file: {}",
+                        line_num + 1,
+                        path.display()
+                    )
+                })?
+            } else {
+                serde_json::from_str(trimmed).with_context(|| {
+                    format!(
+                        "Failed to parse line {} of session file: {}",
+                        line_num + 1,
+                        path.display()
+                    )
+                })?
+            };
 
             if entry.model.is_some() {
                 model.clone_from(&entry.model);
@@ -231,14 +255,25 @@ impl Session {
 
         // Write conversation items with their individual timestamps
         for item in &self.messages {
-            let timestamp = item_timestamp_or(item, now);
+            // Ensure the item has a timestamp for serialization
+            let mut item_with_timestamp = item.clone();
+            match &mut item_with_timestamp {
+                ConversationItem::Message { timestamp, .. }
+                | ConversationItem::FunctionCall { timestamp, .. }
+                | ConversationItem::FunctionCallOutput { timestamp, .. }
+                | ConversationItem::Reasoning { timestamp, .. } => {
+                    if timestamp.is_none() {
+                        *timestamp = Some(now.to_rfc3339());
+                    }
+                },
+            }
+
             let line = SessionLine {
                 format_version: CURRENT_FORMAT_VERSION,
                 session_id: self.id.clone(),
-                timestamp,
                 working_directory: self.working_dir.clone(),
                 model: self.model.clone(),
-                item: item.clone(),
+                item: item_with_timestamp,
             };
             serde_json::to_writer(&mut writer, &line)
                 .context("Failed to serialize session line")?;
@@ -428,5 +463,48 @@ mod tests {
 
         let loaded = Session::load(&path).unwrap();
         assert!(loaded.model.is_none());
+    }
+
+    /// Test backward compatibility: session files with duplicate timestamp fields
+    /// (one at `SessionLine` level and one in `ConversationItem`) should load correctly.
+    /// This was a bug in versions prior to the fix where both `SessionLine` and
+    /// `ConversationItem` had timestamp fields, causing duplicate fields in JSON.
+    #[test]
+    fn test_session_backward_compatibility_duplicate_timestamp() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("session.jsonl");
+
+        // Manually create a corrupted session file with duplicate timestamps
+        // (simulating the bug where SessionLine.timestamp existed alongside
+        // ConversationItem.timestamp)
+        let corrupted_content = r#"{"format_version":2,"session_id":"test-session","timestamp":"2026-04-04T15:51:54.474459Z","working_directory":"/tmp/test","model":"gpt-4","type":"session_start"}
+{"format_version":2,"session_id":"test-session","timestamp":"2026-04-04T15:51:18.873738Z","working_directory":"/tmp/test","model":"gpt-4","type":"message","role":"user","content":"Hello","id":null,"status":null,"timestamp":"2026-04-04T15:51:18.873738+00:00"}
+{"format_version":2,"session_id":"test-session","timestamp":"2026-04-04T15:51:20.000000Z","working_directory":"/tmp/test","model":"gpt-4","type":"message","role":"assistant","content":"Hi there","id":"msg-1","status":"completed","timestamp":"2026-04-04T15:51:20.000000+00:00"}"#;
+
+        fs::write(&path, corrupted_content).unwrap();
+
+        // Should load without error despite duplicate timestamps
+        let loaded = Session::load(&path).unwrap();
+        assert_eq!(loaded.id, "test-session");
+        assert_eq!(loaded.working_dir, PathBuf::from("/tmp/test"));
+        assert_eq!(loaded.model, Some("gpt-4".to_string()));
+        assert_eq!(loaded.messages.len(), 2);
+
+        // Verify the messages were parsed correctly
+        match &loaded.messages[0] {
+            ConversationItem::Message { role, content, .. } => {
+                assert_eq!(*role, Role::User);
+                assert_eq!(content, "Hello");
+            },
+            _ => panic!("Expected Message"),
+        }
+
+        match &loaded.messages[1] {
+            ConversationItem::Message { role, content, .. } => {
+                assert_eq!(*role, Role::Assistant);
+                assert_eq!(content, "Hi there");
+            },
+            _ => panic!("Expected Message"),
+        }
     }
 }
