@@ -32,6 +32,14 @@ name = "kimi"
 model = "kimi-k2.5"
 
 [[models]]
+name = "mimo-pro"
+model = "mimo-v2-pro"
+
+[[models]]
+name = "mimo-omni"
+model = "mimo-v2-omni"
+
+[[models]]
 name = "nemotron"
 model = "nvidia/nemotron-3-super-120b-a12b:free"
 base_url = "https://openrouter.ai/api/v1/"
@@ -47,8 +55,3 @@ model = "qwen/qwen3.6-plus:free"
 base_url = "https://openrouter.ai/api/v1/"
 api_key_env = "OPENROUTER_API_KEY"
 api_type = "responses"
-
-[[models]]
-name = "mimo-pro"
-model = "mimo-v2-pro-free"
-base_url = "https://opencode.ai/zen/v1/"
