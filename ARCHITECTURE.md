@@ -31,7 +31,7 @@ The bridge to external AI services and the orchestration layer for tool executio
 
 **`responses`**: Backend for the Responses API. Provides `send_request()` and `parse_response()` functions that handle the Responses API wire format. No longer contains orchestration logic.
 
-**`chat_completions`**: Backend for the Chat Completions API. Provides `send_request()` and `parse_response()` functions. Translates `ConversationItem` to/from chat completions format: groups consecutive `FunctionCall` items into assistant messages with `tool_calls`, maps `System` role to `"developer"`, and skips `Reasoning` items.
+**`chat_completions`**: Backend for the Chat Completions API. Provides `send_request()` and `parse_response()` functions. Translates `ConversationItem` to/from chat completions format: groups consecutive `FunctionCall` items into assistant messages with `tool_calls`, maps `System` role to `"system"`, and skips `Reasoning` items.
 
 **`chat_types`**: Request/response DTOs for the Chat Completions API (`ChatRequest`, `ChatResponse`, `ChatMessage`, `ChatTool`, `ChatToolCall`, etc.).
 

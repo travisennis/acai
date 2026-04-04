@@ -44,9 +44,12 @@ pub(super) async fn send_request(
         max_tokens: config.config.reasoning_max_tokens,
     });
 
+    let (instructions, non_system_history) = extract_instructions(history);
+
     let prompt = Request {
         model: &config.config.model,
-        input: build_input(history),
+        input: build_input(non_system_history),
+        instructions,
         temperature: config.config.temperature,
         top_p: config.config.top_p,
         max_output_tokens: config.config.max_output_tokens,
@@ -109,6 +112,24 @@ fn map_usage(api_usage: &ApiUsage) -> Usage {
                 .as_ref()
                 .map_or(0, |d| d.reasoning_tokens.unwrap_or(0)),
         },
+    }
+}
+
+/// Extract the system prompt from the conversation history, returning it
+/// separately as the `instructions` field for the Responses API.
+///
+/// The Responses API expects system-level instructions in a top-level
+/// `instructions` field rather than as a message in the `input` array.
+fn extract_instructions(history: &[ConversationItem]) -> (Option<&str>, &[ConversationItem]) {
+    if let Some(ConversationItem::Message {
+        role: Role::System,
+        content,
+        ..
+    }) = history.first()
+    {
+        (Some(content.as_str()), &history[1..])
+    } else {
+        (None, history)
     }
 }
 
@@ -200,6 +221,58 @@ fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
 mod tests {
     use super::*;
     use crate::clients::types::{OutputContent, OutputMessage};
+
+    #[test]
+    fn extract_instructions_with_system_message() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::System,
+                content: "You are acai.".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Message {
+                role: Role::User,
+                content: "Hello".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+        ];
+        let (instructions, remaining) = extract_instructions(&history);
+        assert_eq!(instructions, Some("You are acai."));
+        assert_eq!(remaining.len(), 1);
+        assert!(matches!(
+            &remaining[0],
+            ConversationItem::Message {
+                role: Role::User,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn extract_instructions_without_system_message() {
+        let history = vec![ConversationItem::Message {
+            role: Role::User,
+            content: "Hello".to_string(),
+            id: None,
+            status: None,
+            timestamp: None,
+        }];
+        let (instructions, remaining) = extract_instructions(&history);
+        assert!(instructions.is_none());
+        assert_eq!(remaining.len(), 1);
+    }
+
+    #[test]
+    fn extract_instructions_empty_history() {
+        let history: Vec<ConversationItem> = vec![];
+        let (instructions, remaining) = extract_instructions(&history);
+        assert!(instructions.is_none());
+        assert!(remaining.is_empty());
+    }
 
     #[test]
     fn build_input_converts_history() {

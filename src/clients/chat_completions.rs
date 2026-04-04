@@ -119,7 +119,7 @@ fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage<'_>> {
                 flush_tool_calls(&mut messages, &mut pending_tool_calls);
 
                 let role_str = match role {
-                    Role::System => "developer",
+                    Role::System => "system",
                     Role::Assistant => "assistant",
                     Role::User => "user",
                     Role::Tool => "tool",
@@ -285,7 +285,7 @@ mod tests {
         ];
         let msgs = build_messages(&history);
         assert_eq!(msgs.len(), 2);
-        assert_eq!(msgs[0].role, "developer");
+        assert_eq!(msgs[0].role, "system");
         assert_eq!(msgs[0].content.as_deref(), Some("You are helpful."));
         assert_eq!(msgs[1].role, "user");
         assert_eq!(msgs[1].content.as_deref(), Some("Hello"));

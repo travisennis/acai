@@ -175,7 +175,10 @@ impl Agent {
     ///     .with_history(history);
     /// ```
     pub fn with_history(mut self, messages: Vec<ConversationItem>) -> Self {
-        self.history = messages;
+        // Preserve the system message (first item set by Agent::new),
+        // then append the restored conversation history.
+        self.history.truncate(1);
+        self.history.extend(messages);
         self
     }
 

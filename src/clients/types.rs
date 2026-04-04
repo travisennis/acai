@@ -243,6 +243,8 @@ pub(super) struct ReasoningConfig {
 pub(super) struct Request<'a> {
     pub(super) model: &'a str,
     pub(super) input: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) instructions: Option<&'a str>,
     pub(super) temperature: Option<f32>,
     pub(super) top_p: Option<f32>,
     pub(super) max_output_tokens: Option<u32>,
