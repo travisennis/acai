@@ -395,12 +395,6 @@ impl Agent {
             // Accumulate usage
             self.accumulate_usage(turn_result.usage.as_ref());
 
-            // Stream each item as JSON if callback is set, and report progress
-            for item in &turn_result.items {
-                self.stream_item(item);
-                self.report_progress(item);
-            }
-
             // Collect function calls from the items
             let function_calls: Vec<_> = turn_result
                 .items
@@ -420,6 +414,30 @@ impl Agent {
                     }
                 })
                 .collect();
+
+            // Stream each item as JSON if callback is set
+            for item in &turn_result.items {
+                self.stream_item(item);
+            }
+
+            // Report progress for items, but skip assistant messages on the final turn
+            // (they're already printed to stdout, so we'd duplicate)
+            let has_tool_calls = !function_calls.is_empty();
+            for item in &turn_result.items {
+                // Skip assistant messages on the final turn (no tool calls)
+                if !has_tool_calls
+                    && matches!(
+                        item,
+                        ConversationItem::Message {
+                            role: Role::Assistant,
+                            ..
+                        }
+                    )
+                {
+                    continue;
+                }
+                self.report_progress(item);
+            }
 
             // Move items into history
             self.history.extend(turn_result.items);
