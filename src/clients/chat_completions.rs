@@ -147,7 +147,9 @@ fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage<'_>> {
                     },
                 });
             },
-            ConversationItem::FunctionCallOutput { call_id, output } => {
+            ConversationItem::FunctionCallOutput {
+                call_id, output, ..
+            } => {
                 // Flush any pending tool calls first
                 flush_tool_calls(&mut messages, &mut pending_tool_calls);
 
@@ -213,6 +215,7 @@ fn parse_choices(response: &ChatResponse) -> Vec<ConversationItem> {
     let message = &choice.message;
 
     // Extract tool calls first
+    let timestamp = chrono::Utc::now().to_rfc3339();
     if let Some(tool_calls) = &message.tool_calls {
         for tc in tool_calls {
             items.push(ConversationItem::FunctionCall {
@@ -220,6 +223,7 @@ fn parse_choices(response: &ChatResponse) -> Vec<ConversationItem> {
                 call_id: tc.id.clone(),
                 name: tc.function.name.clone(),
                 arguments: tc.function.arguments.clone(),
+                timestamp: Some(timestamp.clone()),
             });
         }
     }
@@ -233,6 +237,7 @@ fn parse_choices(response: &ChatResponse) -> Vec<ConversationItem> {
             content: content.clone(),
             id: response.id.clone(),
             status: Some("completed".to_string()),
+            timestamp: Some(timestamp.clone()),
         });
     }
 
@@ -245,6 +250,7 @@ fn parse_choices(response: &ChatResponse) -> Vec<ConversationItem> {
             content: String::new(),
             id: response.id.clone(),
             status: Some("completed".to_string()),
+            timestamp: Some(timestamp),
         });
     }
 
@@ -267,12 +273,14 @@ mod tests {
                 content: "You are helpful.".to_string(),
                 id: None,
                 status: None,
+                timestamp: None,
             },
             ConversationItem::Message {
                 role: Role::User,
                 content: "Hello".to_string(),
                 id: None,
                 status: None,
+                timestamp: None,
             },
         ];
         let msgs = build_messages(&history);
@@ -291,26 +299,31 @@ mod tests {
                 content: "do stuff".to_string(),
                 id: None,
                 status: None,
+                timestamp: None,
             },
             ConversationItem::FunctionCall {
                 id: "fc-1".to_string(),
                 call_id: "call-1".to_string(),
                 name: "bash".to_string(),
                 arguments: r#"{"cmd":"ls"}"#.to_string(),
+                timestamp: None,
             },
             ConversationItem::FunctionCall {
                 id: "fc-2".to_string(),
                 call_id: "call-2".to_string(),
                 name: "read".to_string(),
                 arguments: r#"{"path":"foo.txt"}"#.to_string(),
+                timestamp: None,
             },
             ConversationItem::FunctionCallOutput {
                 call_id: "call-1".to_string(),
                 output: "file.txt".to_string(),
+                timestamp: None,
             },
             ConversationItem::FunctionCallOutput {
                 call_id: "call-2".to_string(),
                 output: "contents".to_string(),
+                timestamp: None,
             },
         ];
         let msgs = build_messages(&history);
@@ -343,18 +356,21 @@ mod tests {
                 content: "think".to_string(),
                 id: None,
                 status: None,
+                timestamp: None,
             },
             ConversationItem::Reasoning {
                 id: "r-1".to_string(),
                 summary: vec!["thinking...".to_string()],
                 encrypted_content: None,
                 content: None,
+                timestamp: None,
             },
             ConversationItem::Message {
                 role: Role::Assistant,
                 content: "done".to_string(),
                 id: None,
                 status: None,
+                timestamp: None,
             },
         ];
         let msgs = build_messages(&history);

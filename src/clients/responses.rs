@@ -151,20 +151,24 @@ fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
                             .collect()
                     });
 
+                    let timestamp = chrono::Utc::now().to_rfc3339();
                     items.push(ConversationItem::Reasoning {
                         id: id.clone(),
                         summary,
                         encrypted_content: output.encrypted_content.clone(),
                         content,
+                        timestamp: Some(timestamp),
                     });
                 }
             },
             "function_call" => {
+                let timestamp = chrono::Utc::now().to_rfc3339();
                 items.push(ConversationItem::FunctionCall {
                     id: output.id.clone().unwrap_or_default(),
                     call_id: output.call_id.clone().unwrap_or_default(),
                     name: output.name.clone().unwrap_or_default(),
                     arguments: output.arguments.clone().unwrap_or_default(),
+                    timestamp: Some(timestamp),
                 });
             },
             "message" => {
@@ -175,11 +179,13 @@ fn parse_output_items(api_response: &ApiResponse) -> Vec<ConversationItem> {
                     .and_then(|item| item.text.clone())
                     .unwrap_or_default();
 
+                let timestamp = chrono::Utc::now().to_rfc3339();
                 items.push(ConversationItem::Message {
                     role: Role::Assistant,
                     content: text,
                     id: output.id.clone(),
                     status: output.status.clone(),
+                    timestamp: Some(timestamp),
                 });
             },
             _ => {},
@@ -202,6 +208,7 @@ mod tests {
             content: "hi".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         }];
         let input = build_input(&history);
         assert_eq!(input.len(), 1);

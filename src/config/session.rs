@@ -28,6 +28,18 @@ pub struct SessionLine {
     pub item: ConversationItem,
 }
 
+/// Extract the timestamp from a `ConversationItem`, falling back to the provided default.
+fn item_timestamp_or(item: &ConversationItem, default: DateTime<Utc>) -> DateTime<Utc> {
+    let ts_str = match item {
+        ConversationItem::Message { timestamp, .. }
+        | ConversationItem::FunctionCall { timestamp, .. }
+        | ConversationItem::FunctionCallOutput { timestamp, .. }
+        | ConversationItem::Reasoning { timestamp, .. } => timestamp.as_ref(),
+    };
+
+    ts_str.map_or(default, |s| s.parse::<DateTime<Utc>>().unwrap_or(default))
+}
+
 /// A metadata-only line written as the first entry in every session file.
 /// Ensures session identity is preserved even when there are no messages.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -217,12 +229,13 @@ impl Session {
             .context("Failed to serialize session header")?;
         writer.write_all(b"\n").context("Failed to write newline")?;
 
-        // Write conversation items
+        // Write conversation items with their individual timestamps
         for item in &self.messages {
+            let timestamp = item_timestamp_or(item, now);
             let line = SessionLine {
                 format_version: CURRENT_FORMAT_VERSION,
                 session_id: self.id.clone(),
-                timestamp: now,
+                timestamp,
                 working_directory: self.working_dir.clone(),
                 model: self.model.clone(),
                 item: item.clone(),
@@ -270,6 +283,7 @@ mod tests {
             content: "Hello".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         session.save(&path).unwrap();
@@ -293,12 +307,14 @@ mod tests {
             content: "Hello".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
         session.messages.push(ConversationItem::Message {
             role: Role::Assistant,
             content: "Hi".to_string(),
             id: Some("msg-1".to_string()),
             status: Some("completed".to_string()),
+            timestamp: None,
         });
 
         session.save(&path).unwrap();
@@ -336,22 +352,26 @@ mod tests {
             content: "list files".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
         session.messages.push(ConversationItem::FunctionCall {
             id: "fc-1".to_string(),
             call_id: "call-1".to_string(),
             name: "bash".to_string(),
             arguments: r#"{"cmd":"ls"}"#.to_string(),
+            timestamp: None,
         });
         session.messages.push(ConversationItem::FunctionCallOutput {
             call_id: "call-1".to_string(),
             output: "file.txt".to_string(),
+            timestamp: None,
         });
         session.messages.push(ConversationItem::Reasoning {
             id: "r-1".to_string(),
             summary: vec!["thinking...".to_string()],
             encrypted_content: None,
             content: None,
+            timestamp: None,
         });
 
         session.save(&path).unwrap();
@@ -395,6 +415,7 @@ mod tests {
             content: "Hello".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         session.save(&path).unwrap();

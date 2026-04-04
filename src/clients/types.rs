@@ -32,16 +32,25 @@ pub enum ConversationItem {
         id: Option<String>,
         /// "completed" or "incomplete" (required for assistant messages in input)
         status: Option<String>,
+        /// Timestamp when this item was created
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
     },
     FunctionCall {
         id: String,
         call_id: String,
         name: String,
         arguments: String,
+        /// Timestamp when this item was created
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
     },
     FunctionCallOutput {
         call_id: String,
         output: String,
+        /// Timestamp when this item was created
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
     },
     Reasoning {
         id: String,
@@ -55,6 +64,9 @@ pub enum ConversationItem {
         /// for Chat Completions providers like Moonshot AI.
         #[serde(skip_serializing_if = "Option::is_none")]
         content: Option<Vec<ReasoningContent>>,
+        /// Timestamp when this item was created
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
     },
 }
 
@@ -67,6 +79,7 @@ impl ConversationItem {
                 content,
                 id,
                 status,
+                ..
             } => {
                 let use_output_format = matches!(role, Role::Assistant);
 
@@ -104,6 +117,7 @@ impl ConversationItem {
                 call_id,
                 name,
                 arguments,
+                ..
             } => {
                 serde_json::json!({
                     "type": "function_call",
@@ -113,7 +127,9 @@ impl ConversationItem {
                     "arguments": arguments
                 })
             },
-            Self::FunctionCallOutput { call_id, output } => {
+            Self::FunctionCallOutput {
+                call_id, output, ..
+            } => {
                 serde_json::json!({
                     "type": "function_call_output",
                     "call_id": call_id,
@@ -125,6 +141,7 @@ impl ConversationItem {
                 summary,
                 encrypted_content,
                 content,
+                ..
             } => {
                 let mut obj = serde_json::json!({
                     "type": "reasoning",
@@ -152,6 +169,7 @@ impl ConversationItem {
                 content,
                 id,
                 status,
+                ..
             } => {
                 let role_str = role.as_str();
                 let mut obj = serde_json::json!({
@@ -172,6 +190,7 @@ impl ConversationItem {
                 call_id,
                 name,
                 arguments,
+                ..
             } => {
                 serde_json::json!({
                     "type": "function_call",
@@ -181,7 +200,9 @@ impl ConversationItem {
                     "arguments": arguments
                 })
             },
-            Self::FunctionCallOutput { call_id, output } => {
+            Self::FunctionCallOutput {
+                call_id, output, ..
+            } => {
                 serde_json::json!({
                     "type": "function_call_output",
                     "call_id": call_id,
@@ -334,6 +355,7 @@ mod tests {
             content: "Hello".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         };
         let json = item.to_api_input();
         assert_eq!(json["type"], "message");
@@ -349,6 +371,7 @@ mod tests {
             content: "Hi".to_string(),
             id: Some("msg-1".to_string()),
             status: Some("completed".to_string()),
+            timestamp: None,
         };
         let json = item.to_api_input();
         assert_eq!(json["role"], "assistant");
@@ -365,6 +388,7 @@ mod tests {
             content: "You are helpful".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         };
         let json = item.to_api_input();
         assert_eq!(json["role"], "system");
@@ -378,6 +402,7 @@ mod tests {
             content: "tool result".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         };
         let json = item.to_api_input();
         assert_eq!(json["role"], "tool");
@@ -391,6 +416,7 @@ mod tests {
             call_id: "call-1".to_string(),
             name: "bash".to_string(),
             arguments: r#"{"cmd":"ls"}"#.to_string(),
+            timestamp: None,
         };
         let json = item.to_api_input();
         assert_eq!(json["type"], "function_call");
@@ -405,6 +431,7 @@ mod tests {
         let item = ConversationItem::FunctionCallOutput {
             call_id: "call-1".to_string(),
             output: "file.txt".to_string(),
+            timestamp: None,
         };
         let json = item.to_api_input();
         assert_eq!(json["type"], "function_call_output");
@@ -419,6 +446,7 @@ mod tests {
             summary: vec!["thinking...".to_string()],
             encrypted_content: None,
             content: None,
+            timestamp: None,
         };
         let json = item.to_api_input();
         assert_eq!(json["type"], "reasoning");
@@ -434,6 +462,7 @@ mod tests {
             summary: vec!["step 1".to_string(), "step 2".to_string()],
             encrypted_content: None,
             content: None,
+            timestamp: None,
         };
         let json = item.to_api_input();
         assert_eq!(json["summary"].as_array().unwrap().len(), 2);
@@ -446,6 +475,7 @@ mod tests {
             summary: vec!["thinking...".to_string()],
             encrypted_content: Some("gAAAAABencrypted...".to_string()),
             content: None,
+            timestamp: None,
         };
         let json = item.to_api_input();
         assert_eq!(json["type"], "reasoning");
@@ -459,6 +489,7 @@ mod tests {
             summary: vec!["thinking...".to_string()],
             encrypted_content: None,
             content: None,
+            timestamp: None,
         };
         let json = item.to_api_input();
         assert!(json.get("encrypted_content").is_none());
@@ -470,6 +501,7 @@ mod tests {
             id: "r-1".to_string(),
             summary: vec!["thinking...".to_string()],
             encrypted_content: None,
+            timestamp: None,
             content: Some(vec![ReasoningContent {
                 content_type: "reasoning_text".to_string(),
                 text: Some("deep thoughts".to_string()),
@@ -487,6 +519,7 @@ mod tests {
             content: "Hello".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         };
         let json = item.to_streaming_json();
         assert_eq!(json["type"], "message");
@@ -500,6 +533,7 @@ mod tests {
             content: "Response".to_string(),
             id: Some("msg-123".to_string()),
             status: Some("completed".to_string()),
+            timestamp: None,
         };
         let json = item.to_streaming_json();
         assert_eq!(json["id"], "msg-123");
@@ -513,6 +547,7 @@ mod tests {
             summary: vec!["step 1".to_string()],
             encrypted_content: None,
             content: None,
+            timestamp: None,
         };
         let json = item.to_streaming_json();
         assert_eq!(json["type"], "reasoning");
@@ -527,6 +562,7 @@ mod tests {
             call_id: "call-1".to_string(),
             name: "bash".to_string(),
             arguments: r#"{"cmd":"ls"}"#.to_string(),
+            timestamp: None,
         };
         let json = item.to_streaming_json();
         assert_eq!(json["type"], "function_call");
@@ -538,6 +574,7 @@ mod tests {
         let item = ConversationItem::FunctionCallOutput {
             call_id: "call-1".to_string(),
             output: "result".to_string(),
+            timestamp: None,
         };
         let json = item.to_streaming_json();
         assert_eq!(json["type"], "function_call_output");
@@ -552,22 +589,26 @@ mod tests {
                 content: "test".to_string(),
                 id: None,
                 status: None,
+                timestamp: None,
             },
             ConversationItem::FunctionCall {
                 id: "fc".to_string(),
                 call_id: "call".to_string(),
                 name: "tool".to_string(),
                 arguments: "{}".to_string(),
+                timestamp: None,
             },
             ConversationItem::FunctionCallOutput {
                 call_id: "call".to_string(),
                 output: "out".to_string(),
+                timestamp: None,
             },
             ConversationItem::Reasoning {
                 id: "r".to_string(),
                 summary: vec!["s".to_string()],
                 encrypted_content: None,
                 content: None,
+                timestamp: None,
             },
         ];
 

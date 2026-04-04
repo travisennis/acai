@@ -732,6 +732,7 @@ mod tests {
             call_id: "call-1".to_string(),
             name: "Bash".to_string(),
             arguments: r#"{"command":"ls -la"}"#.to_string(),
+            timestamp: None,
         };
         let output = format_progress_item(&item, 1.5);
         assert!(output.contains("Bash:"));
@@ -745,6 +746,7 @@ mod tests {
             summary: vec!["thinking...".to_string()],
             encrypted_content: None,
             content: None,
+            timestamp: None,
         };
         let output = format_progress_item(&item, 2.0);
         assert!(output.contains("thinking/reasoning"));
@@ -757,6 +759,7 @@ mod tests {
             content: "Here is the answer".to_string(),
             id: Some("msg-1".to_string()),
             status: Some("completed".to_string()),
+            timestamp: None,
         };
         let output = format_progress_item(&item, 3.0);
         assert!(output.contains("Here is the answer"));
@@ -769,6 +772,7 @@ mod tests {
             content: "Hello".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         };
         let output = format_progress_item(&item, 1.0);
         // User messages should return empty string (not shown in verbose)
@@ -780,6 +784,7 @@ mod tests {
         let item = ConversationItem::FunctionCallOutput {
             call_id: "call-1".to_string(),
             output: "result".to_string(),
+            timestamp: None,
         };
         let output = format_progress_item(&item, 1.0);
         // Function call outputs should return empty string (not shown in verbose)

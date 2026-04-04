@@ -88,6 +88,7 @@ impl Agent {
     /// // let agent = Agent::new(resolved, "You are a helpful coding assistant.");
     /// ```
     pub fn new(config: ResolvedModelConfig, system_prompt: &str) -> Self {
+        let timestamp = chrono::Utc::now().to_rfc3339();
         Self {
             config,
             history: vec![ConversationItem::Message {
@@ -95,6 +96,7 @@ impl Agent {
                 content: system_prompt.to_string(),
                 id: None,
                 status: None,
+                timestamp: Some(timestamp),
             }],
             tools: vec![bash_tool(), edit_tool(), read_tool(), write_tool()],
             streaming_callback: None,
@@ -365,11 +367,13 @@ impl Agent {
     pub async fn send(&mut self, message: Message) -> anyhow::Result<Option<Message>> {
         // Add user message to history
         let user_content = message.content.clone();
+        let timestamp = chrono::Utc::now().to_rfc3339();
         self.history.push(ConversationItem::Message {
             role: Role::User,
             content: user_content.clone(),
             id: None,
             status: None,
+            timestamp: Some(timestamp),
         });
 
         // Stream user message
@@ -407,6 +411,7 @@ impl Agent {
                         call_id,
                         name,
                         arguments,
+                        ..
                     } = item
                     {
                         Some((id.clone(), call_id.clone(), name.clone(), arguments.clone()))
@@ -442,7 +447,12 @@ impl Agent {
 
             // Add results to history in order
             for (call_id, output) in results {
-                let item = ConversationItem::FunctionCallOutput { call_id, output };
+                let timestamp = chrono::Utc::now().to_rfc3339();
+                let item = ConversationItem::FunctionCallOutput {
+                    call_id,
+                    output,
+                    timestamp: Some(timestamp),
+                };
                 self.stream_item(&item);
                 self.history.push(item);
             }
@@ -716,12 +726,14 @@ mod tests {
             content: "system prompt".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
         agent.history.push(ConversationItem::Message {
             role: Role::User,
             content: "user message".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
         let history = agent.get_history_without_system();
         assert_eq!(history.len(), 1);
@@ -742,6 +754,7 @@ mod tests {
             content: "user message".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
         let history = agent.get_history_without_system();
         assert_eq!(history.len(), 1);
@@ -761,6 +774,7 @@ mod tests {
             content: "Hello!".to_string(),
             id: Some("msg-1".to_string()),
             status: Some("completed".to_string()),
+            timestamp: None,
         }];
         let msg = resolve_assistant_message(&items);
         assert_eq!(msg.content, "Hello!");
@@ -773,6 +787,7 @@ mod tests {
             summary: vec!["thinking...".to_string()],
             encrypted_content: None,
             content: None,
+            timestamp: None,
         }];
         let msg = resolve_assistant_message(&items);
         assert!(msg.content.contains("cut off during reasoning"));
@@ -792,6 +807,7 @@ mod tests {
             call_id: "call-1".to_string(),
             name: "bash".to_string(),
             arguments: "{}".to_string(),
+            timestamp: None,
         }];
         let msg = resolve_assistant_message(&items);
         assert_eq!(
@@ -813,6 +829,7 @@ mod tests {
             content: "hi".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         }];
         let agent = test_agent().with_history(history);
         assert_eq!(agent.history.len(), 1);
@@ -830,6 +847,7 @@ mod tests {
         let item = ConversationItem::FunctionCallOutput {
             call_id: "call-1".to_string(),
             output: "hello world".to_string(),
+            timestamp: None,
         };
 
         agent.stream_item(&item);
@@ -1010,6 +1028,7 @@ mod error_tests {
             content: "test".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         let result = agent.complete_turn().await;
@@ -1039,6 +1058,7 @@ mod error_tests {
             content: "test".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         let result = agent.complete_turn().await;
@@ -1068,6 +1088,7 @@ mod error_tests {
             content: "test".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         let result = agent.complete_turn().await;
@@ -1097,6 +1118,7 @@ mod error_tests {
             content: "test".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         let result = agent.complete_turn().await;
@@ -1139,6 +1161,7 @@ mod error_tests {
             content: "test".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         let result = agent.complete_turn().await;
@@ -1177,6 +1200,7 @@ mod error_tests {
             content: "test".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         let result = agent.complete_turn().await;
@@ -1213,6 +1237,7 @@ mod error_tests {
             content: "test".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         let result = agent.complete_turn().await;
@@ -1241,6 +1266,7 @@ mod error_tests {
             content: "test".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         let result = agent.complete_turn().await;
@@ -1274,6 +1300,7 @@ mod error_tests {
             content: "test".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         let result = agent.complete_turn().await;
@@ -1310,6 +1337,7 @@ mod error_tests {
             content: "test".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         let result = agent.complete_turn().await;
@@ -1336,6 +1364,7 @@ mod error_tests {
             content: "Hello".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         let result = agent.complete_turn().await;
@@ -1369,6 +1398,7 @@ mod error_tests {
             content: "Hello".to_string(),
             id: None,
             status: None,
+            timestamp: None,
         });
 
         let result = agent.complete_turn().await;
