@@ -177,6 +177,10 @@ impl Agent {
     pub fn with_history(mut self, messages: Vec<ConversationItem>) -> Self {
         // Preserve the system message (first item set by Agent::new),
         // then append the restored conversation history.
+        debug_assert!(
+            !self.history.is_empty(),
+            "with_history requires Agent::new() to have set a system message"
+        );
         self.history.truncate(1);
         self.history.extend(messages);
         self
@@ -629,7 +633,13 @@ mod tests {
         let config = test_config();
         Agent {
             config,
-            history: vec![],
+            history: vec![ConversationItem::Message {
+                role: Role::System,
+                content: "test system prompt".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            }],
             tools: vec![],
             streaming_callback: None,
             progress_callback: None,
@@ -742,13 +752,8 @@ mod tests {
     #[test]
     fn get_history_without_system_excludes_system_message() {
         let mut agent = test_agent();
-        agent.history.push(ConversationItem::Message {
-            role: Role::System,
-            content: "system prompt".to_string(),
-            id: None,
-            status: None,
-            timestamp: None,
-        });
+        // test_agent already provides a system message at index 0.
+        // Push a non-system message to verify we get back only non-system items.
         agent.history.push(ConversationItem::Message {
             role: Role::User,
             content: "user message".to_string(),
@@ -853,7 +858,22 @@ mod tests {
             timestamp: None,
         }];
         let agent = test_agent().with_history(history);
-        assert_eq!(agent.history.len(), 1);
+        // 1 system message (from test_agent) + 1 user message from with_history
+        assert_eq!(agent.history.len(), 2);
+        assert!(matches!(
+            &agent.history[0],
+            ConversationItem::Message {
+                role: Role::System,
+                ..
+            }
+        ));
+        assert!(matches!(
+            &agent.history[1],
+            ConversationItem::Message {
+                role: Role::User,
+                ..
+            }
+        ));
     }
 
     #[test]

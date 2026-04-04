@@ -1,4 +1,4 @@
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use crate::config::model::ResolvedModelConfig;
 use crate::models::Role;
@@ -120,16 +120,42 @@ fn map_usage(api_usage: &ApiUsage) -> Usage {
 ///
 /// The Responses API expects system-level instructions in a top-level
 /// `instructions` field rather than as a message in the `input` array.
+///
+/// # Invariants
+///
+/// Returns `None` if no system message exists. Any system message in
+/// the history must be first; if one appears at a later index the
+/// function returns only the prefix up to (but not including) that
+/// system message and emits a warning. This protects callers from
+/// accidentally sending a system prompt as a normal conversation message.
 fn extract_instructions(history: &[ConversationItem]) -> (Option<&str>, &[ConversationItem]) {
-    if let Some(ConversationItem::Message {
-        role: Role::System,
-        content,
-        ..
-    }) = history.first()
-    {
-        (Some(content.as_str()), &history[1..])
-    } else {
-        (None, history)
+    let system_idx = history.iter().position(|item| {
+        matches!(
+            item,
+            ConversationItem::Message {
+                role: Role::System,
+                ..
+            }
+        )
+    });
+
+    match system_idx {
+        Some(0) => {
+            let ConversationItem::Message { content, .. } = &history[0] else {
+                return (None, history);
+            };
+            (Some(content.as_str()), &history[1..])
+        },
+        Some(idx @ 1..) => {
+            // System message found not in first position.
+            warn!(
+                "System message at index {idx} in conversation history; \
+                 only the first message should be a system message. \
+                 Truncating history to exclude it."
+            );
+            (None, &history[..idx])
+        },
+        None => (None, history),
     }
 }
 
@@ -272,6 +298,38 @@ mod tests {
         let (instructions, remaining) = extract_instructions(&history);
         assert!(instructions.is_none());
         assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn extract_instructions_system_message_non_first_position() {
+        // System message at index 1 — should be excluded, returning only
+        // the preceding user message.
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::User,
+                content: "Hello".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Message {
+                role: Role::System,
+                content: "You are acai.".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+        ];
+        let (instructions, remaining) = extract_instructions(&history);
+        assert!(instructions.is_none());
+        assert_eq!(remaining.len(), 1);
+        assert!(matches!(
+            &remaining[0],
+            ConversationItem::Message {
+                role: Role::User,
+                ..
+            }
+        ));
     }
 
     #[test]
