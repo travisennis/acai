@@ -42,6 +42,13 @@ api_type = "responses"
 # providers = []
 
 [[models]]
+name = "qwen"
+model = "qwen/qwen3.6-plus:free"
+base_url = "https://openrouter.ai/api/v1/"
+api_key_env = "OPENROUTER_API_KEY"
+api_type = "responses"
+
+[[models]]
 name = "mimo-pro"
 model = "mimo-v2-pro-free"
 base_url = "https://opencode.ai/zen/v1/"
