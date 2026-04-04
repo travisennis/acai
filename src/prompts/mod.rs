@@ -1,3 +1,9 @@
+//! System prompt construction for the AI agent.
+//!
+//! This module builds the system prompt that is sent to the AI model at the
+//! start of each conversation. The prompt includes base instructions, project
+//! context from AGENTS.md files, and environmental information.
+
 use std::fmt::Write;
 use std::path::Path;
 
@@ -5,7 +11,21 @@ use chrono::Local;
 
 use crate::config::AgentsFile;
 
-/// Build the system prompt including AGENTS.md content from user and project levels.
+/// Builds the system prompt for the AI agent.
+///
+/// Constructs a prompt that includes base instructions, project context from
+/// AGENTS.md files, the current working directory, and today's date.
+///
+/// # Examples
+///
+/// ```
+/// use acai::prompts::build_system_prompt;
+/// use std::path::Path;
+///
+/// let prompt = build_system_prompt(Path::new("/project"), &[]);
+/// assert!(prompt.contains("You are acai"));
+/// assert!(prompt.contains("Current working directory: /project"));
+/// ```
 #[allow(clippy::expect_used)]
 pub fn build_system_prompt(working_dir: &Path, agents_files: &[AgentsFile]) -> String {
     let mut prompt = String::from(

@@ -2,14 +2,16 @@ use crate::config::DataDir;
 
 /// A trait representing a command runner.
 ///
-/// This trait defines a single method, `run`, which is responsible for executing the logic of a specific command.
-/// Implementations of this trait are responsible for handling command-specific arguments, interacting with
-/// the appropriate services or APIs, and performing the necessary actions based on the command's purpose.
+/// This trait defines the interface for commands that can be executed by the CLI.
+/// Implementations handle command-specific logic, service interactions, and
+/// necessary actions based on the command's purpose.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust
-/// #[derive(Debug)]
+/// use acai::cli::CmdRunner;
+/// use acai::config::DataDir;
+///
 /// struct MyCommand;
 ///
 /// impl CmdRunner for MyCommand {
@@ -22,11 +24,8 @@ use crate::config::DataDir;
 pub trait CmdRunner {
     /// Executes the command's logic.
     ///
-    /// This method is responsible for handling command-specific arguments, interacting with
-    /// the appropriate services or APIs, and performing the necessary actions based on the command's purpose.
+    /// # Errors
     ///
-    /// # Returns
-    ///
-    /// Returns a `Result` indicating whether the command execution was successful.
+    /// Returns an error if the command execution fails.
     async fn run(&self, data_dir: &DataDir) -> anyhow::Result<()>;
 }

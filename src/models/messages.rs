@@ -2,10 +2,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::Role;
 
-/// A structure representing a message.
+/// A message in a conversation with an AI model.
 ///
-/// This struct encapsulates a message, associating it with a specific role
-/// to indicate the sender's role.
+/// Each message has a role indicating the sender and content string.
+/// Messages are serialized to JSON for API requests.
+///
+/// # Examples
+///
+/// ```
+/// use acai::models::{Message, Role};
+///
+/// let msg = Message {
+///     role: Role::User,
+///     content: "Hello, assistant!".to_string(),
+/// };
+/// ```
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message {
     /// The role associated with this message, indicating the sender.

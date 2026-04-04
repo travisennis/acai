@@ -6,7 +6,21 @@ use serde::{Deserialize, Serialize};
 use crate::config::defaults::{DEFAULT_API_KEY_ENV, DEFAULT_BASE_URL, DEFAULT_PROVIDERS};
 use crate::config::model::{ApiType, ModelConfig};
 
-/// Root settings structure loaded from settings.toml
+/// Root settings structure loaded from settings.toml.
+///
+/// Contains a list of model definitions that can be selected via `--model`.
+///
+/// # Examples
+///
+/// ```no_run
+/// use acai::config::SettingsLoader;
+///
+/// let models = SettingsLoader::load(None, "/cache".as_ref())?;
+/// for (name, def) in &models {
+///     println!("Model: {} -> {}", name, def.model);
+/// }
+/// # Ok::<(), acai::config::SettingsError>(())
+/// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -14,7 +28,22 @@ pub struct Settings {
     pub models: Vec<ModelDefinition>,
 }
 
-/// Definition of a named model in settings.toml
+/// Definition of a named model in settings.toml.
+///
+/// Each model has a unique name that can be used with `--model <name>`
+/// to select a specific model configuration.
+///
+/// # Examples
+///
+/// ```no_run
+/// use acai::config::SettingsLoader;
+///
+/// let models = SettingsLoader::load(None, "/cache".as_ref())?;
+/// if let Some(def) = models.get("my-model") {
+///     println!("Using model: {}", def.model);
+/// }
+/// # Ok::<(), acai::config::SettingsError>(())
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelDefinition {
     /// Unique name for the model (lowercase alphanumeric + hyphens only)
@@ -66,7 +95,25 @@ fn default_providers() -> Vec<String> {
 }
 
 impl ModelDefinition {
-    /// Validate the model name (lowercase alphanumeric + hyphens only)
+    /// Validates the model name format.
+    ///
+    /// Model names must be lowercase alphanumeric with hyphens only.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use acai::config::ModelDefinition;
+    ///
+    /// assert!(ModelDefinition::validate_name("my-model").is_ok());
+    /// assert!(ModelDefinition::validate_name("model-123").is_ok());
+    /// assert!(ModelDefinition::validate_name("Invalid").is_err());
+    /// assert!(ModelDefinition::validate_name("my_model").is_err());
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns `SettingsError::InvalidModelName` if the name is empty or
+    /// contains invalid characters.
     pub fn validate_name(name: &str) -> Result<(), SettingsError> {
         if name.is_empty() {
             return Err(SettingsError::InvalidModelName {
@@ -89,7 +136,31 @@ impl ModelDefinition {
         Ok(())
     }
 
-    /// Convert a `ModelDefinition` to a `ModelConfig`
+    /// Converts the model definition to a `ModelConfig`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use acai::config::{ModelDefinition, ApiType};
+    ///
+    /// let def = ModelDefinition {
+    ///     name: "test".to_string(),
+    ///     model: "test/model".to_string(),
+    ///     base_url: "https://example.com".to_string(),
+    ///     api_key_env: "MY_KEY".to_string(),
+    ///     api_type: ApiType::ChatCompletions,
+    ///     temperature: Some(0.5),
+    ///     top_p: None,
+    ///     max_output_tokens: Some(4000),
+    ///     reasoning_effort: None,
+    ///     reasoning_summary: None,
+    ///     reasoning_max_tokens: None,
+    ///     providers: vec![],
+    /// };
+    ///
+    /// let config = def.to_model_config();
+    /// assert_eq!(config.model, "test/model");
+    /// ```
     pub fn to_model_config(&self) -> ModelConfig {
         ModelConfig {
             model: self.model.clone(),
@@ -123,7 +194,22 @@ pub enum SettingsError {
     IoError(#[from] std::io::Error),
 }
 
-/// Loader for settings from TOML files
+/// Loader for settings from TOML files.
+///
+/// Settings are loaded from both global and project-level files,
+/// with project settings taking precedence over global settings.
+///
+/// # Examples
+///
+/// ```no_run
+/// use acai::config::SettingsLoader;
+/// use std::path::Path;
+///
+/// let models = SettingsLoader::load(
+///     Some(Path::new("/project")),
+///     Path::new("/cache"),
+/// )?;
+/// ```
 pub struct SettingsLoader;
 
 impl SettingsLoader {
@@ -140,14 +226,35 @@ impl SettingsLoader {
         Ok(Some(settings))
     }
 
-    /// Load and merge settings from multiple locations.
+    /// Loads and merges settings from global and project locations.
     ///
-    /// Merge logic:
-    /// - Start with global settings
-    /// - Add/override with project settings (project takes precedence for same name)
-    /// - Check for duplicate names within each file (error if found)
+    /// Settings are loaded from:
+    /// 1. Global settings: `{global_dir}/settings.toml`
+    /// 2. Project settings: `{project_dir}/.acai/settings.toml`
     ///
-    /// Returns a map of model name -> `ModelDefinition`.
+    /// Project settings override global settings for models with the same name.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use acai::config::SettingsLoader;
+    /// use std::path::Path;
+    ///
+    /// let models = SettingsLoader::load(
+    ///     Some(Path::new("/my/project")),
+    ///     Path::new("/home/user/.cache/acai"),
+    /// )?;
+    ///
+    /// if let Some(model) = models.get("default") {
+    ///     println!("Default model: {}", model.model);
+    /// }
+    /// # Ok::<(), acai::config::SettingsError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a settings file exists but cannot be parsed,
+    /// or if duplicate model names are found within the same file.
     pub fn load(
         project_dir: Option<&Path>,
         global_dir: &Path,

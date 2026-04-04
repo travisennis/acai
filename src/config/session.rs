@@ -43,6 +43,19 @@ struct SessionHeader {
 }
 
 /// In-memory session state reconstructed from a JSONL file.
+///
+/// A session represents a conversation with the AI, including its unique ID,
+/// working directory, model used, and message history.
+///
+/// # Examples
+///
+/// ```
+/// use acai::config::Session;
+/// use std::path::PathBuf;
+///
+/// let session = Session::new("uuid-here".to_string(), PathBuf::from("/project"));
+/// assert!(session.messages.is_empty());
+/// ```
 #[derive(Debug, Clone)]
 pub struct Session {
     /// Unique session identifier (UUID v4)
@@ -56,7 +69,17 @@ pub struct Session {
 }
 
 impl Session {
-    /// Create a new empty session.
+    /// Creates a new empty session.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use acai::config::Session;
+    /// use std::path::PathBuf;
+    ///
+    /// let session = Session::new("uuid".to_string(), PathBuf::from("/project"));
+    /// assert_eq!(session.id, "uuid");
+    /// ```
     pub const fn new(id: String, working_dir: PathBuf) -> Self {
         Self {
             id,
@@ -66,8 +89,26 @@ impl Session {
         }
     }
 
-    /// Load session from a JSONL file.
+    /// Loads a session from a JSONL file.
+    ///
     /// The first line is a `SessionHeader`, subsequent lines are `SessionLine` entries.
+    /// Each line is a valid JSON object.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use acai::config::Session;
+    /// use std::path::Path;
+    ///
+    /// let session = Session::load(Path::new("session.jsonl"))?;
+    /// println!("Loaded session: {}", session.id);
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be opened, or if any line
+    /// cannot be parsed as valid JSON.
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let file = fs::File::open(path)
             .with_context(|| format!("Failed to open session file: {}", path.display()))?;
@@ -125,7 +166,26 @@ impl Session {
         })
     }
 
-    /// Save session as JSONL (one `SessionLine` per line), atomically.
+    /// Saves the session to a JSONL file atomically.
+    ///
+    /// Writes to a temporary file first, then renames to ensure atomic writes.
+    /// The file contains one JSON object per line (JSONL format).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use acai::config::Session;
+    /// use std::path::PathBuf;
+    ///
+    /// let mut session = Session::new("uuid".to_string(), PathBuf::from("/project"));
+    /// session.save(Path::new("session.jsonl"))?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the session directory cannot be created, or if
+    /// the file cannot be written.
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).with_context(|| {

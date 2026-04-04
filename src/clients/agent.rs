@@ -38,8 +38,21 @@ const fn is_retryable_status(status: reqwest::StatusCode) -> bool {
 // Agent (shared loop over any backend)
 // =============================================================================
 
-/// The agent orchestrates the conversation loop, tool execution, and streaming.
-/// It delegates API-specific request/response handling to backends.
+/// Orchestrates conversation loops, tool execution, and API communication.
+///
+/// The `Agent` manages the conversation history, executes tool calls from the
+/// AI model, and handles streaming output. It supports multiple API backends
+/// through the `ApiType` configuration.
+///
+/// # Example
+///
+/// ```no_run
+/// use acai::clients::Agent;
+/// use acai::config::ResolvedModelConfig;
+///
+/// // Create agent with resolved config and system prompt
+/// // let agent = Agent::new(resolved_config, "You are a helpful assistant.");
+/// ```
 pub struct Agent {
     config: ResolvedModelConfig,
     /// Conversation history using typed items
@@ -60,7 +73,20 @@ pub struct Agent {
 }
 
 impl Agent {
-    /// Create a new agent with the given configuration and system prompt.
+    /// Creates a new agent with the given configuration and system prompt.
+    ///
+    /// The agent is initialized with four default tools: Bash, Read, Edit, and Write.
+    /// A new session ID is generated automatically.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use acai::clients::Agent;
+    /// use acai::config::ResolvedModelConfig;
+    ///
+    /// // let resolved = ResolvedModelConfig::resolve(config)?;
+    /// // let agent = Agent::new(resolved, "You are a helpful coding assistant.");
+    /// ```
     pub fn new(config: ResolvedModelConfig, system_prompt: &str) -> Self {
         Self {
             config,
@@ -84,31 +110,89 @@ impl Agent {
         }
     }
 
-    /// Get the model name.
+    /// Returns the model name from the configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use acai::clients::Agent;
+    /// # use acai::config::ResolvedModelConfig;
+    /// # let agent = Agent::new(ResolvedModelConfig::default(), "prompt");
+    /// println!("Using model: {}", agent.model());
+    /// ```
     pub fn model(&self) -> &str {
         &self.config.config.model
     }
 
-    /// Get the number of registered tools.
+    /// Returns the number of registered tools.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use acai::clients::Agent;
+    /// # use acai::config::ResolvedModelConfig;
+    /// # let agent = Agent::new(ResolvedModelConfig::default(), "prompt");
+    /// println!("Agent has {} tools", agent.tool_count());
+    /// ```
     #[allow(clippy::missing_const_for_fn)]
     pub fn tool_count(&self) -> usize {
         self.tools.len()
     }
 
-    /// Replace the auto-generated session ID with a restored session's ID.
+    /// Sets the session ID for a restored session.
+    ///
+    /// Use this when continuing a previous session to preserve the session ID.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use acai::clients::Agent;
+    /// # use acai::config::ResolvedModelConfig;
+    /// # let resolved = ResolvedModelConfig::default();
+    /// let agent = Agent::new(resolved, "prompt")
+    ///     .with_session_id("existing-uuid".to_string());
+    /// ```
     pub fn with_session_id(mut self, id: String) -> Self {
         self.session_id = id;
         self
     }
 
-    /// Replace the conversation history with restored messages.
+    /// Sets the conversation history for a restored session.
+    ///
+    /// Use this when continuing a previous session to restore the conversation context.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use acai::clients::Agent;
+    /// # use acai::config::ResolvedModelConfig;
+    /// # use acai::clients::ConversationItem;
+    /// # let resolved = ResolvedModelConfig::default();
+    /// let history = vec![]; // Previous conversation items
+    /// let agent = Agent::new(resolved, "prompt")
+    ///     .with_history(history);
+    /// ```
     pub fn with_history(mut self, messages: Vec<ConversationItem>) -> Self {
         self.history = messages;
         self
     }
 
-    /// Get conversation history without the system message (for saving to session files).
-    /// Returns all messages except the first one if it's a system message.
+    /// Returns conversation history without the system message.
+    ///
+    /// This is used when saving sessions to disk, as the system prompt is
+    /// regenerated on load rather than stored.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use acai::clients::Agent;
+    /// # use acai::config::ResolvedModelConfig;
+    /// # let agent = Agent::new(ResolvedModelConfig::default(), "system prompt");
+    /// let history = agent.get_history_without_system();
+    /// assert!(!history.iter().any(|item| matches!(item, acai::clients::ConversationItem::Message {
+    ///     role: acai::models::Role::System, ..
+    /// })));
+    /// ```
     pub fn get_history_without_system(&self) -> Vec<ConversationItem> {
         let skip = usize::from(self.history.first().is_some_and(|item| {
             matches!(
@@ -122,13 +206,44 @@ impl Agent {
         self.history.iter().skip(skip).cloned().collect()
     }
 
-    /// Enable streaming JSON output - callback receives JSON string for each message
+    /// Enables streaming JSON output for each message.
+    ///
+    /// The callback receives a JSON string for each message, tool call, and result.
+    /// This is useful for integrating with other tools or TUIs.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use acai::clients::Agent;
+    /// # use acai::config::ResolvedModelConfig;
+    /// # let resolved = ResolvedModelConfig::default();
+    /// let agent = Agent::new(resolved, "prompt")
+    ///     .with_streaming_json(|json| println!("{}", json));
+    /// ```
     pub fn with_streaming_json(mut self, callback: impl Fn(&str) + Send + Sync + 'static) -> Self {
         self.streaming_callback = Some(Box::new(callback));
         self
     }
 
-    /// Enable progress reporting - callback receives conversation items for human-readable output
+    /// Enables progress reporting for tool execution.
+    ///
+    /// The callback receives conversation items as they occur, useful for
+    /// displaying human-readable progress during long-running operations.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use acai::clients::Agent;
+    /// # use acai::config::ResolvedModelConfig;
+    /// # use acai::clients::ConversationItem;
+    /// # let resolved = ResolvedModelConfig::default();
+    /// let agent = Agent::new(resolved, "prompt")
+    ///     .with_progress_callback(|item| {
+    ///         if let ConversationItem::FunctionCall { name, .. } = item {
+    ///             eprintln!("Calling tool: {}", name);
+    ///         }
+    ///     });
+    /// ```
     pub fn with_progress_callback(
         mut self,
         callback: impl Fn(&ConversationItem) + Send + Sync + 'static,
@@ -222,11 +337,30 @@ impl Agent {
         }
     }
 
-    /// Send a message and run the agent loop until the model produces a final response.
+    /// Sends a message and runs the agent loop until completion.
+    ///
+    /// The agent will process the message, execute any tool calls, and continue
+    /// until the model produces a final response without requesting more tools.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use acai::clients::Agent;
+    /// # use acai::config::ResolvedModelConfig;
+    /// # use acai::models::Message;
+    /// # use acai::models::Role;
+    /// # async fn example() -> anyhow::Result<()> {
+    /// # let agent = Agent::new(ResolvedModelConfig::default(), "prompt");
+    /// let msg = Message { role: Role::User, content: "Hello!".to_string() };
+    /// let response = agent.send(msg).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     ///
     /// # Errors
     ///
-    /// Returns an error if the API request fails or the response cannot be parsed.
+    /// Returns an error if the API request fails, the response cannot be parsed,
+    /// or a tool execution fails critically.
     #[allow(clippy::too_many_lines)]
     pub async fn send(&mut self, message: Message) -> anyhow::Result<Option<Message>> {
         // Add user message to history

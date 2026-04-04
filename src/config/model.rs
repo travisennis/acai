@@ -24,6 +24,18 @@ pub enum ApiType {
 }
 
 /// Configuration for a model provider.
+///
+/// Contains all settings needed to connect to an AI model API, including
+/// the model identifier, API endpoint, authentication, and generation parameters.
+///
+/// # Examples
+///
+/// ```
+/// use acai::config::ModelConfig;
+///
+/// let config = ModelConfig::default();
+/// assert_eq!(config.model, "anthropic/claude-3.5-sonnet");
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfig {
     /// Model identifier (e.g. "openai/gpt-4o")
@@ -75,6 +87,20 @@ impl Default for ModelConfig {
 }
 
 /// A `ModelConfig` with the API key resolved from the environment.
+///
+/// This struct is created by calling [`ResolvedModelConfig::resolve`] and contains
+/// the actual API key value needed to make authenticated requests.
+///
+/// # Examples
+///
+/// ```no_run
+/// use acai::config::{ModelConfig, ResolvedModelConfig};
+///
+/// let config = ModelConfig::default();
+/// let resolved = ResolvedModelConfig::resolve(config)?;
+/// // Now use resolved.api_key for API requests
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 #[derive(Debug, Clone)]
 pub struct ResolvedModelConfig {
     /// The underlying model configuration
@@ -84,7 +110,21 @@ pub struct ResolvedModelConfig {
 }
 
 impl ResolvedModelConfig {
-    /// Resolve a `ModelConfig` by reading the API key from the environment.
+    /// Resolves a `ModelConfig` by reading the API key from the environment.
+    ///
+    /// Reads the environment variable specified in `config.api_key_env` and
+    /// returns a `ResolvedModelConfig` with the API key value.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use acai::config::{ModelConfig, ResolvedModelConfig};
+    ///
+    /// let config = ModelConfig::default();
+    /// let resolved = ResolvedModelConfig::resolve(config)?;
+    /// println!("Using API key from: {}", resolved.config.api_key_env);
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     ///
     /// # Errors
     ///

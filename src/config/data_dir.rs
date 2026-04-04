@@ -9,6 +9,10 @@ use sha2::{Digest, Sha256};
 use crate::config::Session;
 
 /// Represents an AGENTS.md file with its path and content.
+///
+/// AGENTS.md files contain instructions for the AI agent about project-specific
+/// context and behavior. They are loaded from both user-level (`~/.acai/AGENTS.md`)
+/// and project-level (`./AGENTS.md`) locations.
 #[derive(Debug, Clone)]
 pub struct AgentsFile {
     /// Display path (e.g., "~/.acai/AGENTS.md" or "./AGENTS.md")
@@ -17,33 +21,32 @@ pub struct AgentsFile {
     pub content: String,
 }
 
+/// Manages the data directory for session storage.
+///
+/// The data directory is located at `~/.cache/acai/` and contains session files,
+/// cache data, and other persistent state for the acai CLI.
 #[derive(Debug, Clone)]
-/// Represents a data directory structure.
 pub struct DataDir {
     /// The path to the data directory.
     data_dir: PathBuf,
 }
 
 impl DataDir {
-    /// Creates a new instance of the struct.
+    /// Creates a new data directory instance for session storage.
     ///
-    /// This function initializes a new instance by determining the user's home directory
-    /// and creating a specific data directory within it. If the home directory cannot be found,
-    /// the function will panic with an appropriate message. Similarly, if the data directory
-    /// cannot be created, the function will also panic.
+    /// Initializes the data directory at `~/.cache/acai/`, creating it if needed.
     ///
-    /// # Returns
-    /// A new instance of the struct with the `data_dir` field set to the created data directory.
+    /// # Examples
     ///
-    /// # Panics
-    /// This function will panic if:
-    /// - The home directory cannot be found.
-    /// - The data directory cannot be created.
-    ///
-    /// # Example
     /// ```
-    /// let instance = DataDir::new();
+    /// use acai::config::DataDir;
+    /// let data_dir = DataDir::new()?;
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the home directory cannot be determined or
+    /// the data directory cannot be created.
     pub fn new() -> anyhow::Result<Self> {
         let home_dir = dirs::home_dir();
         if let Some(home) = home_dir {
@@ -59,6 +62,17 @@ impl DataDir {
         }
     }
 
+    /// Returns the path to the cache directory.
+    ///
+    /// The cache directory is typically `~/.cache/acai/`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use acai::config::DataDir;
+    /// let data_dir = DataDir::new()?;
+    /// let cache_path = data_dir.get_cache_dir();
+    /// ```
     pub fn get_cache_dir(&self) -> PathBuf {
         self.data_dir.clone()
     }
@@ -77,8 +91,27 @@ impl DataDir {
         hex::encode(&result[..8])
     }
 
-    /// Save a session to `sessions/{dir_hash}/{session.id}.jsonl` with atomic write
-    /// and update the `latest` reference.
+    /// Saves a session to disk with atomic write.
+    ///
+    /// The session is saved to `~/.cache/acai/sessions/{dir_hash}/{session_id}.jsonl`
+    /// and the `latest` symlink is updated to point to this session.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use acai::config::{DataDir, Session};
+    /// use std::path::PathBuf;
+    ///
+    /// let data_dir = DataDir::new()?;
+    /// let session = Session::new("uuid-here".to_string(), PathBuf::from("/project"));
+    /// data_dir.save_session(&session)?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the session ID is not a valid UUID, or if the
+    /// session file cannot be written.
     pub fn save_session(&self, session: &Session) -> anyhow::Result<PathBuf> {
         uuid::Uuid::parse_str(&session.id).map_err(|e| {
             let id = &session.id;
@@ -145,7 +178,29 @@ impl DataDir {
         Ok(())
     }
 
-    /// Load the most recent session for a given working directory.
+    /// Loads the most recent session for a given working directory.
+    ///
+    /// Returns the session that the `latest` symlink points to, or `None` if
+    /// no sessions exist for the given working directory.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use acai::config::DataDir;
+    /// use std::path::PathBuf;
+    ///
+    /// let data_dir = DataDir::new()?;
+    /// let session = data_dir.load_latest_session(&PathBuf::from("/project"))?;
+    /// match session {
+    ///     Some(s) => println!("Found session: {}", s.id),
+    ///     None => println!("No previous session found"),
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `latest` symlink exists but cannot be read,
+    /// or if the session file cannot be loaded.
     pub fn load_latest_session(&self, working_dir: &Path) -> anyhow::Result<Option<Session>> {
         let dir_hash = Self::dir_hash(working_dir);
         let latest_path = self.sessions_dir().join(&dir_hash).join("latest");
@@ -188,7 +243,27 @@ impl DataDir {
         Ok(content.trim().to_string())
     }
 
-    /// Load a specific session by UUID, scoped to a working directory.
+    /// Loads a specific session by UUID for a given working directory.
+    ///
+    /// Returns the session with the given ID, or `None` if no such session exists.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use acai::config::DataDir;
+    /// use std::path::PathBuf;
+    ///
+    /// let data_dir = DataDir::new()?;
+    /// let session = data_dir.load_session(
+    ///     &PathBuf::from("/project"),
+    ///     "550e8400-e29b-41d4-a716-446655440000"
+    /// )?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the session ID is not a valid UUID, or if the
+    /// session file exists but cannot be loaded.
     pub fn load_session(&self, working_dir: &Path, id: &str) -> anyhow::Result<Option<Session>> {
         uuid::Uuid::parse_str(id).map_err(|e| anyhow!("Invalid session UUID '{id}': {e}"))?;
 
@@ -205,10 +280,27 @@ impl DataDir {
         Session::load(&session_path).map(Some)
     }
 
-    /// Read AGENTS.md files from user-level and project-level locations.
+    /// Reads AGENTS.md files from user-level and project-level locations.
     ///
     /// Returns a list of found AGENTS.md files with their paths and content.
     /// Files that don't exist are silently skipped.
+    ///
+    /// The search order is:
+    /// 1. User-level: `~/.acai/AGENTS.md`
+    /// 2. Project-level: `./AGENTS.md`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use acai::config::DataDir;
+    /// use std::path::PathBuf;
+    ///
+    /// let data_dir = DataDir::new()?;
+    /// let agents_files = data_dir.read_agents_files(&PathBuf::from("/project"));
+    /// for file in &agents_files {
+    ///     println!("Found AGENTS.md at: {}", file.path);
+    /// }
+    /// ```
     pub fn read_agents_files(&self, working_dir: &Path) -> Vec<AgentsFile> {
         let mut files = Vec::new();
 

@@ -1,10 +1,18 @@
 use serde::{Deserialize, Serialize};
 
-/// Represents the role who sends the message.
+/// Represents the role of a message sender in a conversation.
 ///
-/// This enum is used to distinguish between different types of roles,
-/// such as system, assistant, user, and tool. The roles are serialized
-/// and deserialized as lowercase strings.
+/// Roles distinguish between different participants in the conversation:
+/// system prompts, assistant responses, user inputs, and tool outputs.
+///
+/// # Examples
+///
+/// ```
+/// use acai::models::Role;
+///
+/// assert_eq!(Role::User.as_str(), "user");
+/// assert_eq!(Role::Assistant.as_str(), "assistant");
+/// ```
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
@@ -20,6 +28,17 @@ pub enum Role {
 
 impl Role {
     /// Returns the string representation of the role.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use acai::models::Role;
+    ///
+    /// assert_eq!(Role::System.as_str(), "system");
+    /// assert_eq!(Role::Assistant.as_str(), "assistant");
+    /// assert_eq!(Role::User.as_str(), "user");
+    /// assert_eq!(Role::Tool.as_str(), "tool");
+    /// ```
     pub const fn as_str(&self) -> &str {
         match self {
             Self::System => "system",

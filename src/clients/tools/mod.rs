@@ -1,3 +1,22 @@
+//! Tool definitions and execution for the AI agent.
+//!
+//! This module provides the tool interface that allows the AI agent to interact
+//! with the host system through controlled operations. All tools are sandboxed
+//! to restrict file access to the working directory and allowed paths.
+//!
+//! # Available Tools
+//!
+//! - `Bash` - Execute shell commands with timeout and output capture
+//! - `Read` - Read file contents with line range support
+//! - `Edit` - Make targeted edits to files using literal search-replace
+//! - `Write` - Create or overwrite files with content
+//!
+//! # Security
+//!
+//! All tools validate paths against the current working directory and
+//! directories added via `--add-dir` flag. Write operations are only allowed
+//! in the working directory and temp directories.
+
 use serde::Serialize;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -81,7 +100,18 @@ mod write;
 // Tool Types
 // =============================================================================
 
-/// Tool definition sent in API requests
+/// Tool definition sent in API requests.
+///
+/// Represents a function tool that the AI model can call during conversation.
+/// Each tool has a name, description, and JSON schema for its parameters.
+///
+/// # Example
+///
+/// ```
+/// use acai::clients::tools::bash_tool;
+/// let tool = bash_tool();
+/// assert_eq!(tool.name, "Bash");
+/// ```
 #[derive(Serialize, Clone, Debug)]
 pub struct Tool {
     #[serde(rename = "type")]
@@ -91,7 +121,10 @@ pub struct Tool {
     pub(super) parameters: serde_json::Value,
 }
 
-/// Result of executing a tool
+/// Result of executing a tool.
+///
+/// Contains the output string from tool execution, which may be stdout/stderr
+/// for Bash or file contents for Read operations.
 #[derive(Debug)]
 pub struct ToolResult {
     pub output: String,
