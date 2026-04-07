@@ -358,7 +358,7 @@ impl CmdRunner for CodingAssistant {
             });
 
             eprintln!(
-                "\x1b[1;36m--\x1b[0m dir: {}, session: {}, model: {model}, tools: {tool_count}",
+                "\x1b[1;36mstart\x1b[0m\n  dir: {}\n  session: {}\n  model: {model}\n  tools: {tool_count}",
                 original_dir.display(),
                 session.id
             );
