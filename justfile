@@ -29,7 +29,7 @@ ci: fmt-check clippy-strict test lint-imports
     echo "All checks passed!"
 
 # Recreate full CI pipeline locally (matches GitHub Actions)
-ci-full: fmt-check clippy-strict test deny doc build
+ci-full: fmt-check clippy-strict test lint-imports deny doc build
     echo "Full CI pipeline passed!"
 
 # Check for denied/advisory dependencies (requires cargo-deny)
@@ -47,6 +47,7 @@ coverage:
 # Run coverage and open report
 coverage-open:
     cargo llvm-cov --html --open
+
 # Generate coverage in lcov format for CI
 coverage-lcov:
     cargo llvm-cov --lcov --output-path lcov.info
