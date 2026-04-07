@@ -1,6 +1,33 @@
 # acai
 
-acai is a minimal coding harness for headless usage in the terminal.
+acai is a minimal coding harness for headless usage in the terminal. It's not a TUI — it's a Unix filter for AI. It takes input, does work, produces output, and exits. That's its strength: acai is composable with every tool in your shell.
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Shell Pipelines](#shell-pipelines)
+  - [Multi-file Context](#multi-file-context)
+- [Configuration](#configuration)
+  - [Model Configuration](#model-configuration)
+  - [Reasoning Configuration](#reasoning-configuration)
+  - [Default Configuration](#default-configuration)
+- [Session Management](#session-management)
+  - [Branching Conversations](#branching-conversations)
+- [Worktrees](#worktrees)
+- [Filesystem Sandbox](#filesystem-sandbox)
+  - [Destructive Command Protection](#destructive-command-protection)
+  - [Adding Read-Only Directories](#adding-read-only-directories)
+- [AGENTS.md — Per-Project AI Behavior](#agentsmd--per-project-ai-behavior)
+- [Shell Aliases and Functions](#shell-aliases-and-functions)
+- [Streaming JSON Output](#streaming-json-output)
+- [Options](#options)
+- [Architecture](#architecture)
+- [Contributing](#contributing)
+- [Testing](#testing)
+- [License](#license)
+- [Acknowledgements](#acknowledgements)
 
 ## Features
 
@@ -59,6 +86,35 @@ acai - < file.txt
 
 # With max tokens override
 acai --max-tokens 4000 "Your prompt here"
+```
+
+### Shell Pipelines
+
+acai reads from stdin, so it composes naturally with other Unix tools:
+
+```bash
+# Code review from git diff
+git diff HEAD~3 | acai "Summarize these changes for a changelog entry"
+
+# Explain a file
+cat src/main.rs | acai "Explain this code"
+
+# Review staged changes
+git diff --staged | acai "Code review these staged changes"
+```
+
+### Multi-file Context
+
+Use heredocs with command substitution to feed multiple files as context:
+
+```bash
+acai << 'EOF'
+Here are two files. Explain how they interact:
+--- agent.rs ---
+$(cat src/clients/agent.rs)
+--- types.rs ---
+$(cat src/clients/types.rs)
+EOF
 ```
 
 ## Configuration
@@ -185,6 +241,15 @@ Sessions are saved to `~/.cache/acai/sessions/` and include full conversation hi
 
 For more details, see [Session Management](docs/design-docs/session-management.md).
 
+#### Branching Conversations
+
+Think of session management as branches of thought:
+
+- **`--continue`** is your "keep going" — great for multi-step tasks where acai needs to iterate.
+- **`--fork`** is your "what if?" — try a different approach without losing the original thread.
+- **`--resume <UUID>`** is your "go back to that idea from Tuesday."
+- **`--no-session`** is for throwaway questions that don't pollute your session history.
+
 ### Worktrees
 
 Run a task in an isolated git worktree so changes don't affect your main working directory. The worktree is created at `<repo>/.acai/worktrees/<name>` on a new branch based on the default remote branch.
@@ -227,6 +292,45 @@ acai --add-dir ~/Documents/references --add-dir ~/Projects/shared "Review the co
 The agent will be able to **read** files from these directories but **not write** to them.
 
 For more details, see [Filesystem Sandbox](docs/design-docs/sandbox.md).
+
+### AGENTS.md — Per-Project AI Behavior
+
+acai reads `AGENTS.md` files to shape its behavior without re-prompting every time:
+
+- **`~/.acai/AGENTS.md`** — Global personality, preferences, and conventions applied to all projects.
+- **`./AGENTS.md`** — Project-level instructions: tech stack, coding standards, domain knowledge.
+
+This is how you make acai a domain expert. For example, a project-level `AGENTS.md` might say:
+
+```markdown
+This is a Rust project using Tokio for async. Use `anyhow` for errors.
+Always run `cargo fmt` and `cargo clippy` after editing Rust files.
+Never use `unwrap()` in production code.
+```
+
+### Shell Aliases and Functions
+
+Set up shell aliases to turn common patterns into one-liners:
+
+```bash
+# Quick aliases
+alias review='git diff --staged | acai "Code review these staged changes"'
+alias explain='acai "Explain this code:" < '
+alias changelog='git log --oneline HEAD~10..HEAD | acai "Write a changelog from these commits"'
+
+# Multi-model comparison
+compare() { acai --no-session --model glm "$1" & acai --no-session --model qwen "$1" & wait; }
+```
+
+### Streaming JSON Output
+
+The `--output-format stream-json` mode emits NDJSON events for every conversation item, turning acai into a **backend for any frontend**. You can build a tmux-pane viewer, a web UI, or a VS Code extension that consumes the stream.
+
+```bash
+acai --output-format stream-json "List files" | jq '.type'
+```
+
+See [Streaming JSON Output](docs/design-docs/streaming-json-output.md) for the full schema.
 
 ### Options
 
