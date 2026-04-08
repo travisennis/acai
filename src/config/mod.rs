@@ -10,14 +10,6 @@
 //! - [`Session`] - Represents a conversation session
 //! - [`ModelConfig`] - Model provider configuration
 //! - [`SettingsLoader`] - Loads settings from TOML files
-//!
-//! # Example
-//!
-//! ```no_run
-//! use acai::config::{DataDir, Session};
-//! let data_dir = DataDir::new()?;
-//! // Save and load sessions...
-//! ```
 
 mod data_dir;
 pub mod defaults;

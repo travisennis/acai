@@ -8,14 +8,6 @@
 //! - [`Agent`] - Main orchestrator that manages conversation loops and tool execution
 //! - `tools` - Tool definitions for Bash, Read, Edit, and Write operations
 //! - `chat_completions` / `responses` - API-specific request handlers
-//!
-//! # Example
-//!
-//! ```no_run
-//! use acai::clients::Agent;
-//! // Create an agent with a resolved model config and system prompt
-//! // let agent = Agent::new(config, "You are a helpful assistant.");
-//! ```
 
 mod agent;
 mod chat_completions;
