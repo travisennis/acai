@@ -1,5 +1,5 @@
 /// Default model to use for completions
-pub const DEFAULT_MODEL: &str = "glm-5";
+pub const DEFAULT_MODEL: &str = "glm-5.1";
 
 /// Default base URL for the API endpoint
 pub const DEFAULT_BASE_URL: &str = "https://opencode.ai/zen/go/v1/";

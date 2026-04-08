@@ -5,7 +5,7 @@
 
 [[models]]
 # Required: unique name for this model (lowercase, alphanumeric, hyphens only)
-name = "glm"
+name = "glm5"
 # Required: model identifier
 model = "glm-5"
 # Optional: defaults to OpenCode default
@@ -26,6 +26,10 @@ model = "glm-5"
 # reasoning_max_tokens = 8000
 # Optional: provider routing hints
 # providers = []
+ 
+[[models]]
+name = "glm5-1"
+model = "glm-5.1"
 
 [[models]]
 name = "kimi"
