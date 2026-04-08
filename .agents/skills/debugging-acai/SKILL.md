@@ -96,7 +96,7 @@ grep -i "warn" ~/.cache/acai/acai.$(date +%Y-%m-%d).log
 grep -i "error" ~/.cache/acai/acai.*.log
 
 # Find all API requests
-grep "https://openrouter.ai" ~/.cache/acai/acai.*.log
+grep "https://opencode.ai" ~/.cache/acai/acai.*.log
 
 # Find truncated outputs
 grep "output truncated" ~/.cache/acai/acai.*.log
@@ -263,16 +263,6 @@ tail -50 ~/.cache/acai/acai.$(date +%Y-%m-%d).log | grep -i error
 less ~/.cache/acai/sessions/*/latest
 ```
 
-The acai CLI has a built-in `ReadSession` tool that can read session files in a token-efficient format. This is useful when investigating issues programmatically.
-
-```rust
-// Read a session by ID (compact conversation history)
-ReadSession {
-    session_id: "04cddcba-3dd0-43f7-811c-829a5b0b9e87",
-    max_turns: 50,  // Optional: limit conversation turns
-}
-```
-
 ## Debugging Checklist
 
 When the user reports an issue:
@@ -393,7 +383,7 @@ cat /tmp/acai/sandbox_profiles/acai_sandbox_*.sb
 To continue a previous session:
 
 ```bash
-./target/release/acai instruct --continue --prompt "What was my last message?"
+./target/release/acai --continue "What was my last message?"
 ```
 
 The `--continue` flag loads the latest session from the current directory.

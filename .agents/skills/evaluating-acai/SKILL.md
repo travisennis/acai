@@ -30,8 +30,8 @@ Before evaluating, understand what tools the acai CLI has available. This ensure
 
 1. Read these files:
    - `ARCHITECTURE.md` - Overall architecture
-   - `src/tools/mod.rs` - Available tools
-   - `src/tools/*.rs` - Tool capabilities and parameters
+   - `src/clients/tools/mod.rs` - Available tools
+   - `src/clients/tools/*.rs` - Tool capabilities and parameters
 
 2. Key distinction: **You have different tools than the acai CLI**. Only identify issues valid for the CLI's actual toolset.
 
@@ -54,16 +54,7 @@ ls -la ~/.cache/acai/sessions/*/latest
 
 ### Reading Sessions
 
-Use the `ReadSession` tool for token-efficient reading:
-
-```
-ReadSession {
-    session_id: "04cddcba-3dd0-43f7-811c-829a5b0b9e87",
-    max_turns: 50
-}
-```
-
-Or read the raw JSONL file:
+Read the raw JSONL file:
 
 ```bash
 # View full session
