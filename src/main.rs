@@ -557,7 +557,7 @@ mod tests {
         let args = CodingAssistant::parse_from(["acai", "test prompt"]);
         let settings = HashMap::new();
         let config = args.resolve_model_config(&settings).unwrap();
-        assert_eq!(config.model, "glm-5");
+        assert_eq!(config.model, "glm-5.1");
     }
 
     #[test]
