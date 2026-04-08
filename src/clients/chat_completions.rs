@@ -62,7 +62,6 @@ pub(super) async fn send_request(
     let response = client
         .post(&url)
         .json(&request)
-        .header("content-type", "application/json")
         .header("HTTP-Referer", "https://github.com/travisennis/acai")
         .header("X-Title", "acai")
         .bearer_auth(&config.api_key)
