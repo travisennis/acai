@@ -93,7 +93,6 @@ When asked to debug the app, read the `debugging-acai` skill in `.agents/skills/
 
 ## Git Workflow
 
-- **Never commit directly to the master branch** — verify current branch with `git branch` before committing
 - Merge via feature branch + PR. Naming: `feat/xxx`, `fix/xxx`, `refactor/xxx`, `test/xxx`
 
 When committing code first read [CONTRIBUTING.md](CONTRIBUTING.md)
