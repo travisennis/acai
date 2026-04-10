@@ -1,0 +1,43 @@
+# CODEOWNERS
+#
+# Default owner for everything in the repo
+* @travisennis
+
+# CLI layer: argument parsing and command dispatch
+/src/cli/ @travisennis
+
+# Clients layer: AI service integration, tool execution, conversation orchestration
+/src/clients/agent.rs @travisennis
+/src/clients/responses.rs @travisennis
+/src/clients/chat_completions.rs @travisennis
+/src/clients/chat_types.rs @travisennis
+/src/clients/types.rs @travisennis
+/src/clients/mod.rs @travisennis
+
+# Tool definitions and execution
+/src/clients/tools/ @travisennis
+
+# Sandbox implementations
+/src/clients/tools/sandbox/ @travisennis
+
+# Config, session, and settings
+/src/config/ @travisennis
+
+# Models and prompts
+/src/models/ @travisennis
+/src/prompts/ @travisennis
+
+# Logging
+/src/logger.rs @travisennis
+
+# Entry point
+/src/main.rs @travisennis
+
+# CI and release workflows
+/.github/ @travisennis
+
+# Documentation
+/docs/ @travisennis
+/ARCHITECTURE.md @travisennis
+/CONTRIBUTING.md @travisennis
+/README.md @travisennis
