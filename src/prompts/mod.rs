@@ -4,7 +4,6 @@
 //! start of each conversation. The prompt includes base instructions, project
 //! context from AGENTS.md files, and environmental information.
 
-use std::fmt::Write;
 use std::path::Path;
 
 use chrono::Local;
@@ -26,7 +25,6 @@ use crate::config::AgentsFile;
 /// assert!(prompt.contains("You are acai"));
 /// assert!(prompt.contains("Current working directory: /project"));
 /// ```
-#[allow(clippy::expect_used)]
 pub fn build_system_prompt(working_dir: &Path, agents_files: &[AgentsFile]) -> String {
     let mut prompt = String::from(
         "You are acai. You are running as a coding agent in a CLI on the user's computer.",
@@ -41,18 +39,16 @@ pub fn build_system_prompt(working_dir: &Path, agents_files: &[AgentsFile]) -> S
     // Append current working directory and today's date
     let today = Local::now().format("%Y-%m-%d").to_string();
     let working_dir_str = working_dir.to_string_lossy();
-    write!(
-        prompt,
-        "\n\nCurrent working directory: {working_dir_str}\nToday's date: {today}"
-    )
-    .expect("write to String cannot fail");
+    prompt.push_str("\n\nCurrent working directory: ");
+    prompt.push_str(&working_dir_str);
+    prompt.push_str("\nToday's date: ");
+    prompt.push_str(&today);
 
     prompt
 }
 
 /// Format AGENTS.md files into a Project Context section.
 /// Returns an empty string if no files have non-empty content.
-#[allow(clippy::expect_used)]
 fn format_agents_context(agents_files: &[AgentsFile]) -> String {
     // Filter to only files with non-empty content
     let non_empty_files: Vec<_> = agents_files
@@ -67,13 +63,12 @@ fn format_agents_context(agents_files: &[AgentsFile]) -> String {
     let mut context = String::from("## Project Context:\n\n");
 
     for file in non_empty_files {
-        write!(
-            context,
+        let entry = format!(
             "### {}\n\n<instructions>\n{}\n</instructions>\n\n",
             file.path,
             file.content.trim()
-        )
-        .expect("write to String cannot fail");
+        );
+        context.push_str(&entry);
     }
 
     context
