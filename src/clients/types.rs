@@ -296,45 +296,45 @@ pub(super) struct OutputContent {
 /// Usage statistics for API calls
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Usage {
-    pub input_tokens: u32,
+    pub input_tokens: u64,
     pub input_tokens_details: InputTokensDetails,
-    pub output_tokens: u32,
+    pub output_tokens: u64,
     pub output_tokens_details: OutputTokensDetails,
-    pub total_tokens: u32,
+    pub total_tokens: u64,
 }
 
 /// Details about input tokens
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct InputTokensDetails {
-    pub cached_tokens: u32,
+    pub cached_tokens: u64,
 }
 
 /// Details about output tokens
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct OutputTokensDetails {
-    pub reasoning_tokens: u32,
+    pub reasoning_tokens: u64,
 }
 
 /// Internal usage struct for API response deserialization (with optional fields)
 #[derive(Deserialize, Debug, Clone, Default)]
 pub(super) struct ApiUsage {
-    pub(super) input_tokens: Option<u32>,
+    pub(super) input_tokens: Option<u64>,
     pub(super) input_tokens_details: Option<ApiInputTokensDetails>,
-    pub(super) output_tokens: Option<u32>,
+    pub(super) output_tokens: Option<u64>,
     pub(super) output_tokens_details: Option<ApiOutputTokensDetails>,
-    pub(super) total_tokens: Option<u32>,
+    pub(super) total_tokens: Option<u64>,
 }
 
 /// Internal input tokens details for API response deserialization
 #[derive(Deserialize, Debug, Clone, Default)]
 pub(super) struct ApiInputTokensDetails {
-    pub(super) cached_tokens: Option<u32>,
+    pub(super) cached_tokens: Option<u64>,
 }
 
 /// Internal output tokens details for API response deserialization
 #[derive(Deserialize, Debug, Clone, Default)]
 pub(super) struct ApiOutputTokensDetails {
-    pub(super) reasoning_tokens: Option<u32>,
+    pub(super) reasoning_tokens: Option<u64>,
 }
 
 #[expect(dead_code)]

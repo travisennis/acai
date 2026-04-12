@@ -375,8 +375,7 @@ impl CmdRunner for CodingAssistant {
 
         let result: anyhow::Result<Option<Message>> = client.send(msg).await;
 
-        #[allow(clippy::cast_possible_truncation)]
-        let duration_ms = start.elapsed().as_millis() as u64;
+        let duration_ms: u64 = start.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
 
         if self.output_format == OutputFormat::StreamJson {
             match &result {

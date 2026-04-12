@@ -80,18 +80,17 @@ pub(super) async fn parse_response(response: reqwest::Response) -> anyhow::Resul
     let chat_response = response.json::<ChatResponse>().await?;
     trace!(target: "acai", "{chat_response:?}");
 
-    #[allow(clippy::cast_possible_truncation)]
     let usage = chat_response.usage.as_ref().map(|u| Usage {
-        input_tokens: u.prompt_tokens.unwrap_or(0) as u32,
-        output_tokens: u.completion_tokens.unwrap_or(0) as u32,
-        total_tokens: u.total_tokens.unwrap_or(0) as u32,
+        input_tokens: u.prompt_tokens.unwrap_or(0),
+        output_tokens: u.completion_tokens.unwrap_or(0),
+        total_tokens: u.total_tokens.unwrap_or(0),
         input_tokens_details: InputTokensDetails { cached_tokens: 0 },
         output_tokens_details: OutputTokensDetails {
             reasoning_tokens: u
                 .completion_tokens_details
                 .as_ref()
                 .and_then(|d| d.reasoning_tokens)
-                .unwrap_or(0) as u32,
+                .unwrap_or(0),
         },
     });
 
