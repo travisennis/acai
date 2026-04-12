@@ -98,8 +98,7 @@ impl Agent {
     }
 
     /// Returns the number of registered tools.
-    #[allow(clippy::missing_const_for_fn)]
-    pub fn tool_count(&self) -> usize {
+    pub const fn tool_count(&self) -> usize {
         self.tools.len()
     }
 
