@@ -1,4 +1,4 @@
-//! Integration tests for stdin handling
+//! Integration tests for stdin handling and CLI argument parsing.
 //!
 //! These tests verify CLI behavior including help, version, and argument parsing.
 //! Full stdin integration testing requires API mocking which is handled at the
@@ -131,4 +131,65 @@ fn test_no_prompt_no_stdin_error() {
         stderr.contains("No input provided"),
         "Should show 'No input provided' when no input given. Stderr: {stderr}"
     );
+}
+
+#[test]
+fn test_no_session_flag_in_help() {
+    // Verify --help mentions --no-session
+    let output = acai_cmd()
+        .arg("--help")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to execute command");
+
+    assert!(output.status.success(), "--help should succeed");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("--no-session"),
+        "Help should mention --no-session flag. Output: {stdout}"
+    );
+}
+
+#[test]
+fn test_no_session_prevents_session_save() {
+    // Verify that --no-session does not create a session file.
+    // We use a temp directory as ACAI_DATA_DIR and run a prompt through
+    // with --no-session. No session JSON should be written.
+    let tmp_dir = std::env::temp_dir().join(format!("acai_test_no_session_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&tmp_dir);
+
+    let output = Command::new(get_binary_path())
+        .arg("--no-session")
+        .arg("test prompt")
+        .env("ACAI_DATA_DIR", &tmp_dir)
+        .env_remove("OPENCODE_ZEN_API_TOKEN")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to execute command");
+
+    // The command will fail due to missing API key, but that's fine —
+    // we're checking that no session files were written.
+    // Sessions are stored under <data_dir>/sessions/<dir_hash>/<uuid>.jsonl
+    let sessions_dir = tmp_dir.join("sessions");
+
+    // Either sessions dir doesn't exist, or it has no files
+    let no_sessions = if sessions_dir.exists() {
+        std::fs::read_dir(&sessions_dir)
+            .map(|mut d| d.next().is_none())
+            .unwrap_or(true)
+    } else {
+        true
+    };
+
+    assert!(
+        no_sessions,
+        "--no-session should not create session files. Stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Clean up
+    let _ = std::fs::remove_dir_all(&tmp_dir);
 }
