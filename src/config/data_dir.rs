@@ -131,6 +131,8 @@ impl DataDir {
         let session_dir = self.sessions_dir().join(&dir_hash);
         let session_path = session_dir.join(format!("{}.jsonl", session.id));
 
+        tracing::info!(target: "acai", "Saving session {} to {}", session.id, session_path.display());
+
         session.save(&session_path)?;
 
         Ok(session_path)
@@ -163,11 +165,14 @@ impl DataDir {
         let dir_hash = Self::dir_hash(working_dir);
         let session_dir = self.sessions_dir().join(&dir_hash);
 
+        tracing::info!(target: "acai", "Looking for latest session in {} (hash: {dir_hash})", session_dir.display());
+
         if !session_dir.exists() {
+            tracing::info!(target: "acai", "Session directory does not exist: {}", session_dir.display());
             return Ok(None);
         }
 
-        fs::read_dir(&session_dir)
+        let result = fs::read_dir(&session_dir)
             .with_context(|| {
                 format!(
                     "Failed to read session directory: {}",
@@ -182,7 +187,15 @@ impl DataDir {
             })
             .max_by_key(|(_, modified)| *modified)
             .map(|(path, _)| Session::load(&path))
-            .transpose()
+            .transpose()?;
+
+        if let Some(ref session) = result {
+            tracing::info!(target: "acai", "Found latest session: {}", session.id);
+        } else {
+            tracing::info!(target: "acai", "No session found for working directory");
+        }
+
+        Ok(result)
     }
 
     /// Loads a specific session by UUID for a given working directory.
@@ -215,7 +228,10 @@ impl DataDir {
             .join(&dir_hash)
             .join(format!("{id}.jsonl"));
 
+        tracing::info!(target: "acai", "Loading session {id} from {}", session_path.display());
+
         if !session_path.exists() {
+            tracing::info!(target: "acai", "Session file does not exist: {}", session_path.display());
             return Ok(None);
         }
 

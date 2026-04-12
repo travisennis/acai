@@ -221,24 +221,29 @@ impl CodingAssistant {
         let resolved = ResolvedModelConfig::resolve(model_config)?;
 
         if self.continue_session {
+            info!(target: "acai", "Continuing latest session for directory: {}", current_dir.display());
             let restored = data_dir
                 .load_latest_session(&current_dir)?
                 .ok_or_else(|| anyhow::anyhow!("No previous session found for this directory"))?;
+            info!(target: "acai", "Continuing session: {}", restored.id);
             let agent = Agent::new(resolved, &system_prompt)
                 .with_session_id(restored.id.clone())
                 .with_history(restored.messages.clone());
             Ok((agent, restored))
         } else if let Some(ref uuid) = self.resume {
+            info!(target: "acai", "Resuming session: {uuid}");
             uuid::Uuid::parse_str(uuid)
                 .map_err(|e| anyhow::anyhow!("Invalid session UUID '{uuid}': {e}"))?;
             let restored = data_dir
                 .load_session(&current_dir, uuid)?
                 .ok_or_else(|| anyhow::anyhow!("Session {uuid} not found in this directory"))?;
+            info!(target: "acai", "Resumed session: {}", restored.id);
             let agent = Agent::new(resolved, &system_prompt)
                 .with_session_id(restored.id.clone())
                 .with_history(restored.messages.clone());
             Ok((agent, restored))
         } else if let Some(ref fork_id) = self.fork {
+            info!(target: "acai", "Forking session");
             let restored = if fork_id.is_empty() {
                 data_dir.load_latest_session(&current_dir)?.ok_or_else(|| {
                     anyhow::anyhow!("No previous session found for this directory")
@@ -252,12 +257,17 @@ impl CodingAssistant {
                         anyhow::anyhow!("Session {fork_id} not found in this directory")
                     })?
             };
+            info!(target: "acai", "Forking from session: {}", restored.id);
             let agent = Agent::new(resolved, &system_prompt).with_history(restored.messages);
-            let s = Session::new(agent.session_id.clone(), current_dir);
+            let new_id = agent.session_id.clone();
+            info!(target: "acai", "New forked session: {new_id}");
+            let s = Session::new(new_id, current_dir);
             Ok((agent, s))
         } else {
             let agent = Agent::new(resolved, &system_prompt);
-            let s = Session::new(agent.session_id.clone(), current_dir);
+            let new_id = agent.session_id.clone();
+            info!(target: "acai", "New session: {new_id}");
+            let s = Session::new(new_id, current_dir);
             Ok((agent, s))
         }
     }
@@ -399,6 +409,7 @@ impl CmdRunner for CodingAssistant {
         if !self.no_session {
             session.messages = client.get_history_without_system();
             session.model = Some(client.model().to_string());
+            info!(target: "acai", "Saving session {} ({} messages)", session.id, session.messages.len());
             if let Err(e) = data_dir.save_session(&session) {
                 tracing::error!("Failed to save session: {e}");
             }
@@ -521,6 +532,18 @@ mod tests {
     fn test_cli_parsing_no_model_flag() {
         let args = CodingAssistant::parse_from(["acai", "test prompt"]);
         assert_eq!(args.model, None);
+    }
+
+    #[test]
+    fn test_cli_parsing_no_session() {
+        let args = CodingAssistant::parse_from(["acai", "--no-session", "test prompt"]);
+        assert!(args.no_session);
+    }
+
+    #[test]
+    fn test_cli_parsing_no_session_defaults_false() {
+        let args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        assert!(!args.no_session);
     }
 
     #[test]

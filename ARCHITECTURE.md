@@ -122,6 +122,7 @@ The sandbox configuration defines a strict boundary between what the host proces
 - Default level: INFO (debug/trace require `RUST_LOG=acai=debug` or `RUST_LOG=acai=trace`)
 - Pattern includes timestamps, levels, file:line for debugging
 - Non-blocking writes (async-safe)
+- Session lifecycle events are logged at INFO level: session creation, continuation, resumption, forking, saving, and loading
 
 ### Session Management
 
