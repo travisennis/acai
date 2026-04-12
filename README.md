@@ -125,6 +125,14 @@ acai requires an API key for the AI provider. Set your API key as an environment
 
 Or configure a different provider by setting the appropriate environment variable for your chosen endpoint.
 
+#### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `OPENCODE_ZEN_API_TOKEN` | API key (default provider) |
+| `ACAI_DATA_DIR` | Override data directory (default: `~/.cache/acai/`) |
+| `ACAI_SANDBOX` | Set to `off` to disable filesystem sandboxing |
+
 ### Model Configuration
 
 Model settings can be configured via:
@@ -237,7 +245,7 @@ acai --fork "Let's discuss something different"
 acai --fork 550e8400-e29b-41d4-a716-446655440000 "New branch of conversation"
 ```
 
-Sessions are saved to `~/.cache/acai/sessions/` and include full conversation history with metadata. Sessions are saved on both success and error for crash recovery.
+Sessions are saved to `~/.cache/acai/sessions/` (or `$ACAI_DATA_DIR/sessions/` if set) and include full conversation history with metadata. Sessions are saved on both success and error for crash recovery.
 
 For more details, see [Session Management](docs/design-docs/session-management.md).
 

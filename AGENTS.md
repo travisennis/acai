@@ -109,5 +109,6 @@ When committing code first read [CONTRIBUTING.md](CONTRIBUTING.md)
 ## Additional Notes
 
 - Config stored in `~/.cache/acai/` and `.acai` (see `src/config/data_dir.rs`)
+- Data directory can be overridden via `ACAI_DATA_DIR` environment variable
 - Logs at `~/.cache/acai/acai.YYYY-MM-DD.log` (daily rotation, 7-day retention)
 - API key required via environment variable (default: `OPENCODE_ZEN_API_TOKEN`)

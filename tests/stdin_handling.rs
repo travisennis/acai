@@ -3,6 +3,10 @@
 //! These tests verify CLI behavior including help, version, and argument parsing.
 //! Full stdin integration testing requires API mocking which is handled at the
 //! unit test level in src/main.rs.
+//!
+//! Each test sets `ACAI_DATA_DIR` to an isolated temp directory so that tests
+//! can run inside a parent acai session without filesystem collisions on
+//! `~/.cache/acai/`.
 
 #![allow(clippy::expect_used)]
 
@@ -12,10 +16,19 @@ fn get_binary_path() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_BIN_EXE_acai"))
 }
 
+/// Build a `Command` with an isolated `ACAI_DATA_DIR` to avoid collisions
+/// when running inside a parent acai session.
+fn acai_cmd() -> Command {
+    let mut cmd = Command::new(get_binary_path());
+    let tmp = std::env::temp_dir().join(format!("acai_test_{}", std::process::id()));
+    cmd.env("ACAI_DATA_DIR", tmp);
+    cmd
+}
+
 #[test]
 fn test_help_shows_prompt_argument() {
     // Verify --help shows PROMPT in usage
-    let output = Command::new(get_binary_path())
+    let output = acai_cmd()
         .arg("--help")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -40,7 +53,7 @@ fn test_help_shows_prompt_argument() {
 #[test]
 fn test_version_works() {
     // Verify --version works
-    let output = Command::new(get_binary_path())
+    let output = acai_cmd()
         .arg("--version")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -60,7 +73,7 @@ fn test_version_works() {
 fn test_positional_prompt_parsing() {
     // Verify that a positional prompt doesn't fail parsing
     // It will fail on API key, but that's expected
-    let output = Command::new(get_binary_path())
+    let output = acai_cmd()
         .arg("test prompt here")
         .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
@@ -82,7 +95,7 @@ fn test_positional_prompt_parsing() {
 fn test_dash_prompt_parsing() {
     // Verify that '-' as prompt is accepted
     // It will fail on no stdin + API key, but that's expected
-    let output = Command::new(get_binary_path())
+    let output = acai_cmd()
         .arg("-")
         .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
@@ -104,7 +117,7 @@ fn test_dash_prompt_parsing() {
 #[test]
 fn test_no_prompt_no_stdin_error() {
     // Verify that running without any input produces a clear error
-    let output = Command::new(get_binary_path())
+    let output = acai_cmd()
         .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

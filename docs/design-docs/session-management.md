@@ -59,11 +59,10 @@ Sessions are stored under `~/.cache/acai/sessions/` organized by a hash of the w
 ~/.cache/acai/sessions/
   {dir_hash}/
     {uuid}.jsonl        # Individual session files (JSONL format)
-    latest -> {uuid}.jsonl  # Symlink to the most recent session
 ```
 
 - **dir_hash**: First 16 hex characters of a SHA-256 hash of the absolute working directory path. This groups sessions by project directory.
-- **latest**: A symlink that always points to the most recent session file, updated atomically on each save.
+- The most recent session is determined by file modification time (the newest `.jsonl` file).
 
 ### Session File Format
 
@@ -113,7 +112,6 @@ Session files are written atomically to prevent corruption:
 
 1. Session data is written to a temporary file (`{uuid}.tmp`)
 2. The temporary file is renamed to the final path (`{uuid}.jsonl`)
-3. The `latest` symlink is updated via a temporary symlink + rename
 
 ### Save on Error
 

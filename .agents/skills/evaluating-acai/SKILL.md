@@ -48,8 +48,9 @@ echo -n "$(pwd)" | shasum -a 256 | cut -c1-16
 # Or list all session directories
 ls ~/.cache/acai/sessions/
 
-# Find latest session for a directory
-ls -la ~/.cache/acai/sessions/*/latest
+# Find latest session for a directory (most recently modified .jsonl)
+HASH=$(echo -n "$(pwd)" | shasum -a 256 | cut -c1-16)
+ls -t ~/.cache/acai/sessions/$HASH/*.jsonl 2>/dev/null | head -1
 ```
 
 ### Reading Sessions
@@ -290,7 +291,6 @@ When evaluation is complete:
 
 | File | Purpose |
 |------|---------|
-| `~/.cache/acai/sessions/{hash}/{uuid}.jsonl` | Session files |
-| `~/.cache/acai/sessions/{hash}/latest` | Symlink to latest session |
+| `~/.cache/acai/sessions/{hash}/{uuid}.jsonl` | Session files (or `$ACAI_DATA_DIR/sessions/` if set) |
 | `current-issues.md` | Documented issues |
 | `usage.md` | Usage patterns and learnings |

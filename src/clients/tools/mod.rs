@@ -46,18 +46,32 @@ fn cached_temp_dirs() -> &'static [PathBuf] {
 fn compute_temp_directories() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
-    if let Ok(tmp) = std::fs::canonicalize("/tmp") {
-        dirs.push(tmp);
-    }
-
-    if let Ok(tmp) = std::fs::canonicalize("/var/folders") {
-        dirs.push(tmp);
-    }
-
-    if let Ok(tmpdir) = std::env::var("TMPDIR")
-        && let Ok(canonical) = std::fs::canonicalize(&tmpdir)
+    // Include symlink path first, then canonical path.
+    // On macOS, /tmp -> /private/tmp and /var/folders -> /private/var/folders.
+    // Both forms are needed so that ancestor literals and subpath rules
+    // cover the paths regardless of which form a process uses.
+    dirs.push(PathBuf::from("/tmp"));
+    if let Ok(canonical) = std::fs::canonicalize("/tmp")
+        && canonical.as_path() != Path::new("/tmp")
     {
         dirs.push(canonical);
+    }
+
+    dirs.push(PathBuf::from("/var/folders"));
+    if let Ok(canonical) = std::fs::canonicalize("/var/folders")
+        && canonical.as_path() != Path::new("/var/folders")
+    {
+        dirs.push(canonical);
+    }
+
+    if let Ok(tmpdir) = std::env::var("TMPDIR") {
+        let tmpdir_path = PathBuf::from(&tmpdir);
+        dirs.push(tmpdir_path.clone());
+        if let Ok(canonical) = std::fs::canonicalize(&tmpdir)
+            && canonical != tmpdir_path
+        {
+            dirs.push(canonical);
+        }
     }
 
     dirs

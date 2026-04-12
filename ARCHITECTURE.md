@@ -46,7 +46,7 @@ The bridge to external AI services and the orchestration layer for tool executio
 Foundation modules that provide data persistence, core types, and prompt generation.
 
 **`config`**:
-- `DataDir`: Manages the `~/.cache/acai/` directory, session storage, and AGENTS.md discovery
+- `DataDir`: Manages the data directory (defaults to `~/.cache/acai/`, overridable via `ACAI_DATA_DIR` env var), session storage, and AGENTS.md discovery
 - `Session`: In-memory session state with JSONL serialization
 - `worktree`: Git worktree utilities for isolated execution environments
 - `model`: Contains `ApiType` enum (`Responses`/`ChatCompletions`), `ModelConfig` struct (model, api_type, base_url, api_key_env, temperature, top_p, max_output_tokens, reasoning_effort, reasoning_summary, reasoning_max_tokens, providers), and `ResolvedModelConfig` (resolves API key from env var)
@@ -83,7 +83,7 @@ These constraints guide the design and are unlikely to change:
 
 5. **Bash tool blocks destructive commands**: Known-destructive commands (e.g. `git reset --hard`, `git push --force`, `rm -rf` outside temp dirs) are rejected before execution as a best-effort safety guard.
 
-6. **Session writes are atomic**: Sessions are written to a temp file, then renamed to the final path. The "latest" session is tracked via a symlink that is also updated atomically.
+6. **Session writes are atomic**: Sessions are written to a temp file, then renamed to the final path. The most recent session is determined by file modification time.
 
 7. **Sandboxing is opt-out, not opt-in**: Sandboxing applies to all bash commands unless explicitly disabled via `ACAI_SANDBOX=0`.
 

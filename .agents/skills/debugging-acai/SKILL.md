@@ -25,8 +25,9 @@ ls ~/.cache/acai/sessions/
 # Find the directory hash for current project
 echo -n "$(pwd)" | shasum -a 256 | cut -c1-16
 
-# Quick way to find latest session for current directory
-ls -la ~/.cache/acai/sessions/*/latest
+# Quick way to find latest session for current directory (most recently modified .jsonl)
+HASH=$(echo -n "$(pwd)" | shasum -a 256 | cut -c1-16)
+ls -t ~/.cache/acai/sessions/$HASH/*.jsonl 2>/dev/null | head -1
 ```
 
 ### View Session Files
@@ -107,22 +108,23 @@ ls -la ~/.cache/acai/acai.*.log
 
 ## Session Storage Structure
 
-Sessions are stored in `~/.cache/acai/sessions/` organized by a hash of the working directory:
+Sessions are stored in `~/.cache/acai/sessions/` (or `$ACAI_DATA_DIR/sessions/`) organized by a hash of the working directory:
 
 ```
 ~/.cache/acai/sessions/
   {dir_hash}/           # First 16 hex chars of SHA-256 of working dir path
     {uuid}.jsonl        # Individual session files (JSON Lines format)
-    latest -> {uuid}.jsonl  # Symlink to most recent session
 ```
+
+The most recent session is determined by file modification time (no symlink needed).
 
 ### Finding Your Session Directory
 
 ```bash
-# Find by looking at the latest symlink for each directory
+# Find the most recently modified session for each directory
 for dir in ~/.cache/acai/sessions/*/; do
   echo "Directory: $(basename $dir)"
-  ls -la "$dir/latest" 2>/dev/null
+  ls -lt "$dir"*.jsonl 2>/dev/null | head -1
   echo "---"
 done
 ```
@@ -248,19 +250,20 @@ grep "$SESSION_ID" ~/.cache/acai/acai.*.log
 
 ```bash
 # Find latest session for current directory
-ls -la ~/.cache/acai/sessions/*/latest
+HASH=$(echo -n "$(pwd)" | shasum -a 256 | cut -c1-16)
+LATEST=$(ls -t ~/.cache/acai/sessions/$HASH/*.jsonl 2>/dev/null | head -1)
 
 # View last 5 messages (most common debugging command)
-tail -5 ~/.cache/acai/sessions/*/latest | jq '.'
+tail -5 "$LATEST" | jq '.'
 
 # Check if response was complete (last line)
-tail -1 ~/.cache/acai/sessions/*/latest | jq '{type, status}'
+tail -1 "$LATEST" | jq '{type, status}'
 
 # View recent errors in logs (one-liner)
 tail -50 ~/.cache/acai/acai.$(date +%Y-%m-%d).log | grep -i error
 
 # View full session file
-less ~/.cache/acai/sessions/*/latest
+less "$LATEST"
 ```
 
 ## Debugging Checklist
@@ -269,7 +272,7 @@ When the user reports an issue:
 
 1. **Find the session**
    - Locate the session directory using the hash of the working directory
-   - Check the `latest` symlink
+   - Find the most recently modified `.jsonl` file
 
 2. **Check for truncation**
    - `tail -1 session.jsonl | jq '{type, status}'` - should end with a completed message
@@ -366,7 +369,6 @@ cat /tmp/acai/sandbox_profiles/acai_sandbox_*.sb
 | File Type | Location |
 |-----------|----------|
 | Sessions | `~/.cache/acai/sessions/{hash}/{uuid}.jsonl` |
-| Latest session symlink | `~/.cache/acai/sessions/{hash}/latest` |
 | Logs | `~/.cache/acai/acai.YYYY-MM-DD.log` |
 | Config | `~/.cache/acai/` and `.acai` |
 | User-level AGENTS.md | `~/.acai/AGENTS.md` |
@@ -375,7 +377,8 @@ cat /tmp/acai/sandbox_profiles/acai_sandbox_*.sb
 ## Configuration
 
 - **Config directory**: `~/.cache/acai/` and `.acai` (see `src/config/data_dir.rs`)
-- **Logs**: `~/.cache/acai/acai.YYYY-MM-DD.log` (daily rotation)
+- **Data directory override**: Set `ACAI_DATA_DIR` to use a custom data directory instead of `~/.cache/acai/`
+- **Logs**: `~/.cache/acai/acai.YYYY-MM-DD.log` (or `$ACAI_DATA_DIR/acai.YYYY-MM-DD.log` if set, daily rotation)
 - **API key**: Required via environment variable (default: `OPENCODE_ZEN_API_TOKEN`)
 
 ## Session Restoration and Continuation

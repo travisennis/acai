@@ -599,7 +599,9 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn test_sandbox_blocks_write_outside_cwd() {
-        let target = format!("/tmp/acai_sandbox_test_{}", uuid::Uuid::new_v4());
+        // Use ~/Desktop which is outside the sandbox's read-write set
+        // (/tmp is allowed as a temp directory, so we can't test with it)
+        let target = format!("~/Desktop/acai_sandbox_test_{}", uuid::Uuid::new_v4());
         let args = format!(r#"{{"command": "touch {target}"}}"#);
         let result = Box::pin(execute_bash(&args)).await.unwrap();
         assert!(

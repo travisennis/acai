@@ -23,8 +23,12 @@ pub struct AgentsFile {
 
 /// Manages the data directory for session storage.
 ///
-/// The data directory is located at `~/.cache/acai/` and contains session files,
+/// The data directory defaults to `~/.cache/acai/` and contains session files,
 /// cache data, and other persistent state for the acai CLI.
+///
+/// The directory can be overridden by setting the `ACAI_DATA_DIR` environment
+/// variable. This is useful for testing and for running acai inside acai
+/// (nested invocations) without filesystem collisions.
 #[derive(Debug, Clone)]
 pub struct DataDir {
     /// The path to the data directory.
@@ -34,7 +38,8 @@ pub struct DataDir {
 impl DataDir {
     /// Creates a new data directory instance for session storage.
     ///
-    /// Initializes the data directory at `~/.cache/acai/`, creating it if needed.
+    /// If `ACAI_DATA_DIR` is set, uses that path. Otherwise defaults to
+    /// `~/.cache/acai/`. The directory is created if it does not exist.
     ///
     /// # Examples
     ///
@@ -45,21 +50,25 @@ impl DataDir {
     ///
     /// # Errors
     ///
-    /// Returns an error if the home directory cannot be determined or
-    /// the data directory cannot be created.
+    /// Returns an error if the home directory cannot be determined (when
+    /// `ACAI_DATA_DIR` is not set), or if the data directory cannot be created.
     pub fn new() -> anyhow::Result<Self> {
-        let home_dir = dirs::home_dir();
-        if let Some(home) = home_dir {
-            let data_dir = home.join(".cache").join("acai");
-
-            if !data_dir.exists() {
-                fs::create_dir_all(&data_dir)?;
-            }
-
-            Ok(Self { data_dir })
+        let data_dir = if let Ok(custom) = std::env::var("ACAI_DATA_DIR") {
+            PathBuf::from(custom)
         } else {
-            Err(anyhow!("Could not create data directory."))
+            let home_dir = dirs::home_dir();
+            if let Some(home) = home_dir {
+                home.join(".cache").join("acai")
+            } else {
+                return Err(anyhow!("Could not create data directory."));
+            }
+        };
+
+        if !data_dir.exists() {
+            fs::create_dir_all(&data_dir)?;
         }
+
+        Ok(Self { data_dir })
     }
 
     /// Returns the path to the cache directory.
@@ -93,8 +102,8 @@ impl DataDir {
 
     /// Saves a session to disk with atomic write.
     ///
-    /// The session is saved to `~/.cache/acai/sessions/{dir_hash}/{session_id}.jsonl`
-    /// and the `latest` symlink is updated to point to this session.
+    /// The session is saved to `~/.cache/acai/sessions/{dir_hash}/{session_id}.jsonl`.
+    /// The most recent session is determined by file modification time (no symlink needed).
     ///
     /// # Examples
     ///
@@ -124,64 +133,14 @@ impl DataDir {
 
         session.save(&session_path)?;
 
-        // Update latest reference atomically
-        Self::update_latest(&session_dir, &session.id)?;
-
         Ok(session_path)
-    }
-
-    /// Update the "latest" reference to point to the given session ID.
-    /// Uses symlinks on Unix, a marker file on Windows.
-    #[cfg(unix)]
-    fn update_latest(session_dir: &Path, session_id: &str) -> anyhow::Result<()> {
-        use std::os::unix::fs::symlink;
-
-        let latest_link = session_dir.join("latest");
-        let temp_link = session_dir.join(".latest_tmp");
-        let target = format!("{session_id}.jsonl");
-
-        // Remove temp symlink if it exists (ignore errors)
-        let _ = fs::remove_file(&temp_link);
-
-        // Ensure the session directory exists
-        if !session_dir.exists() {
-            fs::create_dir_all(session_dir).with_context(|| {
-                format!(
-                    "Failed to create session directory: {}",
-                    session_dir.display()
-                )
-            })?;
-        }
-
-        symlink(&target, &temp_link)
-            .with_context(|| format!("Failed to create temp symlink at {}", temp_link.display()))?;
-        // Remove existing latest symlink before renaming (macOS doesn't allow overwriting symlinks)
-        let _ = fs::remove_file(&latest_link);
-        fs::rename(&temp_link, &latest_link)
-            .with_context(|| format!("Failed to rename symlink to {}", latest_link.display()))?;
-
-        Ok(())
-    }
-
-    /// Update the "latest" reference to point to the given session ID (Windows fallback).
-    #[cfg(not(unix))]
-    fn update_latest(session_dir: &Path, session_id: &str) -> anyhow::Result<()> {
-        let latest_file = session_dir.join("latest");
-        let temp_file = session_dir.join(".latest_tmp");
-
-        // Write to temp file first, then atomically rename
-        fs::write(&temp_file, session_id)
-            .with_context(|| format!("Failed to write temp file at {}", temp_file.display()))?;
-        fs::rename(&temp_file, &latest_file)
-            .with_context(|| format!("Failed to rename to {}", latest_file.display()))?;
-
-        Ok(())
     }
 
     /// Loads the most recent session for a given working directory.
     ///
-    /// Returns the session that the `latest` symlink points to, or `None` if
-    /// no sessions exist for the given working directory.
+    /// Finds the newest `.jsonl` file by modification time in the session
+    /// directory. Returns `None` if no sessions exist for the given working
+    /// directory.
     ///
     /// # Examples
     ///
@@ -199,48 +158,31 @@ impl DataDir {
     ///
     /// # Errors
     ///
-    /// Returns an error if the `latest` symlink exists but cannot be read,
-    /// or if the session file cannot be loaded.
+    /// Returns an error if the session file exists but cannot be loaded.
     pub fn load_latest_session(&self, working_dir: &Path) -> anyhow::Result<Option<Session>> {
         let dir_hash = Self::dir_hash(working_dir);
-        let latest_path = self.sessions_dir().join(&dir_hash).join("latest");
+        let session_dir = self.sessions_dir().join(&dir_hash);
 
-        if !latest_path.exists() {
+        if !session_dir.exists() {
             return Ok(None);
         }
 
-        let session_id = Self::read_latest_session_id(&latest_path)?;
-        let session_path = self
-            .sessions_dir()
-            .join(&dir_hash)
-            .join(format!("{session_id}.jsonl"));
-
-        if !session_path.exists() {
-            return Ok(None);
-        }
-
-        Session::load(&session_path).map(Some)
-    }
-
-    /// Read the latest session ID from the latest reference (symlink or file).
-    #[cfg(unix)]
-    fn read_latest_session_id(latest_path: &Path) -> anyhow::Result<String> {
-        let target = fs::read_link(latest_path)
-            .with_context(|| format!("Failed to read symlink: {}", latest_path.display()))?;
-
-        target
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(|s| s.trim_end_matches(".jsonl").to_string())
-            .ok_or_else(|| anyhow!("Invalid symlink target: {}", target.display()))
-    }
-
-    /// Read the latest session ID from the latest reference (Windows file-based).
-    #[cfg(not(unix))]
-    fn read_latest_session_id(latest_path: &Path) -> anyhow::Result<String> {
-        let content = fs::read_to_string(latest_path)
-            .with_context(|| format!("Failed to read latest file: {}", latest_path.display()))?;
-        Ok(content.trim().to_string())
+        fs::read_dir(&session_dir)
+            .with_context(|| {
+                format!(
+                    "Failed to read session directory: {}",
+                    session_dir.display()
+                )
+            })?
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "jsonl"))
+            .filter_map(|entry| {
+                let modified = entry.metadata().ok()?.modified().ok()?;
+                Some((entry.path(), modified))
+            })
+            .max_by_key(|(_, modified)| *modified)
+            .map(|(path, _)| Session::load(&path))
+            .transpose()
     }
 
     /// Loads a specific session by UUID for a given working directory.
@@ -497,5 +439,24 @@ mod tests {
 
         assert_eq!(latest1.id, session1.id);
         assert_eq!(latest2.id, session2.id);
+    }
+
+    #[test]
+    fn new_respects_acai_data_dir_env() {
+        let tmp = TempDir::new().unwrap();
+        let custom_path = tmp.path().join("custom_acai");
+
+        // SAFETY: test is single-threaded for this env var; no other test
+        // reads ACAI_DATA_DIR concurrently.
+        unsafe {
+            std::env::set_var("ACAI_DATA_DIR", &custom_path);
+        }
+        let dd = DataDir::new().unwrap();
+        unsafe {
+            std::env::remove_var("ACAI_DATA_DIR");
+        }
+
+        assert_eq!(dd.data_dir, custom_path);
+        assert!(custom_path.exists());
     }
 }

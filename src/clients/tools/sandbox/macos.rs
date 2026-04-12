@@ -189,21 +189,27 @@ impl MacOsSandbox {
         lines.push("(allow file-read* (literal \"/\"))".to_string());
         lines.push(String::new());
 
-        // CWD ancestor directory literals (agents call readdir() on ancestors)
-        lines.push("; Allow reading CWD ancestor directories".to_string());
-        if let Some(cwd) = config.read_write.first() {
-            let mut ancestor = cwd.as_path();
-            let mut ancestors = Vec::new();
+        // Ancestor directory literals for all read-write, read-only, and system paths.
+        // (agents and tools call readdir() and stat() on ancestors to traverse paths)
+        lines.push("; Allow reading ancestor directories of allowed paths".to_string());
+        let mut ancestor_set = std::collections::BTreeSet::new();
+        for path in config
+            .read_write
+            .iter()
+            .chain(&config.read_only_exec)
+            .chain(&config.read_only)
+        {
+            let mut ancestor = path.as_path();
             while let Some(parent) = ancestor.parent() {
-                ancestors.push(parent.to_path_buf());
+                if parent != Path::new("/") {
+                    ancestor_set.insert(parent.to_path_buf());
+                }
                 ancestor = parent;
             }
-            for a in ancestors.into_iter().rev() {
-                let escaped = escape_path(&a);
-                if escaped != "/" {
-                    lines.push(format!("(allow file-read* (literal \"{escaped}\"))"));
-                }
-            }
+        }
+        for ancestor in &ancestor_set {
+            let escaped = escape_path(ancestor);
+            lines.push(format!("(allow file-read* (literal \"{escaped}\"))"));
         }
         lines.push(String::new());
 
@@ -561,6 +567,50 @@ mod tests {
             !profile.contains(".ssh\"))")
                 || profile.contains("(literal \"") && profile.contains(".ssh/"),
             "Profile should not use subpath for .ssh access"
+        );
+    }
+
+    #[test]
+    fn test_profile_includes_ancestor_literals_for_all_read_write_paths() {
+        let config = SandboxConfig {
+            read_write: vec![
+                PathBuf::from("/workspace/project"),
+                PathBuf::from("/private/var/folders"),
+            ],
+            read_only_exec: vec![PathBuf::from("/usr")],
+            read_only: vec![PathBuf::from("/private/etc")],
+        };
+
+        let profile = MacOsSandbox::generate_profile(&config);
+
+        // Ancestors of /workspace/project
+        assert!(
+            profile.contains("(allow file-read* (literal \"/workspace\"))"),
+            "Expected ancestor literal for /workspace"
+        );
+
+        // Ancestors of /private/var/folders (not including the path itself or root)
+        assert!(
+            profile.contains("(allow file-read* (literal \"/private\"))"),
+            "Expected ancestor literal for /private"
+        );
+        assert!(
+            profile.contains("(allow file-read* (literal \"/private/var\"))"),
+            "Expected ancestor literal for /private/var"
+        );
+        // Note: /private/var/folders is the path itself, not an ancestor, so it gets
+        // a subpath rule (read-write), not a literal rule
+
+        // Ancestors of /private/etc
+        assert!(
+            profile.contains("(allow file-read* (literal \"/private\"))"),
+            "Expected ancestor literal for /private (shared)"
+        );
+
+        // Root should NOT appear as an ancestor literal (it's already covered by the root literal rule)
+        assert!(
+            !profile
+                .contains("(allow file-read* (literal \"/\"))\n(allow file-read* (literal \"/\"))")
         );
     }
 }
