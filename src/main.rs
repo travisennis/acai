@@ -368,7 +368,7 @@ impl CmdRunner for CodingAssistant {
             });
 
             eprintln!(
-                "\x1b[1;36mstart\x1b[0m\n  dir: {}\n  session: {}\n  model: {model}\n  tools: {tool_count}",
+                "\x1b[1;36m-- start:\x1b[0m\n  dir: {}\n  session: {}\n  model: {model}\n  tools: {tool_count}",
                 original_dir.display(),
                 session.id
             );
@@ -402,8 +402,12 @@ impl CmdRunner for CodingAssistant {
             #[allow(clippy::cast_precision_loss)]
             let secs = duration_ms as f64 / 1000.0;
             let turns = client.turn_count;
-            let tokens = client.total_usage.total_tokens;
-            eprintln!("\x1b[1;36m--\x1b[0m done: {secs:.1}s, {turns} turns, {tokens} tokens");
+            let input_tokens = client.total_usage.input_tokens;
+            let output_tokens = client.total_usage.output_tokens;
+            let cached_reads_tokens = client.total_usage.input_tokens_details.cached_tokens;
+            eprintln!(
+                "\x1b[1;36m-- done:\x1b[0m {secs:.1}s, {turns} turns, {input_tokens} input tokens, {cached_reads_tokens} cached reads, {output_tokens} output tokens"
+            );
         }
 
         if !self.no_session {
