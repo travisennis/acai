@@ -411,7 +411,7 @@ impl CmdRunner for CodingAssistant {
         }
 
         if !self.no_session {
-            session.messages = client.get_history_without_system();
+            session.messages = client.drain_history_without_system();
             session.model = Some(client.model().to_string());
             info!(target: "acai", "Saving session {} ({} messages)", session.id, session.messages.len());
             if let Err(e) = data_dir.save_session(&session) {
