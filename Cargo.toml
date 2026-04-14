@@ -33,7 +33,7 @@ tempfile = "3"
 tokio = { version = "1.51.0", features = ["full"] }
 uuid = { version = "1.23", features = ["v4"] }
 chrono = { version = "0.4.44", features = ["serde"] }
-similar = { version = "3.0.0", features = ["inline"] }
+similar = { version = "3.1.0", features = ["inline"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock = { version = "0.4", optional = true }
