@@ -16,7 +16,7 @@ clippy-strict:
 
 # Run tests
 test:
-    cargo test
+    cargo test --quiet
 
 # Lint for use of super::/self:: in production code (test modules use super::* is allowed)
 lint-imports:
