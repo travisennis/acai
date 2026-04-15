@@ -59,7 +59,11 @@ struct ReadArgs {
 /// Summarize read arguments for display
 pub fn summarize_args(arguments: &str) -> String {
     serde_json::from_str::<ReadArgs>(arguments)
-        .map(|args| args.path)
+        .map(|args| {
+            let start = args.start_line.unwrap_or(1);
+            let end = args.end_line.unwrap_or(DEFAULT_END_LINE);
+            format!("{} [{}-{}]", args.path, start, end)
+        })
         .unwrap_or_default()
 }
 
