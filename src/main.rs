@@ -7,7 +7,7 @@ mod logger;
 mod models;
 mod prompts;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::cli::CmdRunner;
 use crate::clients::{Agent, ConversationItem, set_additional_dirs};
@@ -21,6 +21,7 @@ use crate::config::{
 use crate::models::{Message, Role};
 use crate::prompts::build_system_prompt;
 use clap::{Parser, ValueEnum};
+use indicatif::{ProgressBar, ProgressStyle};
 use tracing::info;
 
 /// Output format for the response
@@ -36,6 +37,7 @@ pub enum OutputFormat {
 /// AI coding assistant CLI
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
+#[allow(clippy::struct_excessive_bools)]
 struct CodingAssistant {
     /// The prompt to send to the AI (use `-` to read from stdin)
     #[arg(value_name = "PROMPT")]
@@ -74,9 +76,13 @@ struct CodingAssistant {
     #[arg(long)]
     pub model: Option<String>,
 
-    /// Show tool call progress on stderr (only applies to text output format)
-    #[arg(long)]
+    /// Show detailed tool call progress on stderr (only applies to text output format)
+    #[arg(long, conflicts_with = "quiet")]
     pub verbose: bool,
+
+    /// Suppress all progress output on stderr
+    #[arg(long, conflicts_with = "verbose")]
+    pub quiet: bool,
 
     /// Override reasoning effort level (none, low, medium, high, xhigh)
     #[arg(long, value_name = "EFFORT")]
@@ -91,7 +97,29 @@ struct CodingAssistant {
     pub add_dir: Vec<String>,
 }
 
+/// Determines how much progress information to show on stderr.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Verbosity {
+    /// No progress output at all
+    Quiet,
+    /// Spinner with current tool name (default)
+    Normal,
+    /// Full verbose output with timestamps and details
+    Verbose,
+}
+
 impl CodingAssistant {
+    /// Determine the effective verbosity level.
+    fn verbosity(&self) -> Verbosity {
+        if self.quiet || self.output_format != OutputFormat::Text {
+            Verbosity::Quiet
+        } else if self.verbose {
+            Verbosity::Verbose
+        } else {
+            Verbosity::Normal
+        }
+    }
+
     /// Read content from stdin if available (non-terminal)
     ///
     /// This function only reads from stdin if:
@@ -328,6 +356,7 @@ impl CodingAssistant {
 }
 
 impl CmdRunner for CodingAssistant {
+    #[allow(clippy::too_many_lines)]
     async fn run(&self, data_dir: &DataDir) -> anyhow::Result<()> {
         let original_dir = std::env::current_dir()?;
         let wt = self.setup_worktree(&original_dir)?;
@@ -352,26 +381,45 @@ impl CmdRunner for CodingAssistant {
             });
         }
 
-        let verbose = self.verbose && self.output_format == OutputFormat::Text;
+        let verbosity = self.verbosity();
 
-        if verbose {
-            let model = client.model().to_string();
-            let tool_count = client.tool_count();
-            let start_time = Instant::now();
+        match verbosity {
+            Verbosity::Verbose => {
+                let model = client.model().to_string();
+                let tool_count = client.tool_count();
+                let start_time = Instant::now();
 
-            client = client.with_progress_callback(move |item| {
-                let elapsed = start_time.elapsed().as_secs_f64();
-                let line = format_progress_item(item, elapsed);
-                if !line.is_empty() {
-                    let _ = writeln!(std::io::stderr(), "{line}");
-                }
-            });
+                client = client.with_progress_callback(move |item| {
+                    let elapsed = start_time.elapsed().as_secs_f64();
+                    let line = format_progress_item(item, elapsed);
+                    if !line.is_empty() {
+                        let _ = writeln!(std::io::stderr(), "{line}");
+                    }
+                });
 
-            eprintln!(
-                "\x1b[1;36m-- start:\x1b[0m\n  dir: {}\n  session: {}\n  model: {model}\n  tools: {tool_count}",
-                original_dir.display(),
-                session.id
-            );
+                eprintln!(
+                    "\x1b[1;36m-- start:\x1b[0m\n  dir: {}\n  session: {}\n  model: {model}\n  tools: {tool_count}",
+                    original_dir.display(),
+                    session.id
+                );
+            },
+            Verbosity::Normal => {
+                let spinner = ProgressBar::new_spinner();
+                #[allow(clippy::literal_string_with_formatting_args)]
+                let style = ProgressStyle::with_template("{spinner:.cyan} {msg}")
+                    .unwrap_or_else(|_| ProgressStyle::default_spinner());
+                spinner.set_style(style);
+                spinner.enable_steady_tick(Duration::from_millis(80));
+                spinner.set_message("Thinking...");
+
+                client = client.with_progress_callback(move |item| {
+                    let msg = format_spinner_message(item);
+                    if let Some(msg) = msg {
+                        spinner.set_message(msg);
+                    }
+                });
+            },
+            Verbosity::Quiet => {},
         }
 
         let msg = Message {
@@ -398,7 +446,7 @@ impl CmdRunner for CodingAssistant {
             }
         }
 
-        if verbose {
+        if verbosity == Verbosity::Verbose {
             // Precision loss acceptable: used only for display
             #[allow(clippy::cast_precision_loss)]
             let secs = duration_ms as f64 / 1000.0;
@@ -460,6 +508,25 @@ fn format_progress_item(item: &ConversationItem, elapsed_secs: f64) -> String {
         },
         // Skip user messages, system messages, and function output items
         _ => String::new(),
+    }
+}
+
+/// Format a conversation item as a short spinner message for normal mode.
+///
+/// Returns `Some(message)` for items worth showing, `None` otherwise.
+fn format_spinner_message(item: &ConversationItem) -> Option<String> {
+    match item {
+        ConversationItem::FunctionCall {
+            name, arguments, ..
+        } => {
+            let summary = clients::summarize_tool_args(name, arguments);
+            Some(format!("{name}: {summary}"))
+        },
+        ConversationItem::Reasoning { .. } => Some("Thinking...".to_string()),
+        ConversationItem::Message { role, .. } if *role == Role::Assistant => {
+            Some("Responding...".to_string())
+        },
+        _ => None,
     }
 }
 
@@ -816,5 +883,96 @@ mod tests {
         let output = format_progress_item(&item, 1.0);
         // Function call outputs should return empty string (not shown in verbose)
         assert!(output.is_empty());
+    }
+
+    // Tests for format_spinner_message
+    #[test]
+    fn test_format_spinner_message_function_call() {
+        let item = ConversationItem::FunctionCall {
+            id: "fc-1".to_string(),
+            call_id: "call-1".to_string(),
+            name: "Bash".to_string(),
+            arguments: r#"{"command":"ls -la"}"#.to_string(),
+            timestamp: None,
+        };
+        let msg = format_spinner_message(&item);
+        assert!(msg.is_some());
+        let msg = msg.unwrap_or_default();
+        assert!(msg.contains("Bash:"));
+        assert!(msg.contains("ls -la"));
+    }
+
+    #[test]
+    fn test_format_spinner_message_reasoning() {
+        let item = ConversationItem::Reasoning {
+            id: "r-1".to_string(),
+            summary: vec!["thinking...".to_string()],
+            encrypted_content: None,
+            content: None,
+            timestamp: None,
+        };
+        let msg = format_spinner_message(&item);
+        assert_eq!(msg, Some("Thinking...".to_string()));
+    }
+
+    #[test]
+    fn test_format_spinner_message_assistant() {
+        let item = ConversationItem::Message {
+            role: Role::Assistant,
+            content: "Here is the answer".to_string(),
+            id: Some("msg-1".to_string()),
+            status: Some("completed".to_string()),
+            timestamp: None,
+        };
+        let msg = format_spinner_message(&item);
+        assert_eq!(msg, Some("Responding...".to_string()));
+    }
+
+    #[test]
+    fn test_format_spinner_message_user_returns_none() {
+        let item = ConversationItem::Message {
+            role: Role::User,
+            content: "Hello".to_string(),
+            id: None,
+            status: None,
+            timestamp: None,
+        };
+        assert!(format_spinner_message(&item).is_none());
+    }
+
+    #[test]
+    fn test_format_spinner_message_function_output_returns_none() {
+        let item = ConversationItem::FunctionCallOutput {
+            call_id: "call-1".to_string(),
+            output: "result".to_string(),
+            timestamp: None,
+        };
+        assert!(format_spinner_message(&item).is_none());
+    }
+
+    // Tests for verbosity
+    #[test]
+    fn test_verbosity_default_is_normal() {
+        let args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        assert_eq!(args.verbosity(), Verbosity::Normal);
+    }
+
+    #[test]
+    fn test_verbosity_verbose_flag() {
+        let args = CodingAssistant::parse_from(["acai", "--verbose", "test prompt"]);
+        assert_eq!(args.verbosity(), Verbosity::Verbose);
+    }
+
+    #[test]
+    fn test_verbosity_quiet_flag() {
+        let args = CodingAssistant::parse_from(["acai", "--quiet", "test prompt"]);
+        assert_eq!(args.verbosity(), Verbosity::Quiet);
+    }
+
+    #[test]
+    fn test_verbosity_stream_json_is_quiet() {
+        let args =
+            CodingAssistant::parse_from(["acai", "--output-format", "stream-json", "test prompt"]);
+        assert_eq!(args.verbosity(), Verbosity::Quiet);
     }
 }
