@@ -43,17 +43,16 @@ pub(super) struct SandboxConfig {
 
 impl SandboxConfig {
     /// Build a sandbox configuration for the current context
-    #[allow(clippy::unnecessary_wraps, dead_code)]
-    pub fn build(cwd: &std::path::Path) -> Result<Self, String> {
+    #[allow(dead_code)]
+    pub fn build(cwd: &std::path::Path) -> Self {
         Self::build_with_additional_dirs(cwd, &[])
     }
 
     /// Build a sandbox configuration with additional read-only directories
-    #[allow(clippy::unnecessary_wraps)]
     pub fn build_with_additional_dirs(
         cwd: &std::path::Path,
         additional_dirs: &[std::path::PathBuf],
-    ) -> Result<Self, String> {
+    ) -> Self {
         let mut read_write = vec![cwd.to_path_buf()];
 
         // Add temp directories
@@ -126,11 +125,11 @@ impl SandboxConfig {
             }
         }
 
-        Ok(Self {
+        Self {
             read_write,
             read_only_exec,
             read_only,
-        })
+        }
     }
 
     /// Get system paths that need read + execute access
@@ -232,7 +231,6 @@ pub(super) trait SandboxStrategy: Send + Sync {
 }
 
 /// Detect the appropriate sandbox strategy for the current platform
-#[allow(clippy::unnecessary_wraps)]
 pub(super) fn detect_platform() -> Option<Box<dyn SandboxStrategy>> {
     #[cfg(target_os = "macos")]
     {
