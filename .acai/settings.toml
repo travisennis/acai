@@ -44,6 +44,14 @@ name = "mimo-omni"
 model = "mimo-v2-omni"
 
 [[models]]
+name = "qwen3-5"
+model = "qwen3.5-plus"
+
+[[models]]
+name = "qwen3-6"
+model = "qwen3.6-plus"
+
+[[models]]
 name = "nemotron"
 model = "nvidia/nemotron-3-super-120b-a12b:free"
 base_url = "https://openrouter.ai/api/v1/"
