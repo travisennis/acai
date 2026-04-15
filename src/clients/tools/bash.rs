@@ -93,6 +93,7 @@ fn is_sandbox_violation(output: &str) -> bool {
 /// Returns true if the data contains:
 /// - Multiple null bytes (common in binary files)
 /// - A high ratio of non-printable characters (excluding common whitespace)
+// Precision loss acceptable: used only for display
 #[allow(clippy::naive_bytecount, clippy::cast_precision_loss)]
 fn is_binary_data(data: &[u8]) -> bool {
     if data.is_empty() {
@@ -125,6 +126,7 @@ fn is_binary_data(data: &[u8]) -> bool {
 }
 
 /// Create a result message for binary output, saving the data to a temp file.
+// Precision loss acceptable: used only for display
 #[allow(clippy::cast_precision_loss)]
 fn handle_binary_output(data: &[u8], exit_code: i32, elapsed_ms: u128) -> String {
     let size_bytes = data.len();
@@ -227,6 +229,7 @@ fn detect_mime_type(data: &[u8]) -> Option<String> {
 
 /// Format metadata footer with exit code and elapsed time
 /// Shows milliseconds for values under 1 second, seconds otherwise
+// Precision loss acceptable: used only for display
 #[allow(clippy::cast_precision_loss)]
 fn format_metadata_footer(exit_code: i32, elapsed_ms: u128) -> String {
     if elapsed_ms > 999 {

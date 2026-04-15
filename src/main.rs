@@ -399,6 +399,7 @@ impl CmdRunner for CodingAssistant {
         }
 
         if verbose {
+            // Precision loss acceptable: used only for display
             #[allow(clippy::cast_precision_loss)]
             let secs = duration_ms as f64 / 1000.0;
             let turns = client.turn_count;
