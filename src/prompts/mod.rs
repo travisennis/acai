@@ -60,7 +60,9 @@ fn format_agents_context(agents_files: &[AgentsFile]) -> String {
         return String::new();
     }
 
-    let mut context = String::from("## Project Context:\n\n");
+    let mut context = String::from("## Additional Context:\n\n");
+
+    context.push_str("Project and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.");
 
     for file in non_empty_files {
         let entry = format!(
@@ -102,7 +104,7 @@ mod tests {
             },
         ];
         let prompt = build_system_prompt(Path::new("/tmp"), &files);
-        assert!(prompt.contains("## Project Context:"));
+        assert!(prompt.contains("## Additional Context:"));
         assert!(prompt.contains("~/.acai/AGENTS.md"));
         assert!(prompt.contains("./AGENTS.md"));
         assert!(prompt.contains("<instructions>"));
@@ -119,7 +121,7 @@ mod tests {
             content: "User instructions".to_string(),
         }];
         let prompt = build_system_prompt(Path::new("/tmp"), &files);
-        assert!(prompt.contains("## Project Context:"));
+        assert!(prompt.contains("## Additional Context:"));
         assert!(prompt.contains("~/.acai/AGENTS.md"));
         assert!(!prompt.contains("./AGENTS.md"));
         assert!(prompt.contains("Current working directory: /tmp"));
@@ -140,7 +142,7 @@ mod tests {
         ];
         let prompt = build_system_prompt(Path::new("/tmp"), &files);
         // Should not include Project Context section since all files are empty
-        assert!(!prompt.contains("## Project Context:"));
+        assert!(!prompt.contains("## Additional Context:"));
         // But should still include working directory and date
         assert!(prompt.contains("Current working directory: /tmp"));
         assert!(prompt.contains("Today's date:"));
