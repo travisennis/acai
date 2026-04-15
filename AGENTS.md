@@ -10,42 +10,6 @@ acai is an AI coding assistant CLI that:
 
 **Core mechanism**: The agent loop lets the model execute tools, receive results, and continue until it returns a final response.
 
-## Repository Knowledge Map
-
-### Architecture
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Architecture map: module structure, layering rules, dependency directions, cross-cutting concerns
-
-### Design Documents
-- **[docs/design-docs/index.md](docs/design-docs/index.md)** — Design document index (technical proposals & architecture decisions)
-
-### References
-- **[docs/references/](docs/references/)** — External guides, configuration docs, reference articles
-
----
-
-## Development Workflow
-
-### Before Starting a Task
-1. Check the Repository Knowledge Map above for relevant documentation
-2. Read [CONTRIBUTING.md](CONTRIBUTING.md) to understand the rules of working in this code base
-3. Read [ARCHITECTURE.md](ARCHITECTURE.md) to understand affected modules
-
-### During Development
-- Follow architectural invariants in [ARCHITECTURE.md](ARCHITECTURE.md)
-- All code style enforced by clippy — if it compiles, it's compliant
-- See Code Style Guidelines below for conventions not enforced by tooling
-
-### After Completing a Task
-
-A development task is considered "complete" only when ALL of the following are met:
-
-1. Run `just ci` to verify all checks pass
-2. Update affected documentation:
-   - [ARCHITECTURE.md](ARCHITECTURE.md) if architecture changed
-   - [README.md](README.md) if user-facing features changed
-   - [docs/design-docs/index.md](docs/design-docs/index.md) if new design docs added
-3. Provide summary of changes to user
-
 ---
 
 ## Build/Test/Run
@@ -79,9 +43,7 @@ just update-dependencies
 just ci
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for:
-- Running the application
-- Development setup
+- Run the `Full CI check` command when you complete a task to make sure the code is correct.
 
 ---
 
@@ -91,11 +53,45 @@ When asked to debug the app, read the `debugging-acai` skill in `.agents/skills/
 
 ---
 
-## Git Workflow
+## Evaluating the App
 
-- Merge via feature branch + PR. Naming: `feat/xxx`, `fix/xxx`, `refactor/xxx`, `test/xxx`
+When asked to evaluate the app, read the `evaluating-acai` skill in `.agents/skills/evaluating-acai/SKILL.md`
 
-When committing code first read [CONTRIBUTING.md](CONTRIBUTING.md)
+---
+
+## Commit Conventions
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/). Commit messages are validated by a `commit-msg` hook.
+
+**Format:** `<type>[(scope)]: <description>`
+
+**Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+
+**Recommended Scopes** (aligned with architecture):
+
+| Scope | Description |
+|-------|-------------|
+| `cli` | Command-line interface and argument parsing |
+| `agent` | Agent orchestration, conversation loop, tool execution |
+| `responses` | Responses API backend |
+| `chat` | Chat Completions API backend |
+| `tools` | Tool definitions (Bash, Read, Edit, Write, etc.) |
+| `sandbox` | Sandbox implementations (Seatbelt, Landlock) |
+| `config` | Configuration, sessions, data directory |
+| `session` | Session persistence and management |
+| `model` | Model configuration and API types |
+| `prompts` | System prompt construction, AGENTS.md integration |
+| `logger` | Logging configuration |
+| `docs` | Documentation changes |
+| `tests` | Test files and test infrastructure |
+
+**Examples:**
+```
+feat(cli): add --verbose flag
+fix(agent): handle timeout correctly
+docs: update ARCHITECTURE.md with new module
+refactor(tools): extract path validation into shared function
+```
 
 ---
 
