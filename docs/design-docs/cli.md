@@ -202,3 +202,33 @@ Each tool call is printed with elapsed time and key arguments. Init and completi
 ```
 
 The `--verbose` flag has no effect when used with `--output-format stream-json`.
+
+## Exit Codes
+
+acai returns structured exit codes so that shell scripts and CI pipelines can branch on the reason for failure:
+
+| Code | Name         | Description                                              |
+|------|--------------|----------------------------------------------------------|
+| `0`  | Success      | The agent completed and produced a response               |
+| `1`  | Agent error  | The model or a tool encountered an error during execution|
+| `2`  | API error    | Rate limit, auth failure, or network error               |
+| `3`  | Input error  | No prompt provided, invalid flags, missing API key       |
+
+### Classification Logic
+
+The `exit_code` module classifies `anyhow::Error` values by inspecting the error chain:
+
+1. **Input errors** (exit 3): Matched by message patterns such as "Environment variable ... is not set", "No input provided", "Invalid model name", "Unknown model", "Invalid session UUID", and clap argument errors.
+2. **API errors** (exit 2): Matched by `reqwest::Error` downcast (401/403, connect, timeout, request errors) or message patterns containing "429", "401", "403", "rate_limit", "authentication", "connection refused", etc.
+3. **Agent/tool errors** (exit 1): The default for any error not matching the above categories.
+
+The `main()` function returns `std::process::ExitCode` directly (not `anyhow::Result`), classifying errors before exiting. This replaces the previous behavior where all errors produced exit code 1.
+
+### Streaming JSON Integration
+
+When using `--output-format stream-json`, the result event includes an `exit_code` field:
+
+```json
+{"type":"result","success":true,"exit_code":0,...}
+{"type":"result","success":false,"exit_code":2,"error":"...",...}
+```

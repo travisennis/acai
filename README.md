@@ -22,6 +22,7 @@ acai is a minimal coding harness for headless usage in the terminal. It's not a 
 - [AGENTS.md — Per-Project AI Behavior](#agentsmd--per-project-ai-behavior)
 - [Shell Aliases and Functions](#shell-aliases-and-functions)
 - [Streaming JSON Output](#streaming-json-output)
+- [Exit Codes](#exit-codes)
 - [Options](#options)
 - [Architecture](#architecture)
 - [Contributing](#contributing)
@@ -339,6 +340,31 @@ acai --output-format stream-json "List files" | jq '.type'
 ```
 
 See [Streaming JSON Output](docs/design-docs/streaming-json-output.md) for the full schema.
+
+### Exit Codes
+
+acai uses structured exit codes so that shell scripts and CI pipelines can distinguish between failure modes:
+
+| Code | Meaning       | Description                                              |
+|------|---------------|----------------------------------------------------------|
+| `0`  | Success       | The agent completed and produced a response               |
+| `1`  | Agent error   | The model or a tool encountered an error during execution|
+| `2`  | API error     | Rate limit, auth failure, or network error               |
+| `3`  | Input error   | No prompt provided, invalid flags, missing API key       |
+
+```bash
+# Use exit codes in scripts
+if acai "Fix the bug"; then
+    echo "Success"
+else
+    code=$?
+    case $code in
+        1) echo "Agent error" ;;
+        2) echo "API error" ;;
+        3) echo "Input error" ;;
+    esac
+fi
+```
 
 ### Options
 

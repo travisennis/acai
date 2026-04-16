@@ -3,6 +3,7 @@
 mod cli;
 mod clients;
 mod config;
+mod exit_code;
 mod logger;
 mod models;
 mod prompts;
@@ -443,10 +444,21 @@ impl CmdRunner for CodingAssistant {
         if self.output_format == OutputFormat::StreamJson {
             match &result {
                 Ok(_) => {
-                    client.emit_result_message(true, duration_ms, None);
+                    client.emit_result_message(
+                        true,
+                        duration_ms,
+                        None,
+                        crate::exit_code::code::SUCCESS,
+                    );
                 },
                 Err(e) => {
-                    client.emit_result_message(false, duration_ms, Some(e.to_string().as_ref()));
+                    let code_val = crate::exit_code::classify_to_u8(e);
+                    client.emit_result_message(
+                        false,
+                        duration_ms,
+                        Some(e.to_string().as_ref()),
+                        code_val,
+                    );
                 },
             }
         }
@@ -544,15 +556,35 @@ fn format_spinner_message(item: &ConversationItem) -> Option<String> {
     }
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let data_dir = DataDir::new()?;
+fn main() -> std::process::ExitCode {
+    let data_dir = match DataDir::new() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return exit_code::classify(&e);
+        },
+    };
 
     let _ = logger::configure(&data_dir.get_cache_dir());
 
     info!("data dir: {}", data_dir.get_cache_dir().display());
 
-    let args = CodingAssistant::parse();
+    let args = match CodingAssistant::try_parse() {
+        Ok(a) => a,
+        Err(e) => {
+            // Print the clap error (includes --help and --version output).
+            // For --help/--version, clap returns exit_code() == 0 and the
+            // formatted output goes to stdout. For actual errors (bad flags,
+            // missing required args), it goes to stderr with exit_code() != 0.
+            e.print().ok();
+            let exit = if e.exit_code() == 0 {
+                std::process::ExitCode::from(exit_code::code::SUCCESS)
+            } else {
+                std::process::ExitCode::from(exit_code::code::INPUT_ERROR)
+            };
+            return exit;
+        },
+    };
 
     // Process --add-dir flags and set them in thread-local storage
     let additional_dirs: Vec<std::path::PathBuf> = args
@@ -572,9 +604,25 @@ async fn main() -> anyhow::Result<()> {
         .collect();
     set_additional_dirs(additional_dirs);
 
-    args.run(&data_dir).await?;
+    // Set up the Tokio runtime and run the async command
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            let err = anyhow::anyhow!("Failed to initialize Tokio runtime: {e}");
+            eprintln!("Error: {err}");
+            return exit_code::classify(&err);
+        },
+    };
 
-    Ok(())
+    let result = rt.block_on(args.run(&data_dir));
+
+    match result {
+        Ok(()) => std::process::ExitCode::from(exit_code::code::SUCCESS),
+        Err(e) => {
+            eprintln!("Error: {e}");
+            exit_code::classify(&e)
+        },
+    }
 }
 
 #[cfg(test)]

@@ -140,6 +140,7 @@ Emitted at the end of a conversation when streaming is enabled. Contains success
   "subtype": "success",
   "duration_ms": 1523,
   "turn_count": 2,
+  "exit_code": 0,
   "usage": {
     "input_tokens": 150,
     "input_tokens_details": {"cached_tokens": 50},
@@ -157,6 +158,7 @@ Emitted at the end of a conversation when streaming is enabled. Contains success
   "success": false,
   "subtype": "error",
   "error": "Error: API request failed: rate limit exceeded",
+  "exit_code": 2,
   "duration_ms": 342,
   "turn_count": 1,
   "usage": {
@@ -175,6 +177,7 @@ Emitted at the end of a conversation when streaming is enabled. Contains success
 | `success` | boolean | Whether the request succeeded |
 | `subtype` | string | One of: `"success"`, `"error"` |
 | `error` | string? | Error message if `success` is false |
+| `exit_code` | number | Exit code (0=success, 1=agent error, 2=API error, 3=input error) |
 | `duration_ms` | number | Total duration in milliseconds |
 | `turn_count` | number | Number of API calls made |
 | `usage` | object | Token usage statistics |
@@ -196,7 +199,7 @@ Here's an example of the full streaming JSON output for a request that triggers 
 {"type":"message","role":"assistant","content":"Let me list the files for you."}
 {"type":"function_call_output","call_id":"call_001","output":"file1.txt\nfile2.txt\nfile3.txt"}
 {"type":"message","role":"assistant","content":"Here are the files in your current directory:\n- file1.txt\n- file2.txt\n- file3.txt"}
-{"type":"result","success":true,"subtype":"success","duration_ms":1523,"turn_count":2,"usage":{"input_tokens":150,"input_tokens_details":{"cached_tokens":50},"output_tokens":320,"output_tokens_details":{"reasoning_tokens":120},"total_tokens":470}}
+{"type":"result","success":true,"subtype":"success","duration_ms":1523,"turn_count":2,"exit_code":0,"usage":{"input_tokens":150,"input_tokens_details":{"cached_tokens":50},"output_tokens":320,"output_tokens_details":{"reasoning_tokens":120},"total_tokens":470}}
 ```
 
 ## Use Cases

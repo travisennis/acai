@@ -65,6 +65,8 @@ These types are intentionally simple—most of the system uses `ConversationItem
 
 ### Layer 1: Foundation
 
+**`exit_code`**: Classifies `anyhow::Error` values into structured exit codes (0=success, 1=agent error, 2=API error, 3=input error). The `main()` function uses this to return `std::process::ExitCode` instead of relying on the default Rust behavior of exiting 1 on any `Err`.
+
 **`logger`**: File-only logging using tracing with daily rotation and 7-day retention. Defaults to INFO level, with debug/trace available via `RUST_LOG` environment variable.
 
 External crates: `anyhow` for error handling, `tokio` for async runtime, `serde` for serialization, `reqwest` for HTTP.
@@ -114,6 +116,11 @@ The sandbox configuration defines a strict boundary between what the host proces
 - Library code uses `thiserror` for typed errors
 - Application code uses `anyhow` for context propagation
 - Tool errors are stringified and returned to the model as function call output (the model can decide how to proceed)
+- Exit codes are classified by the `exit_code` module based on error chain inspection:
+  - `0` — success
+  - `1` — agent/tool error (default for unclassified errors)
+  - `2` — API error (HTTP 401/403/429, connection failure, timeout)
+  - `3` — input error (missing API key, no prompt, invalid model name, bad flags)
 
 ### Logging
 
@@ -157,6 +164,7 @@ Use symbol search to locate specific implementations:
 - **Path validation**: Search for `validate_path_in_cwd`
 - **Sandbox profiles**: Search for `SandboxConfig` and platform-specific implementations
 - **Conversation types**: Search for `ConversationItem` enum definition
+- **Exit code classification**: Search for `classify` function in `exit_code.rs`
 
 ## Reading List
 

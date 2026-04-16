@@ -219,12 +219,13 @@ impl Agent {
         }
     }
 
-    /// Emit the result message with success/error, duration, and usage stats
+    /// Emit the result message with success/error, duration, usage stats, and exit code
     pub fn emit_result_message(
         &self,
         success: bool,
         duration_ms: u64,
         error_message: Option<&str>,
+        exit_code: u8,
     ) {
         if let Some(ref callback) = self.streaming_callback {
             let mut json = serde_json::json!({
@@ -232,7 +233,8 @@ impl Agent {
                 "success": success,
                 "duration_ms": duration_ms,
                 "turn_count": self.turn_count,
-                "usage": self.total_usage
+                "usage": self.total_usage,
+                "exit_code": exit_code
             });
 
             if success {
@@ -595,13 +597,14 @@ mod tests {
         let agent = test_agent().with_streaming_json(move |json| {
             *captured_clone.lock().unwrap() = json.to_string();
         });
-        agent.emit_result_message(true, 1000, None);
+        agent.emit_result_message(true, 1000, None, 0);
         drop(agent);
         let json: serde_json::Value = serde_json::from_str(&captured.lock().unwrap()).unwrap();
         assert_eq!(json["type"], "result");
         assert_eq!(json["subtype"], "success");
         assert_eq!(json["success"], true);
         assert_eq!(json["duration_ms"], 1000);
+        assert_eq!(json["exit_code"], 0);
     }
 
     #[test]
@@ -611,17 +614,18 @@ mod tests {
         let agent = test_agent().with_streaming_json(move |json| {
             *captured_clone.lock().unwrap() = json.to_string();
         });
-        agent.emit_result_message(false, 500, Some("boom"));
+        agent.emit_result_message(false, 500, Some("boom"), 1);
         drop(agent);
         let json: serde_json::Value = serde_json::from_str(&captured.lock().unwrap()).unwrap();
         assert_eq!(json["subtype"], "error");
         assert_eq!(json["error"], "boom");
+        assert_eq!(json["exit_code"], 1);
     }
 
     #[test]
     fn emit_result_message_no_callback() {
         let agent = test_agent();
-        agent.emit_result_message(true, 1000, None);
+        agent.emit_result_message(true, 1000, None, 0);
     }
 
     #[test]
