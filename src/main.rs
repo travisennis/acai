@@ -383,6 +383,8 @@ impl CmdRunner for CodingAssistant {
 
         let verbosity = self.verbosity();
 
+        let mut normal_spinner: Option<ProgressBar> = None;
+
         match verbosity {
             Verbosity::Verbose => {
                 let model = client.model().to_string();
@@ -412,12 +414,15 @@ impl CmdRunner for CodingAssistant {
                 spinner.enable_steady_tick(Duration::from_millis(80));
                 spinner.set_message("Thinking...");
 
+                let spinner_clone = spinner.clone();
                 client = client.with_progress_callback(move |item| {
                     let msg = format_spinner_message(item);
                     if let Some(msg) = msg {
-                        spinner.set_message(msg);
+                        spinner_clone.set_message(msg);
                     }
                 });
+
+                normal_spinner = Some(spinner);
             },
             Verbosity::Quiet => {},
         }
@@ -446,17 +451,12 @@ impl CmdRunner for CodingAssistant {
             }
         }
 
-        if verbosity == Verbosity::Verbose {
-            // Precision loss acceptable: used only for display
-            #[allow(clippy::cast_precision_loss)]
-            let secs = duration_ms as f64 / 1000.0;
-            let turns = client.turn_count;
-            let input_tokens = client.total_usage.input_tokens;
-            let output_tokens = client.total_usage.output_tokens;
-            let cached_reads_tokens = client.total_usage.input_tokens_details.cached_tokens;
-            eprintln!(
-                "\x1b[1;36m-- done:\x1b[0m {secs:.1}s, {turns} turns, {input_tokens} input tokens, {cached_reads_tokens} cached reads, {output_tokens} output tokens"
-            );
+        if let Some(spinner) = normal_spinner.take() {
+            let summary = format_done_summary(duration_ms, &client);
+            spinner.finish_with_message(format!("Done: {summary}"));
+        } else if verbosity == Verbosity::Verbose {
+            let summary = format_done_summary(duration_ms, &client);
+            eprintln!("\x1b[1;36m-- done:\x1b[0m {summary}");
         }
 
         if !self.no_session {
@@ -509,6 +509,20 @@ fn format_progress_item(item: &ConversationItem, elapsed_secs: f64) -> String {
         // Skip user messages, system messages, and function output items
         _ => String::new(),
     }
+}
+
+/// Format a completion summary with elapsed time, turns, and token usage.
+fn format_done_summary(duration_ms: u64, client: &Agent) -> String {
+    // Precision loss acceptable: used only for display
+    #[allow(clippy::cast_precision_loss)]
+    let secs = duration_ms as f64 / 1000.0;
+    let turns = client.turn_count;
+    let input_tokens = client.total_usage.input_tokens;
+    let output_tokens = client.total_usage.output_tokens;
+    let cached_reads_tokens = client.total_usage.input_tokens_details.cached_tokens;
+    format!(
+        "{secs:.1}s, {turns} turns, {input_tokens} input tokens, {cached_reads_tokens} cached reads, {output_tokens} output tokens"
+    )
 }
 
 /// Format a conversation item as a short spinner message for normal mode.
