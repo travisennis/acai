@@ -16,7 +16,7 @@ codegen-units = 16
 
 [dependencies]
 anyhow = "1.0.102"
-clap = { version = "4.6.0", features = ["derive"] }
+clap = { version = "4.6.1", features = ["derive"] }
 dirs = "6.0"
 futures = { version = "0.3", default-features = false, features = ["std", "async-await", "executor"] }
 hex = "0.4"
@@ -31,10 +31,10 @@ serde_json = "1.0.149"
 toml = "1.1"
 thiserror = "2.0.18"
 tempfile = "3"
-tokio = { version = "1.51.0", features = ["full"] }
+tokio = { version = "1.52.1", features = ["full"] }
 uuid = { version = "1.23", features = ["v4"] }
 chrono = { version = "0.4.44", features = ["serde"] }
-similar = { version = "3.0.0", features = ["inline"] }
+similar = { version = "3.1.0", features = ["inline"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock = { version = "0.4", optional = true }
