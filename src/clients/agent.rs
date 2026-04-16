@@ -453,17 +453,22 @@ impl Agent {
                 ApiType::ChatCompletions => chat_completions::parse_response(response).await,
             }
         } else {
+            let status = response.status().as_u16();
             let model = &self.config.config.model;
             let error_text = response.text().await?;
             debug!(target: "acai", "{error_text}");
 
-            serde_json::from_str::<serde_json::Value>(&error_text).map_or_else(
-                |_err| Err(anyhow::anyhow!("{model}\n\n{error_text}")),
-                |resp_json| match serde_json::to_string_pretty(&resp_json) {
-                    Ok(resp_formatted) => Err(anyhow::anyhow!("{model}\n\n{resp_formatted}")),
-                    Err(e) => Err(anyhow::anyhow!("Failed to format response JSON: {e}")),
+            let body = serde_json::from_str::<serde_json::Value>(&error_text).map_or_else(
+                |_err| format!("{model}\n\n{error_text}"),
+                |resp_json| {
+                    serde_json::to_string_pretty(&resp_json).map_or_else(
+                        |_| format!("{model}\n\n{error_text}"),
+                        |formatted| format!("{model}\n\n{formatted}"),
+                    )
                 },
-            )
+            );
+
+            Err(crate::exit_code::ApiError { status, body }.into())
         }
     }
 }
