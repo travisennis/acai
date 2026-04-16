@@ -6,6 +6,8 @@ setup:
     cargo install cargo-edit --quiet 2>/dev/null || true
     cargo install cargo-deny --quiet 2>/dev/null || true
     cargo install cargo-llvm-cov --quiet 2>/dev/null || true
+    cargo install prek --quiet 2>/dev/null || true
+    cargo install --locked cocogitto --quiet 2>/dev/null || true
     @echo "Setup complete! Run 'just --list' to see available commands."
 
 # Check code formatting (use in CI)

@@ -25,15 +25,11 @@ This installs:
 ### Install Development Tools
 
 ```bash
-# Install prek for git hooks
-cargo install prek
-
-# Install cocogitto for conventional commit validation
-cargo install --locked cocogitto
-
-# Install git hooks
+just setup
 prek install --hook-type pre-commit --hook-type commit-msg
 ```
+
+This installs all required cargo tools (prek, cocogitto, cargo-edit, cargo-deny, cargo-llvm-cov) and sets up git hooks for formatting, linting, and commit message validation.
 
 Git hooks will automatically run:
 - **pre-commit**: `cargo fmt -- --check` (formatting verification)
