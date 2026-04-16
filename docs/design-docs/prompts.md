@@ -127,6 +127,12 @@ The `_working_dir` parameter is currently unused but kept for:
 - Future extensibility (project-specific logic)
 - API stability
 
+## Related Documentation
+
+- [cli.md](./cli.md): CLI layer triggers prompt construction via `build_system_prompt()`
+- [session-management.md](./session-management.md): AGENTS.md files are read during session initialization
+- [tools.md](./tools.md): Tool definitions are included alongside prompts in API requests
+
 ## Integration
 
 The prompt construction flow:

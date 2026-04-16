@@ -322,6 +322,16 @@ Lines 1-100/500
 
 ## Sandboxing
 
+The Bash tool integrates with the `tools::sandbox` module. See [sandbox.md](./sandbox.md) for details.
+
+## Related Documentation
+
+- [prompts.md](./prompts.md): Tool definitions are included in system prompts
+- [cli.md](./cli.md): CLI layer triggers tool execution
+- [sandbox.md](./sandbox.md): OS-level sandboxing implementation
+
+## Sandboxing
+
 The Bash tool integrates with the `tools::sandbox` module:
 
 ```rust

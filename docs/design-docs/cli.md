@@ -173,6 +173,11 @@ EOF
 echo "Hello" | acai -
 ```
 
+## Related Documentation
+
+- [prompts.md](./prompts.md): System prompt construction and AGENTS.md integration
+- [session-management.md](./session-management.md): Session lifecycle and storage
+
 ## Output Formats
 
 Two output formats are supported:

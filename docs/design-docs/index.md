@@ -2,7 +2,11 @@
 
 This directory contains design documents and architectural decisions for the acai project.
 
-## Documents
+## Architecture Decision Records
+
+See the [../adr/](../adr/) directory for architectural decision records (ADRs).
+
+## Design Documents
 
 | Document | Description |
 |----------|-------------|

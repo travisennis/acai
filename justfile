@@ -1,3 +1,13 @@
+# Install required development tools
+setup:
+    @echo "Checking Rust installation..."
+    @which rustc > /dev/null || { echo "ERROR: Rust not installed. Install from https://rustup.rs"; exit 1; }
+    @echo "Installing required cargo tools..."
+    cargo install cargo-edit --quiet 2>/dev/null || true
+    cargo install cargo-deny --quiet 2>/dev/null || true
+    cargo install cargo-llvm-cov --quiet 2>/dev/null || true
+    @echo "Setup complete! Run 'just --list' to see available commands."
+
 # Check code formatting (use in CI)
 fmt-check:
     cargo fmt -- --check

@@ -9,6 +9,19 @@ Thank you for your interest in contributing to Acai! This document provides all 
 - Rust and Cargo installed on your system
 - Git
 
+### Quick Setup
+
+Run the automated setup command:
+
+```bash
+just setup
+```
+
+This installs:
+- `cargo-edit` for dependency management
+- `cargo-deny` for security audits
+- `cargo-llvm-cov` for coverage reports
+
 ### Install Development Tools
 
 ```bash
@@ -26,6 +39,91 @@ Git hooks will automatically run:
 - **pre-commit**: `cargo fmt -- --check` (formatting verification)
 - **pre-commit**: `cargo clippy --all-targets -- -D warnings` (linting)
 - **commit-msg**: `cog verify --file` (conventional commit validation)
+
+## Contributor Guides
+
+### Adding a New Tool
+
+Tools are defined in `src/clients/tools/`.
+
+1. **Create the tool definition** in `tools.rs`:
+   ```rust
+   fn my_tool() -> Tool {
+       Tool {
+           type_: "function".to_string(),
+           name: "MyTool".to_string(),
+           description: "Description of what the tool does".to_string(),
+           parameters: serde_json::json!({
+               "type": "object",
+               "properties": {
+                   "param1": { "type": "string", "description": "..." }
+               },
+               "required": ["param1"]
+           }),
+       }
+   }
+   ```
+
+2. **Add execution logic** in `execute_tool()`:
+   ```rust
+   "MyTool" => execute_my_tool(arguments).await,
+   ```
+
+3. **Implement the execution function**:
+   ```rust
+   async fn execute_my_tool(arguments: &str) -> Result<ToolResult, String> {
+       // Parse arguments, validate paths, execute, return result
+   }
+   ```
+
+4. **Register in tools list** (if applicable)
+
+See [docs/design-docs/tools.md](docs/design-docs/tools.md) for tool framework details.
+
+### Adding a New Conversation Type
+
+Conversation items are defined in `src/clients/types.rs`.
+
+1. **Extend the `ConversationItem` enum**:
+   ```rust
+   pub enum ConversationItem {
+       // ... existing variants
+       MyNewItem { field1: String, field2: i32 },
+   }
+   ```
+
+2. **Update serialization** (`#[serde]` attributes)
+
+3. **Update API translation** (`to_api_input()`, `build_messages()`, `to_streaming_json()`)
+
+4. **Add pattern matches** in all `match` arms across the codebase
+
+See [docs/design-docs/conversation-types.md](docs/design-docs/conversation-types.md) for data model details.
+
+### Testing Changes
+
+```bash
+# Run all tests
+just test
+
+# Run tests for a specific module
+cargo test module_name
+
+# Run tests with coverage
+just coverage
+
+# Open HTML coverage report
+just coverage-open
+
+# Run the full CI pipeline locally
+just ci-full
+```
+
+Tests live alongside source files:
+- `src/module/mod.rs` → `tests/module_tests.rs`
+- Inline `#[cfg(test)]` modules are also used
+
+See [docs/design-docs/tools.md](docs/design-docs/tools.md) for testing patterns (tools use `tempfile` for isolation).
 
 ## Build/Lint/Test Commands
 
