@@ -94,31 +94,41 @@ fn is_sandbox_violation(output: &str) -> bool {
 /// - Multiple null bytes (common in binary files)
 /// - A high ratio of non-printable characters (excluding common whitespace)
 // Precision loss acceptable: used only for display
-#[allow(clippy::naive_bytecount, clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss)]
 fn is_binary_data(data: &[u8]) -> bool {
     if data.is_empty() {
         return false;
     }
 
     // Count null bytes - even a few null bytes strongly indicate binary
-    let null_count = data.iter().filter(|&&b| b == 0).count();
+    let mut null_count: usize = 0;
+    for &b in data {
+        if b == 0 {
+            null_count += 1;
+        }
+    }
     if null_count > BINARY_NULL_BYTE_THRESHOLD {
         return true;
     }
 
     // Count non-printable characters (excluding common whitespace: \t, \n, \r)
-    let non_printable_count = data
-        .iter()
-        .filter(|&&b| {
-            // Allow tabs, newlines, and carriage returns
-            !matches!(b, b'\t' | b'\n' | b'\r')
-                // Allow printable ASCII (32-126)
-                && !(32..=126).contains(&b)
-                // Allow high bytes that could be valid UTF-8 continuation/start bytes
-                // (we'll let the UTF-8 check below catch actual invalid sequences)
-                && b < 128
-        })
-        .count();
+    let mut non_printable_count: usize = 0;
+    for &b in data {
+        // Allow tabs, newlines, and carriage returns
+        if matches!(b, b'\t' | b'\n' | b'\r') {
+            continue;
+        }
+        // Allow printable ASCII (32-126)
+        if (32..=126).contains(&b) {
+            continue;
+        }
+        // Allow high bytes that could be valid UTF-8 continuation/start bytes
+        // (we'll let the UTF-8 check below catch actual invalid sequences)
+        if b >= 128 {
+            continue;
+        }
+        non_printable_count += 1;
+    }
 
     // If more than 30% of the data is non-printable, it's likely binary
     let ratio = non_printable_count as f64 / data.len() as f64;
