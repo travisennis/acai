@@ -25,13 +25,13 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: acai-linux-x86_64
+            artifact: cake-linux-x86_64
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact: acai-macos-x86_64
+            artifact: cake-macos-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: acai-macos-aarch64
+            artifact: cake-macos-aarch64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -45,7 +45,7 @@ jobs:
       
       - name: Prepare artifact
         run: |
-          mv target/${{ matrix.target }}/release/acai ${{ matrix.artifact }}
+          mv target/${{ matrix.target }}/release/cake ${{ matrix.artifact }}
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4

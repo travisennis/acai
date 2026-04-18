@@ -15,7 +15,7 @@ body:
       label: Steps to Reproduce
       description: How to reproduce the behavior
       placeholder: |
-        1. Run `acai "..."`
+        1. Run `cake "..."`
         2. Observe error
     validations:
       required: true
@@ -37,7 +37,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: Output of `acai --version`
+      description: Output of `cake --version`
     validations:
       required: true
   - type: dropdown
@@ -54,5 +54,5 @@ body:
     id: logs
     attributes:
       label: Relevant Logs
-      description: Paste any relevant log output (from `~/.cache/acai/`)
+      description: Paste any relevant log output (from `~/.cache/cake/`)
       render: text

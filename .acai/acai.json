@@ -3,7 +3,7 @@
 		"maxIterations": 200
 	},
 	"logs": {
-		"path": "~/.cache/acai/acai.log"
+		"path": "~/.cache/cake/cake.log"
 	},
 	"tools": {
 		"maxTokens": 30000,
