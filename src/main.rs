@@ -169,6 +169,10 @@ impl CodingAssistant {
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 // No data available within timeout - assume stdin is empty
                 // The thread will continue running in the background but we don't wait for it
+                tracing::warn!(
+                    "Stdin read timed out after 100ms; piped input was ignored. \
+                     Use '-' as the prompt to force stdin reading."
+                );
                 None
             },
         }
