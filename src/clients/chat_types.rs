@@ -114,11 +114,17 @@ pub(super) struct CompletionTokensDetails {
     pub(super) reasoning_tokens: Option<u64>,
 }
 
+#[derive(Deserialize, Debug, Default)]
+pub(super) struct PromptTokensDetails {
+    pub(super) cached_tokens: Option<u64>,
+}
+
 #[derive(Deserialize, Debug)]
 #[allow(clippy::struct_field_names)]
 pub(super) struct ChatUsage {
     pub(super) prompt_tokens: Option<u64>,
     pub(super) completion_tokens: Option<u64>,
     pub(super) total_tokens: Option<u64>,
+    pub(super) prompt_tokens_details: Option<PromptTokensDetails>,
     pub(super) completion_tokens_details: Option<CompletionTokensDetails>,
 }
