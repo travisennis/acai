@@ -34,7 +34,7 @@ cake is a minimal coding harness for headless usage in the terminal. It's not a 
 
 - Send instructions to AI for code generation or documentation
 - Supports multiple AI providers via configurable API endpoints
-- Default model: GLM-5 via OpenCode
+- Default model: GLM-5.1 via OpenCode
 - OS-level filesystem sandbox for Bash tool commands (macOS sandbox-exec, Linux Landlock)
 - Conversation session management with continue, resume, and fork capabilities
 - Git worktree integration for isolated development environments
@@ -186,7 +186,7 @@ reasoning_max_tokens = 8000        # Budget-style for Anthropic via OpenRouter
 # Use a named model from settings.toml
 cake --model claude "Your prompt here"
 
-# Without --model, uses default (GLM-5 via OpenCode)
+# Without --model, uses default (GLM-5.1 via OpenCode)
 cake "Your prompt here"
 ```
 
@@ -219,7 +219,7 @@ cake --model claude --reasoning-effort medium "Explain this algorithm"
 
 When not using settings.toml, cake uses these defaults:
 
-- **Model**: `glm-5`
+- **Model**: `glm-5.1`
 - **API Endpoint**: `https://opencode.ai/zen/go/v1`
 - **API Key Env**: `OPENCODE_ZEN_API_TOKEN`
 - **Temperature**: 0.8
