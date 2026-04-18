@@ -102,6 +102,12 @@ refactor(tools): extract path validation into shared function
 
 ---
 
+## ExecPlans
+
+When writing complex features or significant refactors, use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
+
+---
+
 ## Additional Notes
 
 - Data directory stored in `~/.cache/cake/` (see `src/config/data_dir.rs`)
