@@ -11,8 +11,8 @@ use crate::config::Session;
 /// Represents an AGENTS.md file with its path and content.
 ///
 /// AGENTS.md files contain instructions for the AI agent about project-specific
-/// context and behavior. They are loaded from both user-level (`~/.cake/AGENTS.md`)
-/// and project-level (`./AGENTS.md`) locations.
+/// context and behavior. They are loaded from user-level (`~/.cake/AGENTS.md`),
+/// XDG config (`~/.config/AGENTS.md`), and project-level (`./AGENTS.md`) locations.
 #[derive(Debug, Clone)]
 pub struct AgentsFile {
     /// Display path (e.g., "~/.cake/AGENTS.md" or "./AGENTS.md")
@@ -245,7 +245,8 @@ impl DataDir {
     ///
     /// The search order is:
     /// 1. User-level: `~/.cake/AGENTS.md`
-    /// 2. Project-level: `./AGENTS.md`
+    /// 2. XDG config: `~/.config/AGENTS.md`
+    /// 3. Project-level: `./AGENTS.md`
     ///
     /// # Examples
     ///
@@ -273,6 +274,18 @@ impl DataDir {
         {
             files.push(AgentsFile {
                 path: "~/.cake/AGENTS.md".to_string(),
+                content,
+            });
+        }
+
+        // XDG config AGENTS.md: ~/.config/AGENTS.md
+        let xdg_agents_path = dirs::home_dir().map(|h| h.join(".config").join("AGENTS.md"));
+
+        if let Some(ref path) = xdg_agents_path
+            && let Ok(content) = fs::read_to_string(path)
+        {
+            files.push(AgentsFile {
+                path: "~/.config/AGENTS.md".to_string(),
                 content,
             });
         }

@@ -61,7 +61,7 @@ Sessions are stored in a directory hashed from the working directory path (SHA-2
 
 These types are intentionally simple—most of the system uses `ConversationItem` directly.
 
-**`prompts`**: System prompt construction with AGENTS.md integration. Reads both user-level (`~/.cake/AGENTS.md`) and project-level (`./AGENTS.md`) instruction files and injects them into the system prompt.
+**`prompts`**: System prompt construction with AGENTS.md integration. Reads user-level (`~/.cake/AGENTS.md`), XDG config (`~/.config/AGENTS.md`), and project-level (`./AGENTS.md`) instruction files and injects them into the system prompt.
 
 ### Layer 1: Foundation
 

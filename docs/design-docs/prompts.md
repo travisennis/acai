@@ -1,6 +1,6 @@
 # Prompts Module
 
-The `prompts` module handles system prompt construction, integrating instructions from `AGENTS.md` files at both user and project levels.
+The `prompts` module handles system prompt construction, integrating instructions from `AGENTS.md` files at user, XDG config, and project levels.
 
 ## Overview
 
@@ -18,12 +18,13 @@ pub fn build_system_prompt(_working_dir: &Path, agents_files: &[AgentsFile]) -> 
 
 ## AGENTS.md Files
 
-Cake reads instructions from two locations:
+Cake reads instructions from three locations:
 
 1. **User-level**: `~/.cake/AGENTS.md` — Personal preferences applicable to all projects
-2. **Project-level**: `./AGENTS.md` — Project-specific instructions
+2. **XDG config**: `~/.config/AGENTS.md` — XDG-standard location for global instructions
+3. **Project-level**: `./AGENTS.md` — Project-specific instructions
 
-Both files are optional. If present and non-empty, their contents are injected into the system prompt.
+All files are optional. If present and non-empty, their contents are injected into the system prompt.
 
 ### AgentsFile Struct
 
@@ -57,6 +58,12 @@ If any `AGENTS.md` files have non-empty content, a "Project Context" section is 
 
 <instructions>
 User-level instructions here...
+</instructions>
+
+### ~/.config/AGENTS.md
+
+<instructions>
+XDG config instructions here...
 </instructions>
 
 ### ./AGENTS.md
@@ -138,7 +145,7 @@ The `_working_dir` parameter is currently unused but kept for:
 The prompt construction flow:
 
 1. **`cli::instruct`** calls `data_dir.read_agents_files(&current_dir)`
-2. **`config::DataDir`** reads and parses `~/.cake/AGENTS.md` and `./AGENTS.md`
+2. **`config::DataDir`** reads and parses `~/.cake/AGENTS.md`, `~/.config/AGENTS.md`, and `./AGENTS.md`
 3. **`cli::instruct`** passes `agents_files` to `build_system_prompt()`
 4. **`prompts`** constructs the final string
 5. **`clients::responses`** includes it as the first message in API requests
@@ -153,6 +160,13 @@ Common patterns for `~/.cake/AGENTS.md`:
 - **Default tools**: "Always run tests after editing code"
 - **Error handling**: "Use anyhow for errors, thiserror for libraries"
 - **Documentation**: "Add doc comments to all public items"
+
+### XDG Config Instructions
+
+Common patterns for `~/.config/AGENTS.md`:
+
+- **Cross-tool preferences**: Instructions shared with other tools that read `~/.config/AGENTS.md`
+- **Global defaults**: Same purpose as `~/.cake/AGENTS.md` but following the XDG Base Directory convention
 
 ### Project-Level Instructions
 

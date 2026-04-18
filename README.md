@@ -307,6 +307,7 @@ For more details, see [Filesystem Sandbox](docs/design-docs/sandbox.md).
 cake reads `AGENTS.md` files to shape its behavior without re-prompting every time:
 
 - **`~/.cake/AGENTS.md`** — Global personality, preferences, and conventions applied to all projects.
+- **`~/.config/AGENTS.md`** — XDG-standard location for global instructions.
 - **`./AGENTS.md`** — Project-level instructions: tech stack, coding standards, domain knowledge.
 
 This is how you make cake a domain expert. For example, a project-level `AGENTS.md` might say:
