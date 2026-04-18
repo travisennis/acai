@@ -1,6 +1,6 @@
-# Contributing to Acai
+# Contributing to Cake
 
-Thank you for your interest in contributing to Acai! This document provides all the information you need to get started.
+Thank you for your interest in contributing to Cake! This document provides all the information you need to get started.
 
 ## Development Setup
 
@@ -159,13 +159,13 @@ just ci
 export OPENROUTER_API_KEY=your_key_here
 
 # Run binary directly
-./target/release/acai "Your prompt here"
+./target/release/cake "Your prompt here"
 
 # Or with cargo
 cargo run --release -- "Your prompt here"
 
 # To get help
-./target/release/acai --help
+./target/release/cake --help
 ```
 
 ## Git Workflow

@@ -146,7 +146,7 @@ fn handle_binary_output(data: &[u8], exit_code: i32, elapsed_ms: u128) -> String
     let mime_type = detect_mime_type(data);
 
     // Save binary data to a temp file
-    let tmp_dir = std::env::temp_dir().join("acai");
+    let tmp_dir = std::env::temp_dir().join("cake");
     let _ = std::fs::create_dir_all(&tmp_dir);
     let file_name = format!("bash_binary_{}", uuid::Uuid::new_v4());
     let tmp_path = tmp_dir.join(&file_name);
@@ -419,7 +419,7 @@ pub(super) fn truncate_output(output: &str, exit_code: i32, elapsed_ms: u128) ->
     let total_lines = output.lines().count();
 
     // Try to write the full output to a temp file so the agent can search it.
-    let tmp_dir = std::env::temp_dir().join("acai");
+    let tmp_dir = std::env::temp_dir().join("cake");
     let _ = std::fs::create_dir_all(&tmp_dir);
     let file_name = format!("bash_output_{}.txt", uuid::Uuid::new_v4());
     let tmp_path = tmp_dir.join(&file_name);
@@ -614,7 +614,7 @@ mod tests {
     async fn test_sandbox_blocks_write_outside_cwd() {
         // Use ~/Desktop which is outside the sandbox's read-write set
         // (/tmp is allowed as a temp directory, so we can't test with it)
-        let target = format!("~/Desktop/acai_sandbox_test_{}", uuid::Uuid::new_v4());
+        let target = format!("~/Desktop/cake_sandbox_test_{}", uuid::Uuid::new_v4());
         let args = format!(r#"{{"command": "touch {target}"}}"#);
         let result = Box::pin(execute_bash(&args)).await.unwrap();
         assert!(

@@ -18,7 +18,7 @@ const NOUNS: &[&str] = &[
     "mesa", "node", "opal", "pine", "quay", "reef", "sage", "tide",
 ];
 
-/// Represents an active git worktree managed by acai.
+/// Represents an active git worktree managed by cake.
 #[derive(Debug, Clone)]
 pub struct Worktree {
     /// The name of the worktree (user-provided or auto-generated).
@@ -97,14 +97,14 @@ fn default_remote_branch(repo_root: &Path) -> anyhow::Result<String> {
     Ok("HEAD".to_string())
 }
 
-/// Returns the worktrees base directory: `<repo>/.acai/worktrees/`.
+/// Returns the worktrees base directory: `<repo>/.cake/worktrees/`.
 fn worktrees_dir(repo_root: &Path) -> PathBuf {
-    repo_root.join(".acai").join("worktrees")
+    repo_root.join(".cake").join("worktrees")
 }
 
 /// Create a new worktree with the given name. If `name` is `None`, a random name is generated.
 ///
-/// The worktree is created at `<repo>/.acai/worktrees/<name>` with a new branch
+/// The worktree is created at `<repo>/.cake/worktrees/<name>` with a new branch
 /// `worktree-<name>` based on the default remote branch.
 pub fn create(from: &Path, name: Option<&str>) -> anyhow::Result<Worktree> {
     let repo_root = find_repo_root(from)?;

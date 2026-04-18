@@ -1,10 +1,10 @@
-# Acai Architecture
+# Cake Architecture
 
-Acai is an AI coding assistant CLI that integrates with language models via the OpenRouter API. It provides a conversation-based interface with tool execution capabilities for file manipulation, code editing, and shell command execution.
+Cake is an AI coding assistant CLI that integrates with language models via the OpenRouter API. It provides a conversation-based interface with tool execution capabilities for file manipulation, code editing, and shell command execution.
 
 ## Overview
 
-The core problem acai solves: provide a safe, sandboxed environment for AI agents to interact with the local filesystem and execute commands, while maintaining conversation context across sessions.
+The core problem cake solves: provide a safe, sandboxed environment for AI agents to interact with the local filesystem and execute commands, while maintaining conversation context across sessions.
 
 Key design decisions:
 - **Agent loop**: The model can request tool executions; results are fed back, and the loop continues until the model returns a final response
@@ -46,11 +46,11 @@ The bridge to external AI services and the orchestration layer for tool executio
 Foundation modules that provide data persistence, core types, and prompt generation.
 
 **`config`**:
-- `DataDir`: Manages the data directory (defaults to `~/.cache/acai/`, overridable via `ACAI_DATA_DIR` env var), session storage, and AGENTS.md discovery
+- `DataDir`: Manages the data directory (defaults to `~/.cache/cake/`, overridable via `CAKE_DATA_DIR` env var), session storage, and AGENTS.md discovery
 - `Session`: In-memory session state with JSONL serialization
 - `worktree`: Git worktree utilities for isolated execution environments
 - `model`: Contains `ApiType` enum (`Responses`/`ChatCompletions`), `ModelConfig` struct (model, api_type, base_url, api_key_env, temperature, top_p, max_output_tokens, reasoning_effort, reasoning_summary, reasoning_max_tokens, providers), and `ResolvedModelConfig` (resolves API key from env var)
-- `settings`: TOML-based configuration loading from `settings.toml` files. Supports loading from both project-level (`.acai/settings.toml`) and global (`~/.cache/acai/settings.toml`) with merge semantics where project settings override global settings for the same model name.
+- `settings`: TOML-based configuration loading from `settings.toml` files. Supports loading from both project-level (`.cake/settings.toml`) and global (`~/.cache/cake/settings.toml`) with merge semantics where project settings override global settings for the same model name.
 - `defaults`: Default values for model, base URL, API key env var, and providers
 
 Sessions are stored in a directory hashed from the working directory path (SHA-256, first 16 hex chars), ensuring isolation between projects.
@@ -61,7 +61,7 @@ Sessions are stored in a directory hashed from the working directory path (SHA-2
 
 These types are intentionally simple—most of the system uses `ConversationItem` directly.
 
-**`prompts`**: System prompt construction with AGENTS.md integration. Reads both user-level (`~/.acai/AGENTS.md`) and project-level (`./AGENTS.md`) instruction files and injects them into the system prompt.
+**`prompts`**: System prompt construction with AGENTS.md integration. Reads both user-level (`~/.cake/AGENTS.md`) and project-level (`./AGENTS.md`) instruction files and injects them into the system prompt.
 
 ### Layer 1: Foundation
 
@@ -87,7 +87,7 @@ These constraints guide the design and are unlikely to change:
 
 6. **Session writes are atomic**: Sessions are written to a temp file, then renamed to the final path. The most recent session is determined by file modification time.
 
-7. **Sandboxing is opt-out, not opt-in**: Sandboxing applies to all bash commands unless explicitly disabled via `ACAI_SANDBOX=0`.
+7. **Sandboxing is opt-out, not opt-in**: Sandboxing applies to all bash commands unless explicitly disabled via `CAKE_SANDBOX=0`.
 
 8. **No unwrap/expect in production code**: The clippy configuration denies these, enforced at compile time.
 
@@ -103,7 +103,7 @@ Tools are pure functions from JSON arguments to `ToolResult`. The client owns th
 
 ### Config ↔ Filesystem Boundary
 
-All filesystem access for configuration and sessions goes through `DataDir`. No other module constructs paths into `~/.cache/acai/` directly.
+All filesystem access for configuration and sessions goes through `DataDir`. No other module constructs paths into `~/.cache/cake/` directly.
 
 ### Host ↔ Sandbox Boundary
 
@@ -124,16 +124,16 @@ The sandbox configuration defines a strict boundary between what the host proces
 
 ### Logging
 
-- File appender with daily rotation: `~/.cache/acai/acai.YYYY-MM-DD.log`
+- File appender with daily rotation: `~/.cache/cake/cake.YYYY-MM-DD.log`
 - Maximum 7 files retained (older files automatically deleted)
-- Default level: INFO (debug/trace require `RUST_LOG=acai=debug` or `RUST_LOG=acai=trace`)
+- Default level: INFO (debug/trace require `RUST_LOG=cake=debug` or `RUST_LOG=cake=trace`)
 - Pattern includes timestamps, levels, file:line for debugging
 - Non-blocking writes (async-safe)
 - Session lifecycle events are logged at INFO level: session creation, continuation, resumption, forking, saving, and loading
 
 ### Session Management
 
-Sessions enable conversation persistence across separate acai invocations:
+Sessions enable conversation persistence across separate cake invocations:
 
 - **New**: Generate UUID, create fresh session
 - **Continue**: Load the most recent session for the working directory, append new messages

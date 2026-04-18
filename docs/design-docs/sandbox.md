@@ -1,10 +1,10 @@
 # Filesystem Sandbox
 
-Acai sandboxes commands executed by the Bash tool to restrict filesystem access. This prevents LLM-generated commands from reading or writing files outside the project directory and essential system paths.
+Cake sandboxes commands executed by the Bash tool to restrict filesystem access. This prevents LLM-generated commands from reading or writing files outside the project directory and essential system paths.
 
 ## Overview
 
-When the Bash tool executes a command, acai wraps it in an OS-level sandbox that enforces a deny-default filesystem policy. Only explicitly allowed paths are accessible:
+When the Bash tool executes a command, cake wraps it in an OS-level sandbox that enforces a deny-default filesystem policy. Only explicitly allowed paths are accessible:
 
 | Access Level | Paths | Purpose |
 |---|---|---|
@@ -17,7 +17,7 @@ When the Bash tool executes a command, acai wraps it in an OS-level sandbox that
 
 ### macOS — sandbox-exec (Seatbelt)
 
-On macOS, acai uses `sandbox-exec` with a dynamically generated [Seatbelt profile](https://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf). The profile uses a deny-default policy and explicitly allows:
+On macOS, cake uses `sandbox-exec` with a dynamically generated [Seatbelt profile](https://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf). The profile uses a deny-default policy and explicitly allows:
 
 - **Filesystem**: read-write for cwd/temp/toolchain/SCM/runtime paths, read-only+exec for system paths, read-only for config/device paths
 - **Process**: `process-fork`, `process-exec` (needed for bash and subcommands)
@@ -27,13 +27,13 @@ On macOS, acai uses `sandbox-exec` with a dynamically generated [Seatbelt profil
 - **Devices**: `/dev` (read-only access to device files)
 - **System**: `sysctl-read`, `file-ioctl` (needed for terminal operations)
 
-Sandbox profiles are written to temporary files under `$TMPDIR/acai/sandbox_profiles/`.
+Sandbox profiles are written to temporary files under `$TMPDIR/cake/sandbox_profiles/`.
 
 Requires `/usr/bin/sandbox-exec` (present on all standard macOS installations).
 
 ### Linux — Landlock LSM
 
-On Linux, acai uses [Landlock](https://landlock.io/), a Linux Security Module available since kernel 5.13. Landlock allows unprivileged processes to sandbox themselves without root access.
+On Linux, cake uses [Landlock](https://landlock.io/), a Linux Security Module available since kernel 5.13. Landlock allows unprivileged processes to sandbox themselves without root access.
 
 The Landlock sandbox is applied via `pre_exec`, so rules take effect in the child process after `fork()` but before `exec()`.
 
@@ -55,14 +55,14 @@ The sandbox provides OS-level filesystem restriction as the primary enforcement 
 
 ### Disabling the Sandbox
 
-Set the `ACAI_SANDBOX` environment variable to disable sandboxing:
+Set the `CAKE_SANDBOX` environment variable to disable sandboxing:
 
 ```bash
 # Any of these values disable the sandbox
-export ACAI_SANDBOX=off
-export ACAI_SANDBOX=0
-export ACAI_SANDBOX=false
-export ACAI_SANDBOX=no
+export CAKE_SANDBOX=off
+export CAKE_SANDBOX=0
+export CAKE_SANDBOX=false
+export CAKE_SANDBOX=no
 ```
 
 When disabled, a warning is logged and all commands run with full filesystem access.
@@ -75,10 +75,10 @@ Use the `--add-dir` CLI flag to grant the agent read-only access to directories 
 
 ```bash
 # Add a single directory
-acai --add-dir /path/to/reference/docs "Use the documentation in /path/to/reference/docs"
+cake --add-dir /path/to/reference/docs "Use the documentation in /path/to/reference/docs"
 
 # Add multiple directories
-acai --add-dir ~/Documents/specs --add-dir ~/Projects/shared-utils "Analyze the code"
+cake --add-dir ~/Documents/specs --add-dir ~/Projects/shared-utils "Analyze the code"
 ```
 
 **Key points:**
@@ -110,11 +110,11 @@ All read-write paths are canonicalized (symlinks resolved) before being added to
 
 ```bash
 # This works — reading files in the project directory
-acai "List the files in this project"
+cake "List the files in this project"
 # Bash tool runs: ls -la  ✓
 
 # This is blocked — writing outside the project directory
-# Bash tool runs: touch /tmp/acai_test  ✗ (Operation not permitted)
+# Bash tool runs: touch /tmp/cake_test  ✗ (Operation not permitted)
 
 # This is blocked — reading the user's home directory
 # Bash tool runs: ls ~/Desktop  ✗ (Operation not permitted)
@@ -130,8 +130,8 @@ acai "List the files in this project"
 
 The sandbox is blocking access to a path outside the allowed set. Options:
 
-1. Ensure you're running acai from the correct project directory
-2. If the command legitimately needs broader access, disable the sandbox with `ACAI_SANDBOX=off`
+1. Ensure you're running cake from the correct project directory
+2. If the command legitimately needs broader access, disable the sandbox with `CAKE_SANDBOX=off`
 
 ### "sandbox-exec not found" warning (macOS)
 
@@ -151,7 +151,7 @@ Landlock requires kernel 5.13 or later. On older kernels, Landlock reports `NotE
 
 ### SSH git operations fail with host key verification
 
-The sandbox grants read-only access to `~/.ssh/known_hosts` so the sandboxed process cannot modify it. If you use SSH for git operations (e.g., `git clone git@github.com:...`), you need to populate `known_hosts` before running acai. Choose one of the following approaches:
+The sandbox grants read-only access to `~/.ssh/known_hosts` so the sandboxed process cannot modify it. If you use SSH for git operations (e.g., `git clone git@github.com:...`), you need to populate `known_hosts` before running cake. Choose one of the following approaches:
 
 **Option 1: Pre-populate known_hosts with ssh-keyscan**
 

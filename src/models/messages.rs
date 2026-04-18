@@ -10,7 +10,7 @@ use crate::models::Role;
 /// # Examples
 ///
 /// ```
-/// use acai::models::{Message, Role};
+/// use cake::models::{Message, Role};
 ///
 /// let msg = Message {
 ///     role: Role::User,

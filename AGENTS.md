@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-acai is an AI coding assistant CLI that:
+cake is an AI coding assistant CLI that:
 - Integrates with LLMs via an API compatible for with OpenAI Chat Completions or the Responses API.
 - Executes tools (Bash, Read, Edit, Write) in a sandboxed environment
 - Manages conversation sessions with continue/resume/fork capabilities
@@ -49,13 +49,13 @@ just ci
 
 ## Debugging the App
 
-When asked to debug the app, read the `debugging-acai` skill in `.agents/skills/debugging-acai/SKILL.md`
+When asked to debug the app, read the `debugging-cake` skill in `.agents/skills/debugging-cake/SKILL.md`
 
 ---
 
 ## Evaluating the App
 
-When asked to evaluate the app, read the `evaluating-acai` skill in `.agents/skills/evaluating-acai/SKILL.md`
+When asked to evaluate the app, read the `evaluating-cake` skill in `.agents/skills/evaluating-cake/SKILL.md`
 
 ---
 
@@ -104,7 +104,8 @@ refactor(tools): extract path validation into shared function
 
 ## Additional Notes
 
-- Config stored in `~/.cache/acai/` and `.acai` (see `src/config/data_dir.rs`)
-- Data directory can be overridden via `ACAI_DATA_DIR` environment variable
-- Logs at `~/.cache/acai/acai.YYYY-MM-DD.log` (daily rotation, 7-day retention)
+- Data directory stored in `~/.cache/cake/` (see `src/config/data_dir.rs`)
+- Project-level settings in `.cake/settings.toml`
+- Data directory can be overridden via `CAKE_DATA_DIR` environment variable
+- Logs at `~/.cache/cake/cake.YYYY-MM-DD.log` (daily rotation, 7-day retention)
 - API key required via environment variable (default: `OPENCODE_ZEN_API_TOKEN`)

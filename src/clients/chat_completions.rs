@@ -53,17 +53,17 @@ pub(super) async fn send_request(
         "{}/chat/completions",
         config.config.base_url.trim_end_matches('/')
     );
-    debug!(target: "acai", "{url}");
+    debug!(target: "cake", "{url}");
     if tracing::enabled!(tracing::Level::TRACE) {
         let request_json = serde_json::to_string(&request)?;
-        trace!(target: "acai", "{request_json}");
+        trace!(target: "cake", "{request_json}");
     }
 
     let response = client
         .post(&url)
         .json(&request)
-        .header("HTTP-Referer", "https://github.com/travisennis/acai")
-        .header("X-Title", "acai")
+        .header("HTTP-Referer", "https://github.com/travisennis/cake")
+        .header("X-Title", "cake")
         .bearer_auth(&config.api_key)
         .send()
         .await?;
@@ -78,7 +78,7 @@ pub(super) async fn send_request(
 /// Returns an error if the response body cannot be deserialized.
 pub(super) async fn parse_response(response: reqwest::Response) -> anyhow::Result<TurnResult> {
     let chat_response = response.json::<ChatResponse>().await?;
-    trace!(target: "acai", "{chat_response:?}");
+    trace!(target: "cake", "{chat_response:?}");
 
     let usage = chat_response.usage.as_ref().map(|u| Usage {
         input_tokens: u.prompt_tokens.unwrap_or(0),

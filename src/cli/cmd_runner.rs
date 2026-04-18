@@ -9,8 +9,8 @@ use crate::config::DataDir;
 /// # Examples
 ///
 /// ```rust
-/// use acai::cli::CmdRunner;
-/// use acai::config::DataDir;
+/// use cake::cli::CmdRunner;
+/// use cake::config::DataDir;
 ///
 /// struct MyCommand;
 ///

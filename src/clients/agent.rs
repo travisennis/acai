@@ -413,7 +413,7 @@ impl Agent {
                     let delay = Duration::from_secs(delay_secs);
 
                     debug!(
-                        target: "acai",
+                        target: "cake",
                         "API request failed with status {status}, retrying in {delay_secs}s (attempt {attempt}/{MAX_RETRIES})"
                     );
 
@@ -435,7 +435,7 @@ impl Agent {
                         let delay = Duration::from_secs(delay_secs);
 
                         debug!(
-                            target: "acai",
+                            target: "cake",
                             "API request failed with network error: {e}, retrying in {delay_secs}s (attempt {attempt}/{MAX_RETRIES})"
                         );
 
@@ -456,7 +456,7 @@ impl Agent {
             let status = response.status().as_u16();
             let model = &self.config.config.model;
             let error_text = response.text().await?;
-            debug!(target: "acai", "{error_text}");
+            debug!(target: "cake", "{error_text}");
 
             let body = serde_json::from_str::<serde_json::Value>(&error_text).map_or_else(
                 |_err| format!("{model}\n\n{error_text}"),

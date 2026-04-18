@@ -1,10 +1,10 @@
 # Responses API Support
 
-Acai integrates with OpenRouter's Responses API to provide multi-provider AI access with support for reasoning, tool calling, and structured conversation management.
+Cake integrates with OpenRouter's Responses API to provide multi-provider AI access with support for reasoning, tool calling, and structured conversation management.
 
 ## Overview
 
-The Responses API is OpenRouter's unified interface for interacting with various AI providers. Acai implements a client (`src/clients/responses.rs`) that handles:
+The Responses API is OpenRouter's unified interface for interacting with various AI providers. Cake implements a client (`src/clients/responses.rs`) that handles:
 
 - **Conversation Management**: Typed conversation items (messages, function calls, function outputs, reasoning)
 - **Tool Calling**: Built-in Bash tool execution with configurable timeouts
@@ -16,7 +16,7 @@ The Responses API is OpenRouter's unified interface for interacting with various
 
 ### Conversation Items
 
-The Responses API uses a structured input/output format where each conversation turn is represented as a typed item. Acai models this with the `ConversationItem` enum:
+The Responses API uses a structured input/output format where each conversation turn is represented as a typed item. Cake models this with the `ConversationItem` enum:
 
 ```rust
 pub enum ConversationItem {
@@ -68,7 +68,7 @@ pub enum Role {
 
 ### Tool Calling
 
-Acai includes a built-in `Bash` tool for executing shell commands:
+Cake includes a built-in `Bash` tool for executing shell commands:
 
 ```rust
 fn bash_tool() -> Tool {
@@ -141,13 +141,13 @@ Streamed messages include:
 export OPENROUTER_API_KEY=your_key_here
 
 # Basic usage (text output)
-./target/release/acai "Your prompt here"
+./target/release/cake "Your prompt here"
 
 # Streaming JSON output
-./target/release/acai "Your prompt here" --output-format stream-json
+./target/release/cake "Your prompt here" --output-format stream-json
 
 # With options
-./target/release/acai \
+./target/release/cake \
     --model "minimax/minimax-m2.5" \
     --max-tokens 4000 \
     --prompt "Explain Rust ownership"

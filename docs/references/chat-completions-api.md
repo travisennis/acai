@@ -1,10 +1,10 @@
 # Chat Completions API Support
 
-Acai supports the Chat Completions API as an alternative backend for interacting with AI providers. This is the standard OpenAI-compatible format used by many providers.
+Cake supports the Chat Completions API as an alternative backend for interacting with AI providers. This is the standard OpenAI-compatible format used by many providers.
 
 ## Overview
 
-The Chat Completions API (`src/clients/chat_completions.rs`) provides a widely-supported interface for AI interactions. Acai's implementation:
+The Chat Completions API (`src/clients/chat_completions.rs`) provides a widely-supported interface for AI interactions. Cake's implementation:
 
 - **Translates internal types**: Maps `ConversationItem` to Chat Completions message format
 - **Groups tool calls**: Buffers consecutive function calls into a single assistant message
@@ -26,7 +26,7 @@ match self.config.config.api_type {
 
 ### Key Translations
 
-The `build_messages()` function translates acai's internal `ConversationItem` history into Chat Completions messages:
+The `build_messages()` function translates cake's internal `ConversationItem` history into Chat Completions messages:
 
 | Internal Representation | Chat Completions Translation |
 |---|---|
@@ -215,13 +215,13 @@ The Chat Completions API does not support reasoning items. Any `ConversationItem
 export OPENCODE_ZEN_API_TOKEN=your_key_here
 
 # Basic usage - Chat Completions API is used when configured
-./target/release/acai "Your prompt here"
+./target/release/cake "Your prompt here"
 
 # Streaming JSON output
-./target/release/acai "Your prompt here" --output-format stream-json
+./target/release/cake "Your prompt here" --output-format stream-json
 
 # With max tokens override
-./target/release/acai --max-tokens 4000 "Explain Rust ownership"
+./target/release/cake --max-tokens 4000 "Explain Rust ownership"
 ```
 
 ## OpenAI Chat Completions API Reference

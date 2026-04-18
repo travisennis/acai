@@ -5,7 +5,7 @@ The `--output-format stream-json` option enables streaming JSON output for the m
 ## Usage
 
 ```bash
-acai --output-format stream-json "Your prompt here"
+cake --output-format stream-json "Your prompt here"
 ```
 
 ## Behavior

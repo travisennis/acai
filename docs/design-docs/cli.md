@@ -1,6 +1,6 @@
 # CLI Module
 
-The CLI module provides the command-line interface for acai, handling argument parsing and user-facing error messages.
+The CLI module provides the command-line interface for cake, handling argument parsing and user-facing error messages.
 
 ## Overview
 
@@ -85,10 +85,10 @@ Model-related settings (`model`, `temperature`, `top_p`, `api_type`, etc.) are c
 
 #### Settings TOML
 
-acai supports loading model configurations from `settings.toml` files:
+cake supports loading model configurations from `settings.toml` files:
 
-- **Project-level**: `.acai/settings.toml` in the current working directory
-- **Global**: `~/.cache/acai/settings.toml` for system-wide settings
+- **Project-level**: `.cake/settings.toml` in the current working directory
+- **Global**: `~/.cache/cake/settings.toml` for system-wide settings
 
 Settings are merged with project settings overriding global settings for models with the same name. This allows you to define base configurations globally and override specific models per-project.
 
@@ -118,10 +118,10 @@ Use `--model <name>` to select a named model from settings:
 
 ```bash
 # Use the "claude" model from settings.toml
-acai --model claude "Your prompt here"
+cake --model claude "Your prompt here"
 ```
 
-If `--model` is not provided, acai uses the default `ModelConfig` (currently GLM-5 via OpenCode).
+If `--model` is not provided, cake uses the default `ModelConfig` (currently GLM-5 via OpenCode).
 
 The struct implements the `CmdRunner` trait for execution:
 
@@ -157,20 +157,20 @@ The prompt and stdin can be combined—the prompt is used as instructions with s
 
 ```bash
 # Positional prompt
-acai "Implement a binary search tree"
+cake "Implement a binary search tree"
 
 # Read from stdin
-cat file.txt | acai "Summarize this"
+cat file.txt | cake "Summarize this"
 
 # Heredoc
-acai << 'EOF'
+cake << 'EOF'
 Implement a function that:
 1. Takes a list of numbers
 2. Returns the sum
 EOF
 
 # Explicit stdin with dash
-echo "Hello" | acai -
+echo "Hello" | cake -
 ```
 
 ## Related Documentation
@@ -205,7 +205,7 @@ The `--verbose` flag has no effect when used with `--output-format stream-json`.
 
 ## Exit Codes
 
-acai returns structured exit codes so that shell scripts and CI pipelines can branch on the reason for failure:
+cake returns structured exit codes so that shell scripts and CI pipelines can branch on the reason for failure:
 
 | Code | Name         | Description                                              |
 |------|--------------|----------------------------------------------------------|

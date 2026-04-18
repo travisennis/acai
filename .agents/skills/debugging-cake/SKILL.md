@@ -1,33 +1,33 @@
 ---
-name: debugging-acai
+name: debugging-cake
 description: |
-  How to investigate and debug issues with the acai CLI tool. Use this skill whenever:
+  How to investigate and debug issues with the cake CLI tool. Use this skill whenever:
   - The user reports the CLI returned "None" or an empty response
   - The user mentions truncated, incomplete, or cut-off responses
   - The user says "Tool error" without explanation occurred
   - The user wants to debug why a task failed or behaved unexpectedly
   - The user asks about session files, logs, or how to investigate CLI behavior
   - The user needs to understand what happened during a previous CLI session
-  - Any mention of debugging, investigating, or troubleshooting the acai CLI itself
+  - Any mention of debugging, investigating, or troubleshooting the cake CLI itself
 ---
 
-# Debugging Acai CLI
+# Debugging Cake CLI
 
-This skill helps investigate and debug issues with the acai CLI tool.
+This skill helps investigate and debug issues with the cake CLI tool.
 
 ## Quick Reference: Essential Commands
 
 ### Find Latest Session
 ```bash
 # List all session directories
-ls ~/.cache/acai/sessions/
+ls ~/.cache/cake/sessions/
 
 # Find the directory hash for current project
 echo -n "$(pwd)" | shasum -a 256 | cut -c1-16
 
 # Quick way to find latest session for current directory (most recently modified .jsonl)
 HASH=$(echo -n "$(pwd)" | shasum -a 256 | cut -c1-16)
-ls -t ~/.cache/acai/sessions/$HASH/*.jsonl 2>/dev/null | head -1
+ls -t ~/.cache/cake/sessions/$HASH/*.jsonl 2>/dev/null | head -1
 ```
 
 ### View Session Files
@@ -36,82 +36,82 @@ Sessions use JSON Lines (`.jsonl`) format. Use `jq -c` to process each line:
 
 ```bash
 # View full session (all lines, pretty-printed)
-jq '.' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+jq '.' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
 
 # View session header (first line - metadata)
-head -1 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq '.'
+head -1 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq '.'
 
 # View last 5 messages (most useful)
-tail -5 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq '.'
+tail -5 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq '.'
 
 # View all user prompts (see what was asked)
-jq 'select(.type == "message" and .role == "user") | .content' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "message" and .role == "user") | .content' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
 
 # View all assistant responses (see what was returned)
-jq 'select(.role == "assistant") | .content' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+jq 'select(.role == "assistant") | .content' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
 
 # Check if response was complete (last line)
-tail -1 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq '{type, status}'
+tail -1 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq '{type, status}'
 
 # View all reasoning messages
-jq 'select(.type == "reasoning")' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "reasoning")' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
 
 # View all tool calls
-jq 'select(.type == "function_call")' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "function_call")' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
 
 # View all tool outputs
-jq 'select(.type == "function_call_output")' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "function_call_output")' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
 
 # View tool calls AND outputs together (correlate calls with results)
-jq 'select(.type == "function_call" or .type == "function_call_output")' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "function_call" or .type == "function_call_output")' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
 
 # Count messages by type (see conversation structure)
-jq -r '.type' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | sort | uniq -c
+jq -r '.type' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | sort | uniq -c
 
 # Find what prompt caused a specific behavior (search by content)
-jq 'select(.type == "message" and .role == "user") | select(.content | contains("refactor"))' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "message" and .role == "user") | select(.content | contains("refactor"))' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
 ```
 
 ### Search Logs
 
-Log files use daily rotation with naming `acai.YYYY-MM-DD.log`. The dated file IS the current
+Log files use daily rotation with naming `cake.YYYY-MM-DD.log`. The dated file IS the current
 log file for that day - there is no separate "current" file without a date.
 
 ```bash
 # View today's log entries
-tail -100 ~/.cache/acai/acai.$(date +%Y-%m-%d).log
+tail -100 ~/.cache/cake/cake.$(date +%Y-%m-%d).log
 
 # View logs in real-time
-tail -f ~/.cache/acai/acai.$(date +%Y-%m-%d).log
+tail -f ~/.cache/cake/cake.$(date +%Y-%m-%d).log
 
 # View recent errors (one-liner)
-tail -50 ~/.cache/acai/acai.$(date +%Y-%m-%d).log | grep -i error
+tail -50 ~/.cache/cake/cake.$(date +%Y-%m-%d).log | grep -i error
 
 # Search for errors in today's log
-grep -i "error" ~/.cache/acai/acai.$(date +%Y-%m-%d).log
+grep -i "error" ~/.cache/cake/cake.$(date +%Y-%m-%d).log
 
 # Search for warnings
-grep -i "warn" ~/.cache/acai/acai.$(date +%Y-%m-%d).log
+grep -i "warn" ~/.cache/cake/cake.$(date +%Y-%m-%d).log
 
 # Search across all log files
-grep -i "error" ~/.cache/acai/acai.*.log
+grep -i "error" ~/.cache/cake/cake.*.log
 
 # Find all API requests
-grep "https://opencode.ai" ~/.cache/acai/acai.*.log
+grep "https://opencode.ai" ~/.cache/cake/cake.*.log
 
 # Find truncated outputs
-grep "output truncated" ~/.cache/acai/acai.*.log
+grep "output truncated" ~/.cache/cake/cake.*.log
 
 # List all log files
-ls -la ~/.cache/acai/acai.*.log
+ls -la ~/.cache/cake/cake.*.log
 ```
 
 ## Session Storage Structure
 
-Sessions are stored in `~/.cache/acai/sessions/` (or `$ACAI_DATA_DIR/sessions/`) organized by a hash of the working directory:
+Sessions are stored in `~/.cache/cake/sessions/` (or `$CAKE_DATA_DIR/sessions/`) organized by a hash of the working directory:
 
 ```
-~/.cache/acai/sessions/
+~/.cache/cake/sessions/
   {dir_hash}/           # First 16 hex chars of SHA-256 of working dir path
     {uuid}.jsonl        # Individual session files (JSON Lines format)
 ```
@@ -122,7 +122,7 @@ The most recent session is determined by file modification time (no symlink need
 
 ```bash
 # Find the most recently modified session for each directory
-for dir in ~/.cache/acai/sessions/*/; do
+for dir in ~/.cache/cake/sessions/*/; do
   echo "Directory: $(basename $dir)"
   ls -lt "$dir"*.jsonl 2>/dev/null | head -1
   echo "---"
@@ -177,7 +177,7 @@ Each conversation item (message, function_call, function_call_output, reasoning)
 ```bash
 # A complete response ends with type: "message" and status: "completed"
 # If it ends with "reasoning" or has no status, it was truncated
-tail -1 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq '{type, status}'
+tail -1 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq '{type, status}'
 ```
 
 **Example truncated response** (last line of `.jsonl` file):
@@ -197,7 +197,7 @@ Note: The `summary` array is cut off mid-sentence (incomplete reasoning).
 **Check**:
 ```bash
 # Find all function_call_output messages and check for errors
-jq 'select(.type == "function_call_output") | {call_id, output: .output[0:200]}' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "function_call_output") | {call_id, output: .output[0:200]}' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
 ```
 
 ### 3. "Tool Error" Without Explanation
@@ -205,7 +205,7 @@ jq 'select(.type == "function_call_output") | {call_id, output: .output[0:200]}'
 **Symptom**: CLI returns just "Tool error:" with no context.
 
 **Investigation steps**:
-1. Check the log file for that day: `~/.cache/acai/acai.YYYY-MM-DD.log`
+1. Check the log file for that day: `~/.cache/cake/cake.YYYY-MM-DD.log`
 2. Look for the specific tool that failed
 3. Check if it's a transient issue (network, file permissions, etc.)
 
@@ -214,13 +214,13 @@ jq 'select(.type == "function_call_output") | {call_id, output: .output[0:200]}'
 **Check**:
 ```bash
 # Check session file size
-ls -lh ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+ls -lh ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
 
 # Count total lines (messages + header)
-wc -l ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+wc -l ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
 
 # Count total characters in all content fields
-jq -r '.content // ""' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | wc -c
+jq -r '.content // ""' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | wc -c
 ```
 
 ### 5. Model Made Unexpected Tool Calls
@@ -228,22 +228,22 @@ jq -r '.content // ""' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | wc -c
 **Check**:
 ```bash
 # List all tool calls made
-jq 'select(.type == "function_call") | {name, arguments}' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "function_call") | {name, arguments}' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
 ```
 
 ## Correlating Sessions with Logs
 
 ```bash
 # 1. Get the session ID from the header line
-SESSION_ID=$(head -1 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq -r '.session_id')
+SESSION_ID=$(head -1 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq -r '.session_id')
 echo "Session ID: $SESSION_ID"
 
 # 2. Find log entries around session creation time
-TIMESTAMP=$(head -1 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq -r '.timestamp')
+TIMESTAMP=$(head -1 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq -r '.timestamp')
 echo "Session start: $TIMESTAMP"
 
 # 3. Search logs for that session's activity
-grep "$SESSION_ID" ~/.cache/acai/acai.*.log
+grep "$SESSION_ID" ~/.cache/cake/cake.*.log
 ```
 
 ## Quick Reference Commands
@@ -251,7 +251,7 @@ grep "$SESSION_ID" ~/.cache/acai/acai.*.log
 ```bash
 # Find latest session for current directory
 HASH=$(echo -n "$(pwd)" | shasum -a 256 | cut -c1-16)
-LATEST=$(ls -t ~/.cache/acai/sessions/$HASH/*.jsonl 2>/dev/null | head -1)
+LATEST=$(ls -t ~/.cache/cake/sessions/$HASH/*.jsonl 2>/dev/null | head -1)
 
 # View last 5 messages (most common debugging command)
 tail -5 "$LATEST" | jq '.'
@@ -260,7 +260,7 @@ tail -5 "$LATEST" | jq '.'
 tail -1 "$LATEST" | jq '{type, status}'
 
 # View recent errors in logs (one-liner)
-tail -50 ~/.cache/acai/acai.$(date +%Y-%m-%d).log | grep -i error
+tail -50 ~/.cache/cake/cake.$(date +%Y-%m-%d).log | grep -i error
 
 # View full session file
 less "$LATEST"
@@ -283,7 +283,7 @@ When the user reports an issue:
    - Look for where things went wrong
 
 4. **Check logs**
-   - `tail -100 ~/.cache/acai/acai.$(date +%Y-%m-%d).log | grep -i error`
+   - `tail -100 ~/.cache/cake/cake.$(date +%Y-%m-%d).log | grep -i error`
    - Look for tool failures or API errors
 
 5. **Identify patterns**
@@ -313,10 +313,10 @@ When commands fail with `Operation not permitted (os error 1)` inside the sandbo
 
 ```bash
 # Check if sandbox is active
-echo $ACAI_SANDBOX  # Should be unset or "on"
+echo $CAKE_SANDBOX  # Should be unset or "on"
 
 # Test a command in the sandbox with the same profile
-sandbox-exec -f /tmp/acai/sandbox_profiles/acai_sandbox_*.sb bash -c "your-command-here"
+sandbox-exec -f /tmp/cake/sandbox_profiles/cake_sandbox_*.sb bash -c "your-command-here"
 ```
 
 ### Using Trace Mode
@@ -325,10 +325,10 @@ Create a debug profile that logs denials instead of blocking them. Add a `(trace
 
 ```bash
 # 1. Find the generated profile
-ls -la /tmp/acai/sandbox_profiles/
+ls -la /tmp/cake/sandbox_profiles/
 
 # 2. Copy it and add trace mode
-cp /tmp/acai/sandbox_profiles/acai_sandbox_XXXX.sb /tmp/debug_sandbox.sb
+cp /tmp/cake/sandbox_profiles/cake_sandbox_XXXX.sb /tmp/debug_sandbox.sb
 
 # 3. Edit to add trace output — replace "(deny default)" with:
 #    (deny default (with send-signal SIGKILL))
@@ -356,29 +356,29 @@ cat /tmp/sandbox_trace.log
 ### Inspecting the Generated Profile
 
 ```bash
-# View the actual profile being used (check acai logs)
-grep "Generated sandbox profile" ~/.cache/acai/acai.*.log
+# View the actual profile being used (check cake logs)
+grep "Generated sandbox profile" ~/.cache/cake/cake.*.log
 
 # Or find the latest profile file
-ls -lt /tmp/acai/sandbox_profiles/ | head -5
-cat /tmp/acai/sandbox_profiles/acai_sandbox_*.sb
+ls -lt /tmp/cake/sandbox_profiles/ | head -5
+cat /tmp/cake/sandbox_profiles/cake_sandbox_*.sb
 ```
 
 ## File Locations Summary
 
 | File Type | Location |
 |-----------|----------|
-| Sessions | `~/.cache/acai/sessions/{hash}/{uuid}.jsonl` |
-| Logs | `~/.cache/acai/acai.YYYY-MM-DD.log` |
-| Config | `~/.cache/acai/` and `.acai` |
-| User-level AGENTS.md | `~/.acai/AGENTS.md` |
+| Sessions | `~/.cache/cake/sessions/{hash}/{uuid}.jsonl` |
+| Logs | `~/.cache/cake/cake.YYYY-MM-DD.log` |
+| Config | `~/.cache/cake/` and `.cake` |
+| User-level AGENTS.md | `~/.cake/AGENTS.md` |
 | Project-level AGENTS.md | `./AGENTS.md` |
 
 ## Configuration
 
-- **Config directory**: `~/.cache/acai/` and `.acai` (see `src/config/data_dir.rs`)
-- **Data directory override**: Set `ACAI_DATA_DIR` to use a custom data directory instead of `~/.cache/acai/`
-- **Logs**: `~/.cache/acai/acai.YYYY-MM-DD.log` (or `$ACAI_DATA_DIR/acai.YYYY-MM-DD.log` if set, daily rotation)
+- **Config directory**: `~/.cache/cake/` and `.cake` (see `src/config/data_dir.rs`)
+- **Data directory override**: Set `CAKE_DATA_DIR` to use a custom data directory instead of `~/.cache/cake/`
+- **Logs**: `~/.cache/cake/cake.YYYY-MM-DD.log` (or `$CAKE_DATA_DIR/cake.YYYY-MM-DD.log` if set, daily rotation)
 - **API key**: Required via environment variable (default: `OPENCODE_ZEN_API_TOKEN`)
 
 ## Session Restoration and Continuation
@@ -386,7 +386,7 @@ cat /tmp/acai/sandbox_profiles/acai_sandbox_*.sb
 To continue a previous session:
 
 ```bash
-./target/release/acai --continue "What was my last message?"
+./target/release/cake --continue "What was my last message?"
 ```
 
 The `--continue` flag loads the latest session from the current directory.

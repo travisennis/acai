@@ -1,6 +1,6 @@
 # Design Documents
 
-This directory contains design documents and architectural decisions for the acai project.
+This directory contains design documents and architectural decisions for the cake project.
 
 ## Architecture Decision Records
 

@@ -51,7 +51,7 @@ struct SessionHeader {
 /// # Examples
 ///
 /// ```
-/// use acai::config::Session;
+/// use cake::config::Session;
 /// use std::path::PathBuf;
 ///
 /// let session = Session::new("uuid-here".to_string(), PathBuf::from("/project"));
@@ -75,7 +75,7 @@ impl Session {
     /// # Examples
     ///
     /// ```
-    /// use acai::config::Session;
+    /// use cake::config::Session;
     /// use std::path::PathBuf;
     ///
     /// let session = Session::new("uuid".to_string(), PathBuf::from("/project"));
@@ -98,7 +98,7 @@ impl Session {
     /// # Examples
     ///
     /// ```no_run
-    /// use acai::config::Session;
+    /// use cake::config::Session;
     /// use std::path::Path;
     ///
     /// let session = Session::load(Path::new("session.jsonl"))?;
@@ -210,7 +210,7 @@ impl Session {
     /// # Examples
     ///
     /// ```no_run
-    /// use acai::config::Session;
+    /// use cake::config::Session;
     /// use std::path::PathBuf;
     ///
     /// let mut session = Session::new("uuid".to_string(), PathBuf::from("/project"));

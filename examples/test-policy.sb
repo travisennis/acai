@@ -779,7 +779,7 @@
 )
 
 ;; #safehouse-test-id:workdir-grant# Allow read/write access to the selected workdir.
-;; Generated ancestor directory literals for selected workdir: /Users/travisennis/Projects/acai
+;; Generated ancestor directory literals for selected workdir: /Users/travisennis/Projects/cake
 ;;
 ;; Why file-read* (not file-read-metadata) with literal (not subpath):
 ;; Agents (notably Claude Code) call readdir() on every ancestor of the working
@@ -792,8 +792,8 @@
     (literal "/Users")
     (literal "/Users/travisennis")
     (literal "/Users/travisennis/Projects")
-    (literal "/Users/travisennis/Projects/acai")
+    (literal "/Users/travisennis/Projects/cake")
 )
 
-(allow file-read* file-write* (subpath "/Users/travisennis/Projects/acai"))
+(allow file-read* file-write* (subpath "/Users/travisennis/Projects/cake"))
 

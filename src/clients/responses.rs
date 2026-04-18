@@ -60,17 +60,17 @@ pub(super) async fn send_request(
     };
 
     let url = format!("{}/responses", config.config.base_url.trim_end_matches('/'));
-    debug!(target: "acai", "{url}");
+    debug!(target: "cake", "{url}");
     if tracing::enabled!(tracing::Level::TRACE) {
         let prompt_json = serde_json::to_string(&prompt)?;
-        trace!(target: "acai", "{prompt_json}");
+        trace!(target: "cake", "{prompt_json}");
     }
 
     let response = client
         .post(&url)
         .json(&prompt)
-        .header("HTTP-Referer", "https://github.com/travisennis/acai")
-        .header("X-Title", "acai")
+        .header("HTTP-Referer", "https://github.com/travisennis/cake")
+        .header("X-Title", "cake")
         .bearer_auth(&config.api_key)
         .send()
         .await?;
@@ -85,7 +85,7 @@ pub(super) async fn send_request(
 /// Returns an error if the response body cannot be deserialized.
 pub(super) async fn parse_response(response: reqwest::Response) -> anyhow::Result<TurnResult> {
     let api_response = response.json::<ApiResponse>().await?;
-    trace!(target: "acai", "{api_response:?}");
+    trace!(target: "cake", "{api_response:?}");
 
     let usage = api_response.usage.as_ref().map(map_usage);
     let items = parse_output_items(&api_response);
@@ -252,7 +252,7 @@ mod tests {
         let history = vec![
             ConversationItem::Message {
                 role: Role::System,
-                content: "You are acai.".to_string(),
+                content: "You are cake.".to_string(),
                 id: None,
                 status: None,
                 timestamp: None,
@@ -266,7 +266,7 @@ mod tests {
             },
         ];
         let (instructions, remaining) = extract_instructions(&history);
-        assert_eq!(instructions, Some("You are acai."));
+        assert_eq!(instructions, Some("You are cake."));
         assert_eq!(remaining.len(), 1);
         assert!(matches!(
             &remaining[0],
@@ -313,7 +313,7 @@ mod tests {
             },
             ConversationItem::Message {
                 role: Role::System,
-                content: "You are acai.".to_string(),
+                content: "You are cake.".to_string(),
                 id: None,
                 status: None,
                 timestamp: None,

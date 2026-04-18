@@ -13,13 +13,13 @@ use crate::config::model::{ApiType, ModelConfig};
 /// # Examples
 ///
 /// ```no_run
-/// use acai::config::SettingsLoader;
+/// use cake::config::SettingsLoader;
 ///
 /// let models = SettingsLoader::load(None, "/cache".as_ref())?;
 /// for (name, def) in &models {
 ///     println!("Model: {} -> {}", name, def.model);
 /// }
-/// # Ok::<(), acai::config::SettingsError>(())
+/// # Ok::<(), cake::config::SettingsError>(())
 /// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -36,13 +36,13 @@ pub struct Settings {
 /// # Examples
 ///
 /// ```no_run
-/// use acai::config::SettingsLoader;
+/// use cake::config::SettingsLoader;
 ///
 /// let models = SettingsLoader::load(None, "/cache".as_ref())?;
 /// if let Some(def) = models.get("my-model") {
 ///     println!("Using model: {}", def.model);
 /// }
-/// # Ok::<(), acai::config::SettingsError>(())
+/// # Ok::<(), cake::config::SettingsError>(())
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelDefinition {
@@ -102,7 +102,7 @@ impl ModelDefinition {
     /// # Examples
     ///
     /// ```
-    /// use acai::config::ModelDefinition;
+    /// use cake::config::ModelDefinition;
     ///
     /// assert!(ModelDefinition::validate_name("my-model").is_ok());
     /// assert!(ModelDefinition::validate_name("model-123").is_ok());
@@ -141,7 +141,7 @@ impl ModelDefinition {
     /// # Examples
     ///
     /// ```
-    /// use acai::config::{ModelDefinition, ApiType};
+    /// use cake::config::{ModelDefinition, ApiType};
     ///
     /// let def = ModelDefinition {
     ///     name: "test".to_string(),
@@ -202,7 +202,7 @@ pub enum SettingsError {
 /// # Examples
 ///
 /// ```no_run
-/// use acai::config::SettingsLoader;
+/// use cake::config::SettingsLoader;
 /// use std::path::Path;
 ///
 /// let models = SettingsLoader::load(
@@ -230,25 +230,25 @@ impl SettingsLoader {
     ///
     /// Settings are loaded from:
     /// 1. Global settings: `{global_dir}/settings.toml`
-    /// 2. Project settings: `{project_dir}/.acai/settings.toml`
+    /// 2. Project settings: `{project_dir}/.cake/settings.toml`
     ///
     /// Project settings override global settings for models with the same name.
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// use acai::config::SettingsLoader;
+    /// use cake::config::SettingsLoader;
     /// use std::path::Path;
     ///
     /// let models = SettingsLoader::load(
     ///     Some(Path::new("/my/project")),
-    ///     Path::new("/home/user/.cache/acai"),
+    ///     Path::new("/home/user/.cache/cake"),
     /// )?;
     ///
     /// if let Some(model) = models.get("default") {
     ///     println!("Default model: {}", model.model);
     /// }
-    /// # Ok::<(), acai::config::SettingsError>(())
+    /// # Ok::<(), cake::config::SettingsError>(())
     /// ```
     ///
     /// # Errors
@@ -269,7 +269,7 @@ impl SettingsLoader {
 
         // Load project settings (override global for same names)
         if let Some(project_dir) = project_dir {
-            let project_path = project_dir.join(".acai").join("settings.toml");
+            let project_path = project_dir.join(".cake").join("settings.toml");
             if let Some(settings) = Self::load_file(&project_path)? {
                 Self::add_models_to_map(&mut models, settings.models)?;
             }
@@ -329,12 +329,12 @@ mod tests {
         dir
     }
 
-    /// Create a temp directory with .acai/settings.toml (for project settings)
+    /// Create a temp directory with .cake/settings.toml (for project settings)
     fn create_project_settings(content: &str) -> TempDir {
         let dir = TempDir::new().unwrap();
-        let acai_dir = dir.path().join(".acai");
-        std::fs::create_dir_all(&acai_dir).unwrap();
-        let path = acai_dir.join("settings.toml");
+        let cake_dir = dir.path().join(".cake");
+        std::fs::create_dir_all(&cake_dir).unwrap();
+        let path = cake_dir.join("settings.toml");
         std::fs::write(&path, content).unwrap();
         dir
     }

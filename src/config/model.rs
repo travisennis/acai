@@ -6,7 +6,7 @@ use crate::config::defaults::{
 
 /// The type of API endpoint to use for model completions.
 ///
-/// Acai supports multiple API backends for interacting with AI providers:
+/// Cake supports multiple API backends for interacting with AI providers:
 ///
 /// - `Responses`: `OpenRouter`'s Responses API format, which supports reasoning traces
 ///   and structured outputs. Use this for providers that support the Responses API.
@@ -31,7 +31,7 @@ pub enum ApiType {
 /// # Examples
 ///
 /// ```
-/// use acai::config::ModelConfig;
+/// use cake::config::ModelConfig;
 ///
 /// let config = ModelConfig::default();
 /// assert_eq!(config.model, "anthropic/claude-3.5-sonnet");
@@ -94,7 +94,7 @@ impl Default for ModelConfig {
 /// # Examples
 ///
 /// ```no_run
-/// use acai::config::{ModelConfig, ResolvedModelConfig};
+/// use cake::config::{ModelConfig, ResolvedModelConfig};
 ///
 /// let config = ModelConfig::default();
 /// let resolved = ResolvedModelConfig::resolve(config)?;
@@ -118,7 +118,7 @@ impl ResolvedModelConfig {
     /// # Examples
     ///
     /// ```no_run
-    /// use acai::config::{ModelConfig, ResolvedModelConfig};
+    /// use cake::config::{ModelConfig, ResolvedModelConfig};
     ///
     /// let config = ModelConfig::default();
     /// let resolved = ResolvedModelConfig::resolve(config)?;
@@ -189,24 +189,24 @@ mod tests {
 
     #[test]
     fn test_resolve_missing_env_var() {
-        temp_env::with_var("ACAI_TEST_NONEXISTENT_KEY_12345", None::<&str>, || {
+        temp_env::with_var("CAKE_TEST_NONEXISTENT_KEY_12345", None::<&str>, || {
             let config = ModelConfig {
-                api_key_env: "ACAI_TEST_NONEXISTENT_KEY_12345".to_string(),
+                api_key_env: "CAKE_TEST_NONEXISTENT_KEY_12345".to_string(),
                 ..ModelConfig::default()
             };
 
             let result = ResolvedModelConfig::resolve(config);
             assert!(result.is_err());
             let err = result.unwrap_err().to_string();
-            assert!(err.contains("ACAI_TEST_NONEXISTENT_KEY_12345"));
+            assert!(err.contains("CAKE_TEST_NONEXISTENT_KEY_12345"));
         });
     }
 
     #[test]
     fn test_resolve_empty_env_var() {
-        temp_env::with_var("ACAI_TEST_EMPTY_KEY", Some(""), || {
+        temp_env::with_var("CAKE_TEST_EMPTY_KEY", Some(""), || {
             let config = ModelConfig {
-                api_key_env: "ACAI_TEST_EMPTY_KEY".to_string(),
+                api_key_env: "CAKE_TEST_EMPTY_KEY".to_string(),
                 ..ModelConfig::default()
             };
 
@@ -219,15 +219,15 @@ mod tests {
 
     #[test]
     fn test_resolve_success() {
-        temp_env::with_var("ACAI_TEST_VALID_KEY", Some("sk-test-123"), || {
+        temp_env::with_var("CAKE_TEST_VALID_KEY", Some("sk-test-123"), || {
             let config = ModelConfig {
-                api_key_env: "ACAI_TEST_VALID_KEY".to_string(),
+                api_key_env: "CAKE_TEST_VALID_KEY".to_string(),
                 ..ModelConfig::default()
             };
 
             let resolved = ResolvedModelConfig::resolve(config).unwrap();
             assert_eq!(resolved.api_key, "sk-test-123");
-            assert_eq!(resolved.config.api_key_env, "ACAI_TEST_VALID_KEY");
+            assert_eq!(resolved.config.api_key_env, "CAKE_TEST_VALID_KEY");
         });
     }
 }

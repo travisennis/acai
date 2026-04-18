@@ -4,7 +4,7 @@ The `clients::tools` module provides the tool execution framework that enables A
 
 ## Overview
 
-Acai provides four built-in tools:
+Cake provides four built-in tools:
 
 1. **Bash**: Execute shell commands with sandboxing
 2. **Read**: Read file contents or list directories
@@ -110,7 +110,7 @@ This allows creating new files in new subdirectories while maintaining security.
 
 **Features**:
 - OS-level sandboxing (Seatbelt on macOS, Landlock on Linux)
-- Configurable via `ACAI_SANDBOX=0` environment variable
+- Configurable via `CAKE_SANDBOX=0` environment variable
 - Output streaming with 100KB read cap
 - Automatic truncation for large outputs (saved to temp file)
 - Metadata footer with exit code and execution time
@@ -129,7 +129,7 @@ When command output exceeds the 50KB inline limit, the full output is saved to a
 
 ```
 [Output too long — 75000 bytes, 1500 lines.]
-Full output saved to: /tmp/acai/bash_output_<uuid>.txt
+Full output saved to: /tmp/cake/bash_output_<uuid>.txt
 You can search it with `grep` or view portions with `head`/`tail`.
 Consider reformulating the command to produce less output.
 
@@ -173,7 +173,7 @@ The Bash tool automatically detects binary output and prevents returning corrupt
 - Non-printable character ratio: More than 30% non-printable characters (excluding common whitespace: `\t`, `\n`, `\r`) indicates binary
 
 When binary output is detected:
-1. The data is saved to a temp file in `/tmp/acai/bash_binary_<uuid>`
+1. The data is saved to a temp file in `/tmp/cake/bash_binary_<uuid>`
 2. MIME type is detected via magic numbers for common formats:
    - Images: PNG, JPEG, GIF
    - Documents: PDF
@@ -186,7 +186,7 @@ Example binary output message:
 ```
 [Binary output detected - 12345 bytes (12.1 KB)]
 Detected type: image/png
-Binary data saved to: /tmp/acai/bash_binary_abc123
+Binary data saved to: /tmp/cake/bash_binary_abc123
 The command produced binary output which cannot be displayed as text.
 You can inspect the file with appropriate tools (e.g., `file`, `hexdump`, `xxd`).
 [exit:0 | 15ms]

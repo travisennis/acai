@@ -1,6 +1,6 @@
 //! Integration tests for exit codes.
 //!
-//! These tests verify that acai returns the correct exit code for each
+//! These tests verify that cake returns the correct exit code for each
 //! failure mode:
 //!
 //! - 0 — success
@@ -13,14 +13,14 @@
 use std::process::{Command, Stdio};
 
 fn get_binary_path() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_BIN_EXE_acai"))
+    std::path::PathBuf::from(env!("CARGO_BIN_EXE_cake"))
 }
 
-/// Build a `Command` with an isolated `ACAI_DATA_DIR`.
-fn acai_cmd() -> Command {
+/// Build a `Command` with an isolated `CAKE_DATA_DIR`.
+fn cake_cmd() -> Command {
     let mut cmd = Command::new(get_binary_path());
-    let tmp = std::env::temp_dir().join(format!("acai_exit_test_{}", std::process::id()));
-    cmd.env("ACAI_DATA_DIR", tmp);
+    let tmp = std::env::temp_dir().join(format!("cake_exit_test_{}", std::process::id()));
+    cmd.env("CAKE_DATA_DIR", tmp);
     cmd
 }
 
@@ -28,7 +28,7 @@ fn acai_cmd() -> Command {
 
 #[test]
 fn test_help_exits_zero() {
-    let output = acai_cmd()
+    let output = cake_cmd()
         .arg("--help")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -40,7 +40,7 @@ fn test_help_exits_zero() {
 
 #[test]
 fn test_version_exits_zero() {
-    let output = acai_cmd()
+    let output = cake_cmd()
         .arg("--version")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -54,7 +54,7 @@ fn test_version_exits_zero() {
 
 #[test]
 fn test_no_prompt_exits_three() {
-    let output = acai_cmd()
+    let output = cake_cmd()
         .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -67,7 +67,7 @@ fn test_no_prompt_exits_three() {
 
 #[test]
 fn test_invalid_flag_exits_three() {
-    let output = acai_cmd()
+    let output = cake_cmd()
         .arg("--bogus-flag")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -80,7 +80,7 @@ fn test_invalid_flag_exits_three() {
 
 #[test]
 fn test_missing_api_key_exits_three() {
-    let output = acai_cmd()
+    let output = cake_cmd()
         .arg("test prompt")
         .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
@@ -100,7 +100,7 @@ fn test_missing_api_key_exits_three() {
 
 #[test]
 fn test_unknown_model_exits_three() {
-    let output = acai_cmd()
+    let output = cake_cmd()
         .arg("--model")
         .arg("nonexistent_model")
         .arg("test prompt")
@@ -116,7 +116,7 @@ fn test_unknown_model_exits_three() {
 
 #[test]
 fn test_invalid_session_uuid_exits_three() {
-    let output = acai_cmd()
+    let output = cake_cmd()
         .arg("--resume")
         .arg("not-a-uuid")
         .arg("test prompt")

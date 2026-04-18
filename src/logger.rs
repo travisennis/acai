@@ -20,14 +20,14 @@ pub enum Error {
 /// This keeps user-facing output clean while preserving detailed logs for debugging.
 ///
 /// Log level is controlled by the `RUST_LOG` environment variable.
-/// If not set, defaults to INFO level for the acai crate.
-/// Set `RUST_LOG=acai=trace` for verbose debugging.
+/// If not set, defaults to INFO level for the cake crate.
+/// Set `RUST_LOG=cake=trace` for verbose debugging.
 ///
 /// # Log File Naming
 ///
-/// With daily rotation, log files are named `acai.YYYY-MM-DD.log` where the date
+/// With daily rotation, log files are named `cake.YYYY-MM-DD.log` where the date
 /// is the current day. For example, logs for March 29, 2026 are written to
-/// `acai.2026-03-29.log`. At midnight, a new file is created for the next day.
+/// `cake.2026-03-29.log`. At midnight, a new file is created for the next day.
 ///
 /// There is no "current" log file without a date - the dated file IS the current
 /// log file for that day. This is the standard behavior of tracing-appender's
@@ -35,14 +35,14 @@ pub enum Error {
 ///
 /// Log files are retained for up to 7 days.
 pub fn configure(log_path: &Path) -> Result<(), Error> {
-    // Default to INFO level for acai, but allow RUST_LOG to override
+    // Default to INFO level for cake, but allow RUST_LOG to override
     let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("acai=info"));
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("cake=info"));
 
     // Daily rotation with 7-day retention
     let file_appender = RollingFileAppender::builder()
         .rotation(Rotation::DAILY)
-        .filename_prefix("acai")
+        .filename_prefix("cake")
         .filename_suffix("log")
         .max_log_files(7)
         .build(log_path)?;

@@ -1,7 +1,7 @@
 //! Message and role types for conversation handling.
 //!
 //! This module defines the core types used to represent conversation messages
-//! between the user, assistant, and system in the acai CLI.
+//! between the user, assistant, and system in the cake CLI.
 //!
 //! # Key Types
 //!

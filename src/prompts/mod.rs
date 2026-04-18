@@ -18,16 +18,16 @@ use crate::config::AgentsFile;
 /// # Examples
 ///
 /// ```
-/// use acai::prompts::build_system_prompt;
+/// use cake::prompts::build_system_prompt;
 /// use std::path::Path;
 ///
 /// let prompt = build_system_prompt(Path::new("/project"), &[]);
-/// assert!(prompt.contains("You are acai"));
+/// assert!(prompt.contains("You are cake"));
 /// assert!(prompt.contains("Current working directory: /project"));
 /// ```
 pub fn build_system_prompt(working_dir: &Path, agents_files: &[AgentsFile]) -> String {
     let mut prompt = String::from(
-        "You are acai. You are running as a coding agent in a CLI on the user's computer.",
+        "You are cake. You are running as a coding agent in a CLI on the user's computer.",
     );
 
     let context = format_agents_context(agents_files);
@@ -85,7 +85,7 @@ mod tests {
     fn empty_agents_files() {
         let prompt = build_system_prompt(Path::new("/tmp"), &[]);
         assert!(prompt.starts_with(
-            "You are acai. You are running as a coding agent in a CLI on the user's computer."
+            "You are cake. You are running as a coding agent in a CLI on the user's computer."
         ));
         assert!(prompt.contains("Current working directory: /tmp"));
         assert!(prompt.contains("Today's date:"));
@@ -95,7 +95,7 @@ mod tests {
     fn with_agents_files() {
         let files = vec![
             AgentsFile {
-                path: "~/.acai/AGENTS.md".to_string(),
+                path: "~/.cake/AGENTS.md".to_string(),
                 content: "User level instructions".to_string(),
             },
             AgentsFile {
@@ -105,7 +105,7 @@ mod tests {
         ];
         let prompt = build_system_prompt(Path::new("/tmp"), &files);
         assert!(prompt.contains("## Additional Context:"));
-        assert!(prompt.contains("~/.acai/AGENTS.md"));
+        assert!(prompt.contains("~/.cake/AGENTS.md"));
         assert!(prompt.contains("./AGENTS.md"));
         assert!(prompt.contains("<instructions>"));
         assert!(prompt.contains("User level instructions"));
@@ -117,12 +117,12 @@ mod tests {
     #[test]
     fn only_user_agents_file() {
         let files = vec![AgentsFile {
-            path: "~/.acai/AGENTS.md".to_string(),
+            path: "~/.cake/AGENTS.md".to_string(),
             content: "User instructions".to_string(),
         }];
         let prompt = build_system_prompt(Path::new("/tmp"), &files);
         assert!(prompt.contains("## Additional Context:"));
-        assert!(prompt.contains("~/.acai/AGENTS.md"));
+        assert!(prompt.contains("~/.cake/AGENTS.md"));
         assert!(!prompt.contains("./AGENTS.md"));
         assert!(prompt.contains("Current working directory: /tmp"));
         assert!(prompt.contains("Today's date:"));
@@ -132,7 +132,7 @@ mod tests {
     fn empty_content_skipped() {
         let files = vec![
             AgentsFile {
-                path: "~/.acai/AGENTS.md".to_string(),
+                path: "~/.cake/AGENTS.md".to_string(),
                 content: String::new(),
             },
             AgentsFile {

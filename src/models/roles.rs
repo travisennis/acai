@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// # Examples
 ///
 /// ```
-/// use acai::models::Role;
+/// use cake::models::Role;
 ///
 /// assert_eq!(Role::User.as_str(), "user");
 /// assert_eq!(Role::Assistant.as_str(), "assistant");
@@ -32,7 +32,7 @@ impl Role {
     /// # Examples
     ///
     /// ```
-    /// use acai::models::Role;
+    /// use cake::models::Role;
     ///
     /// assert_eq!(Role::System.as_str(), "system");
     /// assert_eq!(Role::Assistant.as_str(), "assistant");

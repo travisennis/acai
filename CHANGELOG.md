@@ -36,7 +36,7 @@ All notable changes to this project will be documented in this file.
 - Add support for ollama
 - Add ability to parse context for instructions
 - Add Request struct for Anthropic
-- Change name of project to acai
+- Change name of project to cake
 
 ### 🐛 Bug Fixes
 

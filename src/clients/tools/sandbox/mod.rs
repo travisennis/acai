@@ -263,9 +263,9 @@ pub(super) fn detect_platform() -> Option<Box<dyn SandboxStrategy>> {
 
 /// Check if sandboxing should be disabled via environment variable
 pub(super) fn is_sandbox_disabled() -> bool {
-    match std::env::var("ACAI_SANDBOX").as_deref() {
+    match std::env::var("CAKE_SANDBOX").as_deref() {
         Ok("off" | "0" | "false" | "no") => {
-            tracing::warn!("Sandbox disabled via ACAI_SANDBOX environment variable");
+            tracing::warn!("Sandbox disabled via CAKE_SANDBOX environment variable");
             true
         },
         Ok("warn") => {

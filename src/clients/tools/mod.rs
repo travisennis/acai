@@ -122,7 +122,7 @@ mod write;
 /// # Example
 ///
 /// ```
-/// use acai::clients::tools::bash_tool;
+/// use cake::clients::tools::bash_tool;
 /// let tool = bash_tool();
 /// assert_eq!(tool.name, "Bash");
 /// ```

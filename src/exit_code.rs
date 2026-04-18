@@ -1,6 +1,6 @@
-//! Exit codes for acai CLI.
+//! Exit codes for cake CLI.
 //!
-//! acai uses structured exit codes so that calling scripts, CI pipelines, and
+//! cake uses structured exit codes so that calling scripts, CI pipelines, and
 //! other automation can distinguish between failure modes without parsing
 //! stderr.
 //!
@@ -13,7 +13,7 @@
 
 use std::process::ExitCode;
 
-/// Exit code constants for acai.
+/// Exit code constants for cake.
 ///
 /// These values are returned from `main()` so that shell scripts and CI
 /// pipelines can branch on the reason for failure.
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn classify_no_input() {
         let err = anyhow::anyhow!(
-            "No input provided. Provide a prompt as an argument, use 'acai -' for stdin, or pipe input to acai."
+            "No input provided. Provide a prompt as an argument, use 'cake -' for stdin, or pipe input to cake."
         );
         assert_eq!(classify_to_u8(&err), code::INPUT_ERROR);
     }

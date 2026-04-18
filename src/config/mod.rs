@@ -1,7 +1,7 @@
-//! Configuration management for acai.
+//! Configuration management for cake.
 //!
 //! This module provides configuration loading, session management, and data
-//! directory handling for the acai CLI. Configuration is loaded from TOML files
+//! directory handling for the cake CLI. Configuration is loaded from TOML files
 //! and can be overridden via command-line arguments.
 //!
 //! # Key Types

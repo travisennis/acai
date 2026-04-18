@@ -4,31 +4,31 @@
 //! Full stdin integration testing requires API mocking which is handled at the
 //! unit test level in src/main.rs.
 //!
-//! Each test sets `ACAI_DATA_DIR` to an isolated temp directory so that tests
-//! can run inside a parent acai session without filesystem collisions on
-//! `~/.cache/acai/`.
+//! Each test sets `CAKE_DATA_DIR` to an isolated temp directory so that tests
+//! can run inside a parent cake session without filesystem collisions on
+//! `~/.cache/cake/`.
 
 #![allow(clippy::expect_used)]
 
 use std::process::{Command, Stdio};
 
 fn get_binary_path() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_BIN_EXE_acai"))
+    std::path::PathBuf::from(env!("CARGO_BIN_EXE_cake"))
 }
 
-/// Build a `Command` with an isolated `ACAI_DATA_DIR` to avoid collisions
-/// when running inside a parent acai session.
-fn acai_cmd() -> Command {
+/// Build a `Command` with an isolated `CAKE_DATA_DIR` to avoid collisions
+/// when running inside a parent cake session.
+fn cake_cmd() -> Command {
     let mut cmd = Command::new(get_binary_path());
-    let tmp = std::env::temp_dir().join(format!("acai_test_{}", std::process::id()));
-    cmd.env("ACAI_DATA_DIR", tmp);
+    let tmp = std::env::temp_dir().join(format!("cake_test_{}", std::process::id()));
+    cmd.env("CAKE_DATA_DIR", tmp);
     cmd
 }
 
 #[test]
 fn test_help_shows_prompt_argument() {
     // Verify --help shows PROMPT in usage
-    let output = acai_cmd()
+    let output = cake_cmd()
         .arg("--help")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -53,7 +53,7 @@ fn test_help_shows_prompt_argument() {
 #[test]
 fn test_version_works() {
     // Verify --version works
-    let output = acai_cmd()
+    let output = cake_cmd()
         .arg("--version")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -64,8 +64,8 @@ fn test_version_works() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("acai"),
-        "Version should contain 'acai'. Output: {stdout}"
+        stdout.contains("cake"),
+        "Version should contain 'cake'. Output: {stdout}"
     );
 }
 
@@ -73,7 +73,7 @@ fn test_version_works() {
 fn test_positional_prompt_parsing() {
     // Verify that a positional prompt doesn't fail parsing
     // It will fail on API key, but that's expected
-    let output = acai_cmd()
+    let output = cake_cmd()
         .arg("test prompt here")
         .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
@@ -95,7 +95,7 @@ fn test_positional_prompt_parsing() {
 fn test_dash_prompt_parsing() {
     // Verify that '-' as prompt is accepted
     // It will fail on no stdin + API key, but that's expected
-    let output = acai_cmd()
+    let output = cake_cmd()
         .arg("-")
         .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
@@ -117,7 +117,7 @@ fn test_dash_prompt_parsing() {
 #[test]
 fn test_no_prompt_no_stdin_error() {
     // Verify that running without any input produces a clear error
-    let output = acai_cmd()
+    let output = cake_cmd()
         .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -136,7 +136,7 @@ fn test_no_prompt_no_stdin_error() {
 #[test]
 fn test_no_session_flag_in_help() {
     // Verify --help mentions --no-session
-    let output = acai_cmd()
+    let output = cake_cmd()
         .arg("--help")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -155,15 +155,15 @@ fn test_no_session_flag_in_help() {
 #[test]
 fn test_no_session_prevents_session_save() {
     // Verify that --no-session does not create a session file.
-    // We use a temp directory as ACAI_DATA_DIR and run a prompt through
+    // We use a temp directory as CAKE_DATA_DIR and run a prompt through
     // with --no-session. No session JSON should be written.
-    let tmp_dir = std::env::temp_dir().join(format!("acai_test_no_session_{}", std::process::id()));
+    let tmp_dir = std::env::temp_dir().join(format!("cake_test_no_session_{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp_dir);
 
     let output = Command::new(get_binary_path())
         .arg("--no-session")
         .arg("test prompt")
-        .env("ACAI_DATA_DIR", &tmp_dir)
+        .env("CAKE_DATA_DIR", &tmp_dir)
         .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

@@ -6,7 +6,7 @@ The `prompts` module handles system prompt construction, integrating instruction
 
 The system prompt is the first message sent to the AI model, establishing:
 
-1. **Identity**: "You are acai. You are running as a coding agent..."
+1. **Identity**: "You are cake. You are running as a coding agent..."
 2. **Context**: Project-specific instructions from `AGENTS.md` files
 3. **Capabilities**: Implicitly defined by the available tools
 
@@ -18,9 +18,9 @@ pub fn build_system_prompt(_working_dir: &Path, agents_files: &[AgentsFile]) -> 
 
 ## AGENTS.md Files
 
-Acai reads instructions from two locations:
+Cake reads instructions from two locations:
 
-1. **User-level**: `~/.acai/AGENTS.md` — Personal preferences applicable to all projects
+1. **User-level**: `~/.cake/AGENTS.md` — Personal preferences applicable to all projects
 2. **Project-level**: `./AGENTS.md` — Project-specific instructions
 
 Both files are optional. If present and non-empty, their contents are injected into the system prompt.
@@ -29,7 +29,7 @@ Both files are optional. If present and non-empty, their contents are injected i
 
 ```rust
 pub struct AgentsFile {
-    pub path: String,    // Display path (e.g., "~/.acai/AGENTS.md")
+    pub path: String,    // Display path (e.g., "~/.cake/AGENTS.md")
     pub content: String, // File contents
 }
 ```
@@ -43,7 +43,7 @@ This struct is defined in the `config` module and populated by `DataDir::read_ag
 The base system prompt establishes the AI's identity:
 
 ```rust
-"You are acai. You are running as a coding agent in a CLI on the user's computer."
+"You are cake. You are running as a coding agent in a CLI on the user's computer."
 ```
 
 ### Project Context Section
@@ -53,7 +53,7 @@ If any `AGENTS.md` files have non-empty content, a "Project Context" section is 
 ```markdown
 ## Project Context:
 
-### ~/.acai/AGENTS.md
+### ~/.cake/AGENTS.md
 
 <instructions>
 User-level instructions here...
@@ -73,11 +73,11 @@ Empty or whitespace-only files are skipped.
 With both files present:
 
 ```markdown
-You are acai. You are running as a coding agent in a CLI on the user's computer.
+You are cake. You are running as a coding agent in a CLI on the user's computer.
 
 ## Project Context:
 
-### ~/.acai/AGENTS.md
+### ~/.cake/AGENTS.md
 
 <instructions>
 Always format code with rustfmt before returning it.
@@ -95,7 +95,7 @@ Run `cargo test` after making changes.
 Without AGENTS.md files:
 
 ```markdown
-You are acai. You are running as a coding agent in a CLI on the user's computer.
+You are cake. You are running as a coding agent in a CLI on the user's computer.
 ```
 
 ## Design Decisions
@@ -109,7 +109,7 @@ Instructions are wrapped in `<instructions>` tags to:
 
 ### File Path Display
 
-The `path` field uses display paths like `~/.acai/AGENTS.md` rather than absolute paths:
+The `path` field uses display paths like `~/.cake/AGENTS.md` rather than absolute paths:
 - More readable for users
 - Consistent across different machines
 - Indicates the source (user vs. project level)
@@ -138,7 +138,7 @@ The `_working_dir` parameter is currently unused but kept for:
 The prompt construction flow:
 
 1. **`cli::instruct`** calls `data_dir.read_agents_files(&current_dir)`
-2. **`config::DataDir`** reads and parses `~/.acai/AGENTS.md` and `./AGENTS.md`
+2. **`config::DataDir`** reads and parses `~/.cake/AGENTS.md` and `./AGENTS.md`
 3. **`cli::instruct`** passes `agents_files` to `build_system_prompt()`
 4. **`prompts`** constructs the final string
 5. **`clients::responses`** includes it as the first message in API requests
@@ -147,7 +147,7 @@ The prompt construction flow:
 
 ### User-Level Instructions
 
-Common patterns for `~/.acai/AGENTS.md`:
+Common patterns for `~/.cake/AGENTS.md`:
 
 - **Code style preferences**: "Prefer functional programming style"
 - **Default tools**: "Always run tests after editing code"
@@ -186,12 +186,12 @@ Example tests:
 #[test]
 fn with_agents_files() {
     let files = vec![
-        AgentsFile { path: "~/.acai/AGENTS.md".to_string(), content: "User instructions".to_string() },
+        AgentsFile { path: "~/.cake/AGENTS.md".to_string(), content: "User instructions".to_string() },
         AgentsFile { path: "./AGENTS.md".to_string(), content: "Project instructions".to_string() },
     ];
     let prompt = build_system_prompt(Path::new("/tmp"), &files);
     assert!(prompt.contains("## Project Context:"));
-    assert!(prompt.contains("~/.acai/AGENTS.md"));
+    assert!(prompt.contains("~/.cake/AGENTS.md"));
     assert!(prompt.contains("./AGENTS.md"));
     assert!(prompt.contains("User instructions"));
     assert!(prompt.contains("Project instructions"));
@@ -200,7 +200,7 @@ fn with_agents_files() {
 #[test]
 fn empty_content_skipped() {
     let files = vec![
-        AgentsFile { path: "~/.acai/AGENTS.md".to_string(), content: String::new() },
+        AgentsFile { path: "~/.cake/AGENTS.md".to_string(), content: String::new() },
         AgentsFile { path: "./AGENTS.md".to_string(), content: "   ".to_string() },
     ];
     let prompt = build_system_prompt(Path::new("/tmp"), &files);

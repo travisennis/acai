@@ -4,11 +4,11 @@ This document describes the settings system that allows configuration of models 
 
 ## Overview
 
-acai supports loading configuration from `settings.toml` files, enabling:
+cake supports loading configuration from `settings.toml` files, enabling:
 
 - **Named model configurations**: Define multiple models with different settings
-- **Project-level settings**: Per-project `.acai/settings.toml`
-- **Global settings**: System-wide `~/.cache/acai/settings.toml`
+- **Project-level settings**: Per-project `.cake/settings.toml`
+- **Global settings**: System-wide `~/.cache/cake/settings.toml`
 - **Merge semantics**: Project settings override global settings for conflicting model names
 
 ## File Locations
@@ -17,17 +17,17 @@ Settings files are loaded from two locations:
 
 | Location | Purpose |
 |----------|---------|
-| `~/.cache/acai/settings.toml` | Global/system-wide settings |
-| `./.acai/settings.toml` | Project-specific settings |
+| `~/.cache/cake/settings.toml` | Global/system-wide settings |
+| `./.cake/settings.toml` | Project-specific settings |
 
-Both files are optional. If neither exists, acai uses the default `ModelConfig`.
+Both files are optional. If neither exists, cake uses the default `ModelConfig`.
 
 ## Merge Behavior
 
 Settings are merged with the following rules:
 
-1. **Global settings loaded first**: `~/.cache/acai/settings.toml` is loaded into a map
-2. **Project settings overlay**: `./.acai/settings.toml` is loaded and added to the map
+1. **Global settings loaded first**: `~/.cache/cake/settings.toml` is loaded into a map
+2. **Project settings overlay**: `./.cake/settings.toml` is loaded and added to the map
 3. **Project overrides global**: If the same model name exists in both, project wins
 4. **No in-file duplicates**: A single file cannot define the same model name twice (error)
 
@@ -131,10 +131,10 @@ The `--model` flag selects a named model from settings:
 
 ```bash
 # Select "claude" model from settings.toml
-acai --model claude "Your prompt here"
+cake --model claude "Your prompt here"
 
 # Select "deepseek" model
-acai --model deepseek "Your prompt here"
+cake --model deepseek "Your prompt here"
 ```
 
 ### Behavior
@@ -206,7 +206,7 @@ impl SettingsLoader {
 
 ### 1. Create global settings
 
-`~/.cache/acai/settings.toml`:
+`~/.cache/cake/settings.toml`:
 ```toml
 [[models]]
 name = "deepseek"
@@ -217,7 +217,7 @@ api_key_env = "OPENROUTER_API_KEY"
 
 ### 2. Create project settings
 
-`.acai/settings.toml`:
+`.cake/settings.toml`:
 ```toml
 [[models]]
 name = "claude"
@@ -231,13 +231,13 @@ api_type = "responses"
 
 ```bash
 # Uses "claude" from project settings
-acai --model claude "Use claude"
+cake --model claude "Use claude"
 
 # Uses "deepseek" from global settings
-acai --model deepseek "Use deepseek"
+cake --model deepseek "Use deepseek"
 
 # Uses default (no settings needed)
-acai "Use default model"
+cake "Use default model"
 ```
 
 ## Future Considerations

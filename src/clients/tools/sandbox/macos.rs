@@ -268,12 +268,12 @@ impl MacOsSandbox {
     fn write_profile_to_temp(profile: &str) -> Result<tempfile::NamedTempFile, String> {
         use std::io::Write;
 
-        let tmp_dir = std::env::temp_dir().join("acai").join("sandbox_profiles");
+        let tmp_dir = std::env::temp_dir().join("cake").join("sandbox_profiles");
         std::fs::create_dir_all(&tmp_dir)
             .map_err(|e| format!("Failed to create sandbox profile directory: {e}"))?;
 
         let mut temp_file = tempfile::Builder::new()
-            .prefix("acai_sandbox_")
+            .prefix("cake_sandbox_")
             .suffix(".sb")
             .tempfile_in(&tmp_dir)
             .map_err(|e| format!("Failed to create sandbox profile temp file: {e}"))?;

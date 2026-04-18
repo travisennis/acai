@@ -1,6 +1,6 @@
-# Example acai settings
-# Copy to .acai/settings.toml and customize
-# Alternatively, place in ~/.cache/acai/settings.toml for global settings
+# Example cake settings
+# Copy to .cake/settings.toml and customize
+# Alternatively, place in ~/.cache/cake/settings.toml for global settings
 # Project settings override global settings for models with the same name
 
 [[models]]

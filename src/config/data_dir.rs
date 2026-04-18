@@ -11,11 +11,11 @@ use crate::config::Session;
 /// Represents an AGENTS.md file with its path and content.
 ///
 /// AGENTS.md files contain instructions for the AI agent about project-specific
-/// context and behavior. They are loaded from both user-level (`~/.acai/AGENTS.md`)
+/// context and behavior. They are loaded from both user-level (`~/.cake/AGENTS.md`)
 /// and project-level (`./AGENTS.md`) locations.
 #[derive(Debug, Clone)]
 pub struct AgentsFile {
-    /// Display path (e.g., "~/.acai/AGENTS.md" or "./AGENTS.md")
+    /// Display path (e.g., "~/.cake/AGENTS.md" or "./AGENTS.md")
     pub path: String,
     /// Content of the file
     pub content: String,
@@ -23,11 +23,11 @@ pub struct AgentsFile {
 
 /// Manages the data directory for session storage.
 ///
-/// The data directory defaults to `~/.cache/acai/` and contains session files,
-/// cache data, and other persistent state for the acai CLI.
+/// The data directory defaults to `~/.cache/cake/` and contains session files,
+/// cache data, and other persistent state for the cake CLI.
 ///
-/// The directory can be overridden by setting the `ACAI_DATA_DIR` environment
-/// variable. This is useful for testing and for running acai inside acai
+/// The directory can be overridden by setting the `CAKE_DATA_DIR` environment
+/// variable. This is useful for testing and for running cake inside cake
 /// (nested invocations) without filesystem collisions.
 #[derive(Debug, Clone)]
 pub struct DataDir {
@@ -38,27 +38,27 @@ pub struct DataDir {
 impl DataDir {
     /// Creates a new data directory instance for session storage.
     ///
-    /// If `ACAI_DATA_DIR` is set, uses that path. Otherwise defaults to
-    /// `~/.cache/acai/`. The directory is created if it does not exist.
+    /// If `CAKE_DATA_DIR` is set, uses that path. Otherwise defaults to
+    /// `~/.cache/cake/`. The directory is created if it does not exist.
     ///
     /// # Examples
     ///
     /// ```
-    /// use acai::config::DataDir;
+    /// use cake::config::DataDir;
     /// let data_dir = DataDir::new()?;
     /// ```
     ///
     /// # Errors
     ///
     /// Returns an error if the home directory cannot be determined (when
-    /// `ACAI_DATA_DIR` is not set), or if the data directory cannot be created.
+    /// `CAKE_DATA_DIR` is not set), or if the data directory cannot be created.
     pub fn new() -> anyhow::Result<Self> {
-        let data_dir = if let Ok(custom) = std::env::var("ACAI_DATA_DIR") {
+        let data_dir = if let Ok(custom) = std::env::var("CAKE_DATA_DIR") {
             PathBuf::from(custom)
         } else {
             let home_dir = dirs::home_dir();
             if let Some(home) = home_dir {
-                home.join(".cache").join("acai")
+                home.join(".cache").join("cake")
             } else {
                 return Err(anyhow!("Could not create data directory."));
             }
@@ -73,12 +73,12 @@ impl DataDir {
 
     /// Returns the path to the cache directory.
     ///
-    /// The cache directory is typically `~/.cache/acai/`.
+    /// The cache directory is typically `~/.cache/cake/`.
     ///
     /// # Examples
     ///
     /// ```
-    /// use acai::config::DataDir;
+    /// use cake::config::DataDir;
     /// let data_dir = DataDir::new()?;
     /// let cache_path = data_dir.get_cache_dir();
     /// ```
@@ -86,7 +86,7 @@ impl DataDir {
         self.data_dir.clone()
     }
 
-    /// Returns the sessions directory path: `~/.cache/acai/sessions/`
+    /// Returns the sessions directory path: `~/.cache/cake/sessions/`
     fn sessions_dir(&self) -> PathBuf {
         self.data_dir.join("sessions")
     }
@@ -102,13 +102,13 @@ impl DataDir {
 
     /// Saves a session to disk with atomic write.
     ///
-    /// The session is saved to `~/.cache/acai/sessions/{dir_hash}/{session_id}.jsonl`.
+    /// The session is saved to `~/.cache/cake/sessions/{dir_hash}/{session_id}.jsonl`.
     /// The most recent session is determined by file modification time (no symlink needed).
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// use acai::config::{DataDir, Session};
+    /// use cake::config::{DataDir, Session};
     /// use std::path::PathBuf;
     ///
     /// let data_dir = DataDir::new()?;
@@ -131,7 +131,7 @@ impl DataDir {
         let session_dir = self.sessions_dir().join(&dir_hash);
         let session_path = session_dir.join(format!("{}.jsonl", session.id));
 
-        tracing::info!(target: "acai", "Saving session {} to {}", session.id, session_path.display());
+        tracing::info!(target: "cake", "Saving session {} to {}", session.id, session_path.display());
 
         session.save(&session_path)?;
 
@@ -147,7 +147,7 @@ impl DataDir {
     /// # Examples
     ///
     /// ```
-    /// use acai::config::DataDir;
+    /// use cake::config::DataDir;
     /// use std::path::PathBuf;
     ///
     /// let data_dir = DataDir::new()?;
@@ -165,10 +165,10 @@ impl DataDir {
         let dir_hash = Self::dir_hash(working_dir);
         let session_dir = self.sessions_dir().join(&dir_hash);
 
-        tracing::info!(target: "acai", "Looking for latest session in {} (hash: {dir_hash})", session_dir.display());
+        tracing::info!(target: "cake", "Looking for latest session in {} (hash: {dir_hash})", session_dir.display());
 
         if !session_dir.exists() {
-            tracing::info!(target: "acai", "Session directory does not exist: {}", session_dir.display());
+            tracing::info!(target: "cake", "Session directory does not exist: {}", session_dir.display());
             return Ok(None);
         }
 
@@ -190,9 +190,9 @@ impl DataDir {
             .transpose()?;
 
         if let Some(ref session) = result {
-            tracing::info!(target: "acai", "Found latest session: {}", session.id);
+            tracing::info!(target: "cake", "Found latest session: {}", session.id);
         } else {
-            tracing::info!(target: "acai", "No session found for working directory");
+            tracing::info!(target: "cake", "No session found for working directory");
         }
 
         Ok(result)
@@ -205,7 +205,7 @@ impl DataDir {
     /// # Examples
     ///
     /// ```
-    /// use acai::config::DataDir;
+    /// use cake::config::DataDir;
     /// use std::path::PathBuf;
     ///
     /// let data_dir = DataDir::new()?;
@@ -228,10 +228,10 @@ impl DataDir {
             .join(&dir_hash)
             .join(format!("{id}.jsonl"));
 
-        tracing::info!(target: "acai", "Loading session {id} from {}", session_path.display());
+        tracing::info!(target: "cake", "Loading session {id} from {}", session_path.display());
 
         if !session_path.exists() {
-            tracing::info!(target: "acai", "Session file does not exist: {}", session_path.display());
+            tracing::info!(target: "cake", "Session file does not exist: {}", session_path.display());
             return Ok(None);
         }
 
@@ -244,13 +244,13 @@ impl DataDir {
     /// Files that don't exist are silently skipped.
     ///
     /// The search order is:
-    /// 1. User-level: `~/.acai/AGENTS.md`
+    /// 1. User-level: `~/.cake/AGENTS.md`
     /// 2. Project-level: `./AGENTS.md`
     ///
     /// # Examples
     ///
     /// ```
-    /// use acai::config::DataDir;
+    /// use cake::config::DataDir;
     /// use std::path::PathBuf;
     ///
     /// let data_dir = DataDir::new()?;
@@ -262,17 +262,17 @@ impl DataDir {
     pub fn read_agents_files(&self, working_dir: &Path) -> Vec<AgentsFile> {
         let mut files = Vec::new();
 
-        // User-level AGENTS.md: ~/.acai/AGENTS.md
+        // User-level AGENTS.md: ~/.cake/AGENTS.md
         let user_agents_path = self.data_dir.parent()
-            .and_then(|p| p.parent()) // ~/.cache/acai -> ~/.cache -> ~
-            .map(|p| p.join(".acai").join("AGENTS.md"))
-            .or_else(|| dirs::home_dir().map(|h| h.join(".acai").join("AGENTS.md")));
+            .and_then(|p| p.parent()) // ~/.cache/cake -> ~/.cache -> ~
+            .map(|p| p.join(".cake").join("AGENTS.md"))
+            .or_else(|| dirs::home_dir().map(|h| h.join(".cake").join("AGENTS.md")));
 
         if let Some(ref path) = user_agents_path
             && let Ok(content) = fs::read_to_string(path)
         {
             files.push(AgentsFile {
-                path: "~/.acai/AGENTS.md".to_string(),
+                path: "~/.cake/AGENTS.md".to_string(),
                 content,
             });
         }
@@ -458,18 +458,18 @@ mod tests {
     }
 
     #[test]
-    fn new_respects_acai_data_dir_env() {
+    fn new_respects_cake_data_dir_env() {
         let tmp = TempDir::new().unwrap();
-        let custom_path = tmp.path().join("custom_acai");
+        let custom_path = tmp.path().join("custom_cake");
 
         // SAFETY: test is single-threaded for this env var; no other test
-        // reads ACAI_DATA_DIR concurrently.
+        // reads CAKE_DATA_DIR concurrently.
         unsafe {
-            std::env::set_var("ACAI_DATA_DIR", &custom_path);
+            std::env::set_var("CAKE_DATA_DIR", &custom_path);
         }
         let dd = DataDir::new().unwrap();
         unsafe {
-            std::env::remove_var("ACAI_DATA_DIR");
+            std::env::remove_var("CAKE_DATA_DIR");
         }
 
         assert_eq!(dd.data_dir, custom_path);

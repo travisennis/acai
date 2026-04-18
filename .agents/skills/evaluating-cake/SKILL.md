@@ -1,15 +1,15 @@
 ---
-name: evaluating-acai
-description: Evaluate acai CLI session performance to identify issues and recommend improvements. Use this skill when asked to evaluate, assess, review, or analyze how well acai performed on a task, or when investigating session quality for improvements to the project.
+name: evaluating-cake
+description: Evaluate cake CLI session performance to identify issues and recommend improvements. Use this skill when asked to evaluate, assess, review, or analyze how well cake performed on a task, or when investigating session quality for improvements to the project.
 ---
 
-# Evaluating Acai CLI Sessions
+# Evaluating Cake CLI Sessions
 
-This skill guides systematic evaluation of acai CLI sessions to identify issues and recommend improvements.
+This skill guides systematic evaluation of cake CLI sessions to identify issues and recommend improvements.
 
 ## When to Use This Skill
 
-- After completing a task with acai to evaluate performance
+- After completing a task with cake to evaluate performance
 - When investigating why a task didn't go well
 - When looking for patterns across sessions
 - When documenting issues for project improvement
@@ -26,31 +26,31 @@ The evaluation process analyzes a session to identify:
 
 ## Phase 0: Understand CLI Capabilities
 
-Before evaluating, understand what tools the acai CLI has available. This ensures evaluation is based on actual capabilities, not assumptions.
+Before evaluating, understand what tools the cake CLI has available. This ensures evaluation is based on actual capabilities, not assumptions.
 
 1. Read these files:
    - `ARCHITECTURE.md` - Overall architecture
    - `src/clients/tools/mod.rs` - Available tools
    - `src/clients/tools/*.rs` - Tool capabilities and parameters
 
-2. Key distinction: **You have different tools than the acai CLI**. Only identify issues valid for the CLI's actual toolset.
+2. Key distinction: **You have different tools than the cake CLI**. Only identify issues valid for the CLI's actual toolset.
 
 ## Phase 1: Locate and Read the Session
 
 ### Finding Sessions
 
-Sessions are stored in `~/.cache/acai/sessions/` organized by working directory hash:
+Sessions are stored in `~/.cache/cake/sessions/` organized by working directory hash:
 
 ```bash
 # Find session directory for current project
 echo -n "$(pwd)" | shasum -a 256 | cut -c1-16
 
 # Or list all session directories
-ls ~/.cache/acai/sessions/
+ls ~/.cache/cake/sessions/
 
 # Find latest session for a directory (most recently modified .jsonl)
 HASH=$(echo -n "$(pwd)" | shasum -a 256 | cut -c1-16)
-ls -t ~/.cache/acai/sessions/$HASH/*.jsonl 2>/dev/null | head -1
+ls -t ~/.cache/cake/sessions/$HASH/*.jsonl 2>/dev/null | head -1
 ```
 
 ### Reading Sessions
@@ -59,10 +59,10 @@ Read the raw JSONL file:
 
 ```bash
 # View full session
-jq '.' ~/.cache/acai/sessions/{hash}/{uuid}.jsonl
+jq '.' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
 
 # View last 10 messages (most relevant for evaluation)
-tail -10 ~/.cache/acai/sessions/{hash}/{uuid}.jsonl | jq '.'
+tail -10 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq '.'
 
 # View all user prompts
 jq 'select(.type == "message" and .role == "user") | .content' session.jsonl
@@ -291,6 +291,6 @@ When evaluation is complete:
 
 | File | Purpose |
 |------|---------|
-| `~/.cache/acai/sessions/{hash}/{uuid}.jsonl` | Session files (or `$ACAI_DATA_DIR/sessions/` if set) |
+| `~/.cache/cake/sessions/{hash}/{uuid}.jsonl` | Session files (or `$CAKE_DATA_DIR/sessions/` if set) |
 | `current-issues.md` | Documented issues |
 | `usage.md` | Usage patterns and learnings |

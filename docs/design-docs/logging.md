@@ -1,6 +1,6 @@
 # Logging
 
-This document describes how logging works in the acai project.
+This document describes how logging works in the cake project.
 
 ## Overview
 
@@ -18,13 +18,13 @@ The project uses a **file-only logging** setup. All log levels are written to a 
 
 | Output | Log Levels | Destination |
 |--------|------------|-------------|
-| **file** | `error!`, `warn!`, `info!`, `debug!`, `trace!` | `~/.cache/acai/acai.YYYY-MM-DD.log` |
+| **file** | `error!`, `warn!`, `info!`, `debug!`, `trace!` | `~/.cache/cake/cake.YYYY-MM-DD.log` |
 
 ### Log Rotation
 
 Log files rotate **daily** with automatic cleanup:
 
-- Files are named `acai.YYYY-MM-DD.log` (e.g., `acai.2024-01-15.log`)
+- Files are named `cake.YYYY-MM-DD.log` (e.g., `cake.2024-01-15.log`)
 - **Maximum 7 files retained** - oldest files are automatically deleted
 - This prevents unbounded disk usage while preserving recent history
 
@@ -36,12 +36,12 @@ YYYY-MM-DD HH:MM:SS | LEVEL | file:line — message
 
 Example output:
 ```
-2024-01-15 10:30:45 | INFO | main:42 — data dir set: /Users/travis/.cache/acai
+2024-01-15 10:30:45 | INFO | main:42 — data dir set: /Users/travis/.cache/cake
 ```
 
 ### Log Levels
 
-| Level | Default | With `RUST_LOG=acai=trace` |
+| Level | Default | With `RUST_LOG=cake=trace` |
 |-------|---------|----------------------------|
 | `error!` | ✓ | ✓ |
 | `warn!` | ✓ | ✓ |
@@ -59,7 +59,7 @@ Logging is configured in `src/main.rs` at startup:
 let _ = logger::configure(&data_dir.get_cache_dir());
 ```
 
-The log files are written to `<cache_dir>/acai.YYYY-MM-DD.log`.
+The log files are written to `<cache_dir>/cake.YYYY-MM-DD.log`.
 
 ## Usage
 
@@ -72,7 +72,7 @@ info!("data dir set: {}", path);
 error!("Failed to connect: {}", err);
 debug!("Processing request: {:?}", request);
 warn!("Deprecated feature used");
-trace!("Detailed trace information");  // Only with RUST_LOG=acai=trace
+trace!("Detailed trace information");  // Only with RUST_LOG=cake=trace
 ```
 
 ## Enabling Verbose Logging
@@ -80,31 +80,31 @@ trace!("Detailed trace information");  // Only with RUST_LOG=acai=trace
 To enable debug and trace logs, set the `RUST_LOG` environment variable:
 
 ```bash
-# Enable trace logs for acai
-RUST_LOG=acai=trace acai "your prompt"
+# Enable trace logs for cake
+RUST_LOG=cake=trace cake "your prompt"
 
 # Enable debug logs
-RUST_LOG=acai=debug acai "your prompt"
+RUST_LOG=cake=debug cake "your prompt"
 
 # Enable trace logs for all crates (very verbose)
-RUST_LOG=trace acai "your prompt"
+RUST_LOG=trace cake "your prompt"
 ```
 
 ## Log File Location
 
 Log files are stored in the cache directory:
 
-- **macOS/Linux**: `~/.cache/acai/`
-- Files follow the pattern: `acai.YYYY-MM-DD.log`
+- **macOS/Linux**: `~/.cache/cake/`
+- Files follow the pattern: `cake.YYYY-MM-DD.log`
 
 To view recent logs:
 
 ```bash
 # View today's log
-cat ~/.cache/acai/acai.$(date +%Y-%m-%d).log
+cat ~/.cache/cake/cake.$(date +%Y-%m-%d).log
 
 # View all logs
-ls -la ~/.cache/acai/acai.*.log
+ls -la ~/.cache/cake/cake.*.log
 ```
 
 ## Implementation Details
@@ -114,11 +114,11 @@ The logging implementation is in `src/logger.rs`:
 ```rust
 pub fn configure(log_path: &Path) -> Result<(), Error> {
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("acai=info"));
+        .unwrap_or_else(|_| EnvFilter::new("cake=info"));
 
     let file_appender = RollingFileAppender::builder()
         .rotation(Rotation::DAILY)
-        .filename_prefix("acai")
+        .filename_prefix("cake")
         .filename_suffix("log")
         .max_log_files(7)
         .build(log_path)?;
@@ -129,6 +129,6 @@ pub fn configure(log_path: &Path) -> Result<(), Error> {
 
 Key features:
 
-- **`EnvFilter`**: Respects `RUST_LOG` environment variable, defaults to `acai=info`
+- **`EnvFilter`**: Respects `RUST_LOG` environment variable, defaults to `cake=info`
 - **`RollingFileAppender`**: Daily rotation with 7-day retention
 - **Non-blocking**: Async-safe writes that don't block the Tokio runtime

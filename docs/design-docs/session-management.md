@@ -1,19 +1,19 @@
 # Session Management
 
-Acai provides session persistence and restoration, enabling users to continue conversations across separate invocations. Sessions are tracked per project directory and saved with full metadata.
+Cake provides session persistence and restoration, enabling users to continue conversations across separate invocations. Sessions are tracked per project directory and saved with full metadata.
 
 ## Overview
 
-Every time you run `acai`, a session is automatically created and saved. Sessions capture the full conversation history (messages, function calls, function outputs, reasoning) along with metadata such as timestamps and the working directory. Sessions are saved on both success and error, ensuring crash recovery.
+Every time you run `cake`, a session is automatically created and saved. Sessions capture the full conversation history (messages, function calls, function outputs, reasoning) along with metadata such as timestamps and the working directory. Sessions are saved on both success and error, ensuring crash recovery.
 
 ## Usage
 
 ### Starting a Session
 
-Every `acai` invocation creates a new session automatically:
+Every `cake` invocation creates a new session automatically:
 
 ```bash
-acai "My favorite color is blue"
+cake "My favorite color is blue"
 ```
 
 ### Continuing the Latest Session
@@ -21,7 +21,7 @@ acai "My favorite color is blue"
 Use `--continue` to restore the most recent session for the current directory:
 
 ```bash
-acai --continue "What's my favorite color?"
+cake --continue "What's my favorite color?"
 # The AI will remember "blue" from the previous session
 ```
 
@@ -30,7 +30,7 @@ acai --continue "What's my favorite color?"
 Use `--resume <UUID>` to restore a specific session by its identifier:
 
 ```bash
-acai --resume 550e8400-e29b-41d4-a716-446655440000 "Continue our conversation"
+cake --resume 550e8400-e29b-41d4-a716-446655440000 "Continue our conversation"
 ```
 
 The UUID is scoped to the current directory — you can only resume sessions that were created in the same directory.
@@ -40,23 +40,23 @@ The UUID is scoped to the current directory — you can only resume sessions tha
 Use `--no-session` to run a command without saving the session to disk:
 
 ```bash
-acai --no-session "Quick one-off question"
+cake --no-session "Quick one-off question"
 ```
 
 This is useful for ephemeral queries where you don't need to continue the conversation later.
 
 ### Mutually Exclusive Flags
 
-`--continue` and `--resume` cannot be used together. Acai will return an error if both are provided.
+`--continue` and `--resume` cannot be used together. Cake will return an error if both are provided.
 
 ## How It Works
 
 ### Storage Layout
 
-Sessions are stored under `~/.cache/acai/sessions/` organized by a hash of the working directory:
+Sessions are stored under `~/.cache/cake/sessions/` organized by a hash of the working directory:
 
 ```
-~/.cache/acai/sessions/
+~/.cache/cake/sessions/
   {dir_hash}/
     {uuid}.jsonl        # Individual session files (JSONL format)
 ```
@@ -136,16 +136,16 @@ Sessions are isolated by working directory. Each directory gets its own namespac
 ```bash
 # Sessions in /Users/user/project-a are separate from /Users/user/project-b
 cd /Users/user/project-a
-acai "Working on project A"
+cake "Working on project A"
 
 cd /Users/user/project-b
-acai --continue "What project am I working on?"
+cake --continue "What project am I working on?"
 # Error: No previous session found for this directory
 ```
 
 ## Compatibility with Legacy History
 
-The new session system coexists with the legacy timestamp-based history files in `~/.cache/acai/history/`. Legacy files are not migrated and remain available for audit purposes. New sessions are written exclusively to `~/.cache/acai/sessions/`.
+The new session system coexists with the legacy timestamp-based history files in `~/.cache/cake/history/`. Legacy files are not migrated and remain available for audit purposes. New sessions are written exclusively to `~/.cache/cake/sessions/`.
 
 ## Implementation Details
 

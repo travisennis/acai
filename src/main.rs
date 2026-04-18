@@ -1,4 +1,4 @@
-//! acai - AI coding assistant CLI
+//! cake - AI coding assistant CLI
 
 mod cli;
 mod clients;
@@ -187,7 +187,7 @@ impl CodingAssistant {
             (Some(prompt), Some(stdin)) => Ok(format!("{prompt}\n\n{stdin}")),
             (Some(prompt), None) => Ok(prompt.to_string()),
             (None, None) => Err(anyhow::anyhow!(
-                "No input provided. Provide a prompt as an argument, use 'acai -' for stdin, or pipe input to acai."
+                "No input provided. Provide a prompt as an argument, use 'cake -' for stdin, or pipe input to cake."
             )),
         }
     }
@@ -250,29 +250,29 @@ impl CodingAssistant {
         let resolved = ResolvedModelConfig::resolve(model_config)?;
 
         if self.continue_session {
-            info!(target: "acai", "Continuing latest session for directory: {}", current_dir.display());
+            info!(target: "cake", "Continuing latest session for directory: {}", current_dir.display());
             let restored = data_dir
                 .load_latest_session(&current_dir)?
                 .ok_or_else(|| anyhow::anyhow!("No previous session found for this directory"))?;
-            info!(target: "acai", "Continuing session: {}", restored.id);
+            info!(target: "cake", "Continuing session: {}", restored.id);
             let agent = Agent::new(resolved, &system_prompt)
                 .with_session_id(restored.id.clone())
                 .with_history(restored.messages.clone());
             Ok((agent, restored))
         } else if let Some(ref uuid) = self.resume {
-            info!(target: "acai", "Resuming session: {uuid}");
+            info!(target: "cake", "Resuming session: {uuid}");
             uuid::Uuid::parse_str(uuid)
                 .map_err(|e| anyhow::anyhow!("Invalid session UUID '{uuid}': {e}"))?;
             let restored = data_dir
                 .load_session(&current_dir, uuid)?
                 .ok_or_else(|| anyhow::anyhow!("Session {uuid} not found in this directory"))?;
-            info!(target: "acai", "Resumed session: {}", restored.id);
+            info!(target: "cake", "Resumed session: {}", restored.id);
             let agent = Agent::new(resolved, &system_prompt)
                 .with_session_id(restored.id.clone())
                 .with_history(restored.messages.clone());
             Ok((agent, restored))
         } else if let Some(ref fork_id) = self.fork {
-            info!(target: "acai", "Forking session");
+            info!(target: "cake", "Forking session");
             let restored = if fork_id.is_empty() {
                 data_dir.load_latest_session(&current_dir)?.ok_or_else(|| {
                     anyhow::anyhow!("No previous session found for this directory")
@@ -286,16 +286,16 @@ impl CodingAssistant {
                         anyhow::anyhow!("Session {fork_id} not found in this directory")
                     })?
             };
-            info!(target: "acai", "Forking from session: {}", restored.id);
+            info!(target: "cake", "Forking from session: {}", restored.id);
             let agent = Agent::new(resolved, &system_prompt).with_history(restored.messages);
             let new_id = agent.session_id.clone();
-            info!(target: "acai", "New forked session: {new_id}");
+            info!(target: "cake", "New forked session: {new_id}");
             let s = Session::new(new_id, current_dir);
             Ok((agent, s))
         } else {
             let agent = Agent::new(resolved, &system_prompt);
             let new_id = agent.session_id.clone();
-            info!(target: "acai", "New session: {new_id}");
+            info!(target: "cake", "New session: {new_id}");
             let s = Session::new(new_id, current_dir);
             Ok((agent, s))
         }
@@ -474,7 +474,7 @@ impl CmdRunner for CodingAssistant {
         if !self.no_session {
             session.messages = client.drain_history_without_system();
             session.model = Some(client.model().to_string());
-            info!(target: "acai", "Saving session {} ({} messages)", session.id, session.messages.len());
+            info!(target: "cake", "Saving session {} ({} messages)", session.id, session.messages.len());
             if let Err(e) = data_dir.save_session(&session) {
                 tracing::error!("Failed to save session: {e}");
             }
@@ -632,58 +632,58 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_positional_prompt() {
-        let args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        let args = CodingAssistant::parse_from(["cake", "test prompt"]);
         assert_eq!(args.prompt, Some("test prompt".to_string()));
     }
 
     #[test]
     fn test_cli_parsing_dash_for_stdin() {
-        let args = CodingAssistant::parse_from(["acai", "-"]);
+        let args = CodingAssistant::parse_from(["cake", "-"]);
         assert_eq!(args.prompt, Some("-".to_string()));
     }
 
     #[test]
     fn test_cli_parsing_no_prompt() {
-        let args = CodingAssistant::parse_from(["acai"]);
+        let args = CodingAssistant::parse_from(["cake"]);
         assert_eq!(args.prompt, None);
     }
 
     #[test]
     fn test_cli_parsing_model_flag() {
-        let args = CodingAssistant::parse_from(["acai", "--model", "claude", "test prompt"]);
+        let args = CodingAssistant::parse_from(["cake", "--model", "claude", "test prompt"]);
         assert_eq!(args.model, Some("claude".to_string()));
         assert_eq!(args.prompt, Some("test prompt".to_string()));
     }
 
     #[test]
     fn test_cli_parsing_model_flag_without_prompt() {
-        let args = CodingAssistant::parse_from(["acai", "--model", "deepseek"]);
+        let args = CodingAssistant::parse_from(["cake", "--model", "deepseek"]);
         assert_eq!(args.model, Some("deepseek".to_string()));
         assert_eq!(args.prompt, None);
     }
 
     #[test]
     fn test_cli_parsing_no_model_flag() {
-        let args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        let args = CodingAssistant::parse_from(["cake", "test prompt"]);
         assert_eq!(args.model, None);
     }
 
     #[test]
     fn test_cli_parsing_no_session() {
-        let args = CodingAssistant::parse_from(["acai", "--no-session", "test prompt"]);
+        let args = CodingAssistant::parse_from(["cake", "--no-session", "test prompt"]);
         assert!(args.no_session);
     }
 
     #[test]
     fn test_cli_parsing_no_session_defaults_false() {
-        let args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        let args = CodingAssistant::parse_from(["cake", "test prompt"]);
         assert!(!args.no_session);
     }
 
     #[test]
     fn test_cli_parsing_add_dir_single() {
         let args =
-            CodingAssistant::parse_from(["acai", "--add-dir", "/path/to/dir", "test prompt"]);
+            CodingAssistant::parse_from(["cake", "--add-dir", "/path/to/dir", "test prompt"]);
         assert_eq!(args.add_dir, vec!["/path/to/dir"]);
         assert_eq!(args.prompt, Some("test prompt".to_string()));
     }
@@ -691,7 +691,7 @@ mod tests {
     #[test]
     fn test_cli_parsing_add_dir_multiple() {
         let args = CodingAssistant::parse_from([
-            "acai",
+            "cake",
             "--add-dir",
             "/path/to/dir1",
             "--add-dir",
@@ -703,14 +703,14 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_add_dir_none() {
-        let args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        let args = CodingAssistant::parse_from(["cake", "test prompt"]);
         assert!(args.add_dir.is_empty());
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_resolve_model_config_default() {
-        let args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        let args = CodingAssistant::parse_from(["cake", "test prompt"]);
         let settings = HashMap::new();
         let config = args.resolve_model_config(&settings).unwrap();
         assert_eq!(config.model, "glm-5.1");
@@ -719,7 +719,7 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_resolve_model_config_unknown_model() {
-        let mut args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        let mut args = CodingAssistant::parse_from(["cake", "test prompt"]);
         args.model = Some("nonexistent".to_string());
 
         let settings = HashMap::new();
@@ -732,7 +732,7 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_resolve_model_config_invalid_name_format() {
-        let mut args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        let mut args = CodingAssistant::parse_from(["cake", "test prompt"]);
         args.model = Some("Invalid Name!".to_string());
 
         let settings = HashMap::new();
@@ -745,7 +745,7 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_resolve_model_config_from_settings() {
-        let args = CodingAssistant::parse_from(["acai", "--model", "claude", "test"]);
+        let args = CodingAssistant::parse_from(["cake", "--model", "claude", "test"]);
 
         let mut settings = HashMap::new();
         settings.insert(
@@ -822,7 +822,7 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("No input provided"));
-        assert!(err_msg.contains("acai -"));
+        assert!(err_msg.contains("cake -"));
     }
 
     #[test]
@@ -1015,26 +1015,26 @@ mod tests {
     // Tests for verbosity
     #[test]
     fn test_verbosity_default_is_normal() {
-        let args = CodingAssistant::parse_from(["acai", "test prompt"]);
+        let args = CodingAssistant::parse_from(["cake", "test prompt"]);
         assert_eq!(args.verbosity(), Verbosity::Normal);
     }
 
     #[test]
     fn test_verbosity_verbose_flag() {
-        let args = CodingAssistant::parse_from(["acai", "--verbose", "test prompt"]);
+        let args = CodingAssistant::parse_from(["cake", "--verbose", "test prompt"]);
         assert_eq!(args.verbosity(), Verbosity::Verbose);
     }
 
     #[test]
     fn test_verbosity_quiet_flag() {
-        let args = CodingAssistant::parse_from(["acai", "--quiet", "test prompt"]);
+        let args = CodingAssistant::parse_from(["cake", "--quiet", "test prompt"]);
         assert_eq!(args.verbosity(), Verbosity::Quiet);
     }
 
     #[test]
     fn test_verbosity_stream_json_is_quiet() {
         let args =
-            CodingAssistant::parse_from(["acai", "--output-format", "stream-json", "test prompt"]);
+            CodingAssistant::parse_from(["cake", "--output-format", "stream-json", "test prompt"]);
         assert_eq!(args.verbosity(), Verbosity::Quiet);
     }
 }
