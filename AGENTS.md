@@ -18,6 +18,9 @@ cake is an AI coding assistant CLI that:
 # Build release binary
 cargo build --release
 
+# Build and install to ~/bin
+just install
+
 # Run tests
 cargo test
 

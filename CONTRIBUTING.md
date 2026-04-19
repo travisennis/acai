@@ -127,6 +127,9 @@ See [docs/design-docs/tools.md](docs/design-docs/tools.md) for testing patterns 
 # Build release binary
 cargo build --release
 
+# Build and install to ~/bin
+just install
+
 # Run tests
 cargo test
 

@@ -69,3 +69,8 @@ update-dependencies:
 
 build:
     cargo build --release
+
+install:
+    cargo build --release
+    mkdir -p ~/bin
+    cp target/release/cake ~/bin/cake
