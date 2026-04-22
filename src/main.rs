@@ -373,7 +373,7 @@ impl CmdRunner for CodingAssistant {
             .map_err(|e| anyhow::anyhow!("Failed to get current directory: {e}"))?;
 
         // Load settings from TOML files
-        let settings = SettingsLoader::load(Some(&current_dir), &data_dir.get_cache_dir())?;
+        let settings = SettingsLoader::load(Some(&current_dir))?;
 
         let agents_files = data_dir.read_agents_files(&current_dir);
 

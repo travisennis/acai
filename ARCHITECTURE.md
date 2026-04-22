@@ -50,7 +50,7 @@ Foundation modules that provide data persistence, core types, and prompt generat
 - `Session`: In-memory session state with JSONL serialization
 - `worktree`: Git worktree utilities for isolated execution environments
 - `model`: Contains `ApiType` enum (`Responses`/`ChatCompletions`), `ModelConfig` struct (model, api_type, base_url, api_key_env, temperature, top_p, max_output_tokens, reasoning_effort, reasoning_summary, reasoning_max_tokens, providers), and `ResolvedModelConfig` (resolves API key from env var)
-- `settings`: TOML-based configuration loading from `settings.toml` files. Supports loading from both project-level (`.cake/settings.toml`) and global (`~/.cache/cake/settings.toml`) with merge semantics where project settings override global settings for the same model name.
+- `settings`: TOML-based configuration loading from `settings.toml` files. Supports loading from XDG-style global (`~/.config/cake/settings.toml`) and project-level (`.cake/settings.toml`) locations, with project settings overriding global settings for the same model name.
 - `defaults`: Default values for model, base URL, API key env var, and providers
 
 Sessions are stored in a directory hashed from the working directory path (SHA-256, first 16 hex chars), ensuring isolation between projects.

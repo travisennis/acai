@@ -15,7 +15,7 @@ use crate::config::model::{ApiType, ModelConfig};
 /// ```no_run
 /// use cake::config::SettingsLoader;
 ///
-/// let models = SettingsLoader::load(None, "/cache".as_ref())?;
+/// let models = SettingsLoader::load(None)?;
 /// for (name, def) in &models {
 ///     println!("Model: {} -> {}", name, def.model);
 /// }
@@ -38,7 +38,7 @@ pub struct Settings {
 /// ```no_run
 /// use cake::config::SettingsLoader;
 ///
-/// let models = SettingsLoader::load(None, "/cache".as_ref())?;
+/// let models = SettingsLoader::load(None)?;
 /// if let Some(def) = models.get("my-model") {
 ///     println!("Using model: {}", def.model);
 /// }
@@ -205,10 +205,7 @@ pub enum SettingsError {
 /// use cake::config::SettingsLoader;
 /// use std::path::Path;
 ///
-/// let models = SettingsLoader::load(
-///     Some(Path::new("/project")),
-///     Path::new("/cache"),
-/// )?;
+/// let models = SettingsLoader::load(Some(Path::new("/project")))?;
 /// ```
 pub struct SettingsLoader;
 
@@ -229,7 +226,7 @@ impl SettingsLoader {
     /// Loads and merges settings from global and project locations.
     ///
     /// Settings are loaded from:
-    /// 1. Global settings: `{global_dir}/settings.toml`
+    /// 1. Global settings: `~/.config/cake/settings.toml`
     /// 2. Project settings: `{project_dir}/.cake/settings.toml`
     ///
     /// Project settings override global settings for models with the same name.
@@ -240,10 +237,7 @@ impl SettingsLoader {
     /// use cake::config::SettingsLoader;
     /// use std::path::Path;
     ///
-    /// let models = SettingsLoader::load(
-    ///     Some(Path::new("/my/project")),
-    ///     Path::new("/home/user/.cache/cake"),
-    /// )?;
+    /// let models = SettingsLoader::load(Some(Path::new("/my/project")))?;
     ///
     /// if let Some(model) = models.get("default") {
     ///     println!("Default model: {}", model.model);
@@ -257,17 +251,18 @@ impl SettingsLoader {
     /// or if duplicate model names are found within the same file.
     pub fn load(
         project_dir: Option<&Path>,
-        global_dir: &Path,
     ) -> Result<HashMap<String, ModelDefinition>, SettingsError> {
         let mut models: HashMap<String, ModelDefinition> = HashMap::new();
 
-        // Load global settings first
-        let global_path = global_dir.join("settings.toml");
-        if let Some(settings) = Self::load_file(&global_path)? {
-            Self::add_models_to_map(&mut models, settings.models)?;
+        // Load global settings first.
+        if let Some(home_dir) = dirs::home_dir() {
+            let global_path = home_dir.join(".config").join("cake").join("settings.toml");
+            if let Some(settings) = Self::load_file(&global_path)? {
+                Self::add_models_to_map(&mut models, settings.models)?;
+            }
         }
 
-        // Load project settings (override global for same names)
+        // Load project settings last so they override global settings.
         if let Some(project_dir) = project_dir {
             let project_path = project_dir.join(".cake").join("settings.toml");
             if let Some(settings) = Self::load_file(&project_path)? {
@@ -319,14 +314,19 @@ impl SettingsLoader {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use temp_env::with_var;
     use tempfile::TempDir;
 
-    /// Create a temp directory with settings.toml at the root (for global settings)
-    fn create_global_settings(content: &str) -> TempDir {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("settings.toml");
-        std::fs::write(&path, content).unwrap();
-        dir
+    fn create_home_dir() -> TempDir {
+        let home = TempDir::new().unwrap();
+        std::fs::create_dir_all(home.path().join(".config")).unwrap();
+        home
+    }
+
+    fn write_global_settings(home: &Path, content: &str) {
+        let xdg_dir = home.join(".config").join("cake");
+        std::fs::create_dir_all(&xdg_dir).unwrap();
+        std::fs::write(xdg_dir.join("settings.toml"), content).unwrap();
     }
 
     /// Create a temp directory with .cake/settings.toml (for project settings)
@@ -349,7 +349,11 @@ model = "test/model"
 "#,
         );
 
-        let models = SettingsLoader::load(Some(dir.path()), Path::new("/nonexistent")).unwrap();
+        let home = create_home_dir();
+        let models = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(dir.path()))
+        })
+        .unwrap();
 
         assert_eq!(models.len(), 1);
         assert!(models.contains_key("test-model"));
@@ -358,8 +362,10 @@ model = "test/model"
 
     #[test]
     fn test_load_merges_with_override() {
+        let home = create_home_dir();
         // Global has "model-a" and "model-b"
-        let global_dir = create_global_settings(
+        write_global_settings(
+            home.path(),
             r#"
 [[models]]
 name = "model-a"
@@ -384,7 +390,10 @@ model = "project/model-c"
 "#,
         );
 
-        let models = SettingsLoader::load(Some(project_dir.path()), global_dir.path()).unwrap();
+        let models = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(project_dir.path()))
+        })
+        .unwrap();
 
         assert_eq!(models.len(), 3);
         // model-a from global
@@ -396,11 +405,56 @@ model = "project/model-c"
     }
 
     #[test]
-    fn test_load_missing_file_succeeds() {
-        let models = SettingsLoader::load(
-            Some(Path::new("/nonexistent")),
-            Path::new("/also/nonexistent"),
+    fn test_load_reads_xdg_global_settings() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+[[models]]
+name = "xdg-model"
+model = "xdg/model"
+"#,
         );
+
+        let models = with_var("HOME", Some(home.path()), || SettingsLoader::load(None)).unwrap();
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models.get("xdg-model").unwrap().model, "xdg/model");
+    }
+
+    #[test]
+    fn test_project_overrides_xdg_global() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+[[models]]
+name = "shared"
+model = "xdg/model"
+"#,
+        );
+        let project_dir = create_project_settings(
+            r#"
+[[models]]
+name = "shared"
+model = "project/model"
+"#,
+        );
+
+        let models = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(project_dir.path()))
+        })
+        .unwrap();
+
+        assert_eq!(models.get("shared").unwrap().model, "project/model");
+    }
+
+    #[test]
+    fn test_load_missing_file_succeeds() {
+        let home = create_home_dir();
+        let models = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(Path::new("/nonexistent")))
+        });
         assert!(models.is_ok());
         assert!(models.unwrap().is_empty());
     }
@@ -419,7 +473,10 @@ model = "second"
 "#,
         );
 
-        let result = SettingsLoader::load(Some(dir.path()), Path::new("/nonexistent"));
+        let home = create_home_dir();
+        let result = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(dir.path()))
+        });
         assert!(matches!(result, Err(SettingsError::DuplicateModelName { name }) if name == "dup"));
     }
 
@@ -433,7 +490,10 @@ model = "test"
 "#,
         );
 
-        let result = SettingsLoader::load(Some(dir.path()), Path::new("/nonexistent"));
+        let home = create_home_dir();
+        let result = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(dir.path()))
+        });
         assert!(matches!(
             result,
             Err(SettingsError::InvalidModelName { name, .. }) if name == "Invalid Name!"
@@ -450,7 +510,11 @@ model = "test/model"
 "#,
         );
 
-        let models = SettingsLoader::load(Some(dir.path()), Path::new("/nonexistent")).unwrap();
+        let home = create_home_dir();
+        let models = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(dir.path()))
+        })
+        .unwrap();
         let def = models.get("minimal").unwrap();
 
         assert_eq!(def.base_url, DEFAULT_BASE_URL);

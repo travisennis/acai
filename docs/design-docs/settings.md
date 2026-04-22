@@ -8,7 +8,7 @@ cake supports loading configuration from `settings.toml` files, enabling:
 
 - **Named model configurations**: Define multiple models with different settings
 - **Project-level settings**: Per-project `.cake/settings.toml`
-- **Global settings**: System-wide `~/.cache/cake/settings.toml`
+- **Global settings**: System-wide `~/.config/cake/settings.toml`
 - **Merge semantics**: Project settings override global settings for conflicting model names
 
 ## File Locations
@@ -17,7 +17,7 @@ Settings files are loaded from two locations:
 
 | Location | Purpose |
 |----------|---------|
-| `~/.cache/cake/settings.toml` | Global/system-wide settings |
+| `~/.config/cake/settings.toml` | Global/system-wide settings |
 | `./.cake/settings.toml` | Project-specific settings |
 
 Both files are optional. If neither exists, cake uses the default `ModelConfig`.
@@ -26,7 +26,7 @@ Both files are optional. If neither exists, cake uses the default `ModelConfig`.
 
 Settings are merged with the following rules:
 
-1. **Global settings loaded first**: `~/.cache/cake/settings.toml` is loaded into a map
+1. **Global settings loaded first**: `~/.config/cake/settings.toml` is loaded into a map
 2. **Project settings overlay**: `./.cake/settings.toml` is loaded and added to the map
 3. **Project overrides global**: If the same model name exists in both, project wins
 4. **No in-file duplicates**: A single file cannot define the same model name twice (error)
@@ -195,10 +195,7 @@ The `SettingsLoader` handles loading and merging:
 ```rust
 impl SettingsLoader {
     /// Load and merge settings from global and project locations.
-    pub fn load(
-        project_dir: Option<&Path>,
-        global_dir: &Path,
-    ) -> Result<HashMap<String, ModelDefinition>, SettingsError>;
+    pub fn load(project_dir: Option<&Path>) -> Result<HashMap<String, ModelDefinition>, SettingsError>;
 }
 ```
 
@@ -206,7 +203,7 @@ impl SettingsLoader {
 
 ### 1. Create global settings
 
-`~/.cache/cake/settings.toml`:
+`~/.config/cake/settings.toml`:
 ```toml
 [[models]]
 name = "deepseek"

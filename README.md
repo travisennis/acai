@@ -147,7 +147,7 @@ Model settings can be configured via:
 Create a `settings.toml` file to define custom model configurations:
 
 - **Project-level**: `.cake/settings.toml` in your project directory
-- **Global**: `~/.cache/cake/settings.toml` for system-wide settings
+- **Global**: `~/.config/cake/settings.toml` for system-wide settings
 
 ```toml
 # Example settings.toml

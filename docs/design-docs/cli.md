@@ -88,7 +88,7 @@ Model-related settings (`model`, `temperature`, `top_p`, `api_type`, etc.) are c
 cake supports loading model configurations from `settings.toml` files:
 
 - **Project-level**: `.cake/settings.toml` in the current working directory
-- **Global**: `~/.cache/cake/settings.toml` for system-wide settings
+- **Global**: `~/.config/cake/settings.toml` for system-wide settings
 
 Settings are merged with project settings overriding global settings for models with the same name. This allows you to define base configurations globally and override specific models per-project.
 
