@@ -32,8 +32,12 @@ name = "glm5-1"
 model = "glm-5.1"
 
 [[models]]
-name = "kimi"
+name = "kimi-2-5"
 model = "kimi-k2.5"
+
+[[models]]
+name = "kimi"
+model = "kimi-k2.6"
 
 [[models]]
 name = "mimo-pro"
