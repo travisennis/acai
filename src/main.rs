@@ -237,8 +237,8 @@ impl CodingAssistant {
             uuid::Uuid::parse_str(uuid)
                 .map_err(|e| anyhow::anyhow!("Invalid session UUID '{uuid}': {e}"))?;
             let restored = data_dir
-                .load_session(&current_dir, uuid)?
-                .ok_or_else(|| anyhow::anyhow!("Session {uuid} not found in this directory"))?;
+                .load_session(uuid)?
+                .ok_or_else(|| anyhow::anyhow!("Session {uuid} not found"))?;
             info!(target: "cake", "Resumed session: {}", restored.id);
             let agent = Agent::new(resolved, &system_prompt)
                 .with_session_id(restored.id.clone())
@@ -254,10 +254,8 @@ impl CodingAssistant {
                 uuid::Uuid::parse_str(fork_id)
                     .map_err(|e| anyhow::anyhow!("Invalid session UUID '{fork_id}': {e}"))?;
                 data_dir
-                    .load_session(&current_dir, fork_id)?
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("Session {fork_id} not found in this directory")
-                    })?
+                    .load_session(fork_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Session {fork_id} not found"))?
             };
             info!(target: "cake", "Forking from session: {}", restored.id);
             let agent = Agent::new(resolved, &system_prompt).with_history(restored.messages);

@@ -146,7 +146,7 @@ fn is_input_error(msg: &str) -> bool {
     if msg.contains("No previous session found") {
         return true;
     }
-    if msg.contains("not found in this directory") {
+    if msg.contains("Session") && msg.contains("not found") {
         return true;
     }
 
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn classify_session_not_found() {
-        let err = anyhow::anyhow!("Session abc123 not found in this directory");
+        let err = anyhow::anyhow!("Session abc123 not found");
         assert_eq!(classify_to_u8(&err), code::INPUT_ERROR);
     }
 

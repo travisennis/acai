@@ -131,7 +131,7 @@ Or configure a different provider by setting the appropriate environment variabl
 | Variable | Description |
 |----------|-------------|
 | `OPENCODE_ZEN_API_TOKEN` | API key (default provider) |
-| `CAKE_DATA_DIR` | Override data directory (default: `~/.cache/cake/`) |
+| `CAKE_DATA_DIR` | Override cache and session directories (default: cache at `~/.cache/cake/`, sessions at `~/.local/share/cake/sessions/`) |
 | `CAKE_SANDBOX` | Set to `off` to disable filesystem sandboxing |
 
 ### Model Configuration
@@ -246,7 +246,7 @@ cake --fork "Let's discuss something different"
 cake --fork 550e8400-e29b-41d4-a716-446655440000 "New branch of conversation"
 ```
 
-Sessions are saved to `~/.cache/cake/sessions/` (or `$CAKE_DATA_DIR/sessions/` if set) and include full conversation history with metadata. Sessions are saved on both success and error for crash recovery.
+Sessions are saved to `~/.local/share/cake/sessions/` (or `$CAKE_DATA_DIR/sessions/` if set) as flat `{uuid}.jsonl` files. Each file includes full conversation history with metadata. Sessions are saved on both success and error for crash recovery.
 
 For more details, see [Session Management](docs/design-docs/session-management.md).
 

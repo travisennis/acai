@@ -33,7 +33,7 @@ Use `--resume <UUID>` to restore a specific session by its identifier:
 cake --resume 550e8400-e29b-41d4-a716-446655440000 "Continue our conversation"
 ```
 
-The UUID is scoped to the current directory — you can only resume sessions that were created in the same directory.
+`--resume` finds sessions globally by UUID, regardless of which directory you run it from.
 
 ### Disabling Session Saving
 
@@ -53,16 +53,15 @@ This is useful for ephemeral queries where you don't need to continue the conver
 
 ### Storage Layout
 
-Sessions are stored under `~/.cache/cake/sessions/` organized by a hash of the working directory:
+Sessions are stored as flat files under `~/.local/share/cake/sessions/`:
 
 ```
-~/.cache/cake/sessions/
-  {dir_hash}/
-    {uuid}.jsonl        # Individual session files (JSONL format)
+~/.local/share/cake/sessions/
+  {uuid}.jsonl        # Individual session files (JSONL format)
 ```
 
-- **dir_hash**: First 16 hex characters of a SHA-256 hash of the absolute working directory path. This groups sessions by project directory.
-- The most recent session is determined by file modification time (the newest `.jsonl` file).
+- Each session file is named with its UUID for easy reference.
+- The most recent session for a directory is found by scanning all files, reading the `working_directory` field from each header, and picking the newest by file modification time.
 
 ### Session File Format
 
@@ -131,7 +130,7 @@ Note: Only conversation history is restored. Model parameters (temperature, max 
 
 ## Directory Isolation
 
-Sessions are isolated by working directory. Each directory gets its own namespace via the directory hash:
+Sessions are isolated by working directory. `--continue` and `--fork` (without a UUID) only consider sessions whose header `working_directory` matches the current directory:
 
 ```bash
 # Sessions in /Users/user/project-a are separate from /Users/user/project-b
@@ -143,9 +142,15 @@ cake --continue "What project am I working on?"
 # Error: No previous session found for this directory
 ```
 
-## Compatibility with Legacy History
+## Migration from Old Storage
 
-The new session system coexists with the legacy timestamp-based history files in `~/.cache/cake/history/`. Legacy files are not migrated and remain available for audit purposes. New sessions are written exclusively to `~/.cache/cake/sessions/`.
+Earlier versions stored sessions under `~/.cache/cake/sessions/{dir_hash}/`. To migrate existing sessions to the new flat layout, run:
+
+```bash
+./migrate-sessions.sh
+```
+
+This moves all `{uuid}.jsonl` files from the old hash-based directories into `~/.local/share/cake/sessions/`. It is safe to run multiple times (skips files that already exist at the destination).
 
 ## Implementation Details
 

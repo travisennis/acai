@@ -113,8 +113,9 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 
 ## Additional Notes
 
-- Data directory stored in `~/.cache/cake/` (see `src/config/data_dir.rs`)
+- Cache directory: `~/.cache/cake/` (logs, ephemeral data)
+- Session directory: `~/.local/share/cake/sessions/` (conversation history)
+- Both can be overridden via `CAKE_DATA_DIR` environment variable
 - Project-level settings in `.cake/settings.toml`
-- Data directory can be overridden via `CAKE_DATA_DIR` environment variable
 - Logs at `~/.cache/cake/cake.YYYY-MM-DD.log` (daily rotation, 7-day retention)
 - API key required via environment variable (default: `OPENCODE_ZEN_API_TOKEN`)

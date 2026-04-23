@@ -1,10 +1,11 @@
 use std::{
     fs,
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, anyhow};
-use sha2::{Digest, Sha256};
+use serde::Deserialize;
 
 use crate::config::Session;
 
@@ -23,23 +24,27 @@ pub struct AgentsFile {
 
 /// Manages the data directory for session storage.
 ///
-/// The data directory defaults to `~/.cache/cake/` and contains session files,
-/// cache data, and other persistent state for the cake CLI.
+/// The cache directory defaults to `~/.cache/cake/` and contains cache data,
+/// logs, and other ephemeral state. Session files are stored separately at
+/// `~/.local/share/cake/sessions/` for durability and discoverability.
 ///
-/// The directory can be overridden by setting the `CAKE_DATA_DIR` environment
+/// The directories can be overridden by setting the `CAKE_DATA_DIR` environment
 /// variable. This is useful for testing and for running cake inside cake
 /// (nested invocations) without filesystem collisions.
 #[derive(Debug, Clone)]
 pub struct DataDir {
-    /// The path to the data directory.
+    /// The path to the cache/data directory.
     data_dir: PathBuf,
+    /// The path to the sessions directory.
+    sessions_dir: PathBuf,
 }
 
 impl DataDir {
     /// Creates a new data directory instance for session storage.
     ///
-    /// If `CAKE_DATA_DIR` is set, uses that path. Otherwise defaults to
-    /// `~/.cache/cake/`. The directory is created if it does not exist.
+    /// If `CAKE_DATA_DIR` is set, uses that path for both cache and sessions.
+    /// Otherwise, cache defaults to `~/.cache/cake/` and sessions to
+    /// `~/.local/share/cake/sessions/`. Directories are created if they do not exist.
     ///
     /// # Examples
     ///
@@ -51,14 +56,21 @@ impl DataDir {
     /// # Errors
     ///
     /// Returns an error if the home directory cannot be determined (when
-    /// `CAKE_DATA_DIR` is not set), or if the data directory cannot be created.
+    /// `CAKE_DATA_DIR` is not set), or if directories cannot be created.
     pub fn new() -> anyhow::Result<Self> {
-        let data_dir = if let Ok(custom) = std::env::var("CAKE_DATA_DIR") {
-            PathBuf::from(custom)
+        let (data_dir, sessions_dir) = if let Ok(custom) = std::env::var("CAKE_DATA_DIR") {
+            let custom = PathBuf::from(custom);
+            (custom.clone(), custom.join("sessions"))
         } else {
             let home_dir = dirs::home_dir();
             if let Some(home) = home_dir {
-                home.join(".cache").join("cake")
+                (
+                    home.join(".cache").join("cake"),
+                    home.join(".local")
+                        .join("share")
+                        .join("cake")
+                        .join("sessions"),
+                )
             } else {
                 return Err(anyhow!("Could not create data directory."));
             }
@@ -67,8 +79,14 @@ impl DataDir {
         if !data_dir.exists() {
             fs::create_dir_all(&data_dir)?;
         }
+        if !sessions_dir.exists() {
+            fs::create_dir_all(&sessions_dir)?;
+        }
 
-        Ok(Self { data_dir })
+        Ok(Self {
+            data_dir,
+            sessions_dir,
+        })
     }
 
     /// Returns the path to the cache directory.
@@ -86,23 +104,16 @@ impl DataDir {
         self.data_dir.clone()
     }
 
-    /// Returns the sessions directory path: `~/.cache/cake/sessions/`
+    /// Returns the sessions directory path.
+    ///
+    /// Defaults to `~/.local/share/cake/sessions/` or `{CAKE_DATA_DIR}/sessions`.
     fn sessions_dir(&self) -> PathBuf {
-        self.data_dir.join("sessions")
-    }
-
-    /// Hash a working directory path to a short hex string for directory naming.
-    fn dir_hash(working_dir: &Path) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(working_dir.to_string_lossy().as_bytes());
-        let result = hasher.finalize();
-        // First 16 hex characters (8 bytes)
-        hex::encode(&result[..8])
+        self.sessions_dir.clone()
     }
 
     /// Saves a session to disk with atomic write.
     ///
-    /// The session is saved to `~/.cache/cake/sessions/{dir_hash}/{session_id}.jsonl`.
+    /// The session is saved to `~/.local/share/cake/sessions/{session_id}.jsonl`.
     /// The most recent session is determined by file modification time (no symlink needed).
     ///
     /// # Examples
@@ -127,9 +138,7 @@ impl DataDir {
             anyhow!("Invalid session UUID '{id}': {e}")
         })?;
 
-        let dir_hash = Self::dir_hash(&session.working_dir);
-        let session_dir = self.sessions_dir().join(&dir_hash);
-        let session_path = session_dir.join(format!("{}.jsonl", session.id));
+        let session_path = self.sessions_dir().join(format!("{}.jsonl", session.id));
 
         tracing::info!(target: "cake", "Saving session {} to {}", session.id, session_path.display());
 
@@ -140,9 +149,9 @@ impl DataDir {
 
     /// Loads the most recent session for a given working directory.
     ///
-    /// Finds the newest `.jsonl` file by modification time in the session
-    /// directory. Returns `None` if no sessions exist for the given working
-    /// directory.
+    /// Scans all session files and finds the newest `.jsonl` file by modification
+    /// time whose `working_directory` header field matches the given directory.
+    /// Returns `None` if no matching sessions exist.
     ///
     /// # Examples
     ///
@@ -160,12 +169,12 @@ impl DataDir {
     ///
     /// # Errors
     ///
-    /// Returns an error if the session file exists but cannot be loaded.
+    /// Returns an error if the session directory cannot be read or if a
+    /// matching session file cannot be loaded.
     pub fn load_latest_session(&self, working_dir: &Path) -> anyhow::Result<Option<Session>> {
-        let dir_hash = Self::dir_hash(working_dir);
-        let session_dir = self.sessions_dir().join(&dir_hash);
+        let session_dir = self.sessions_dir();
 
-        tracing::info!(target: "cake", "Looking for latest session in {} (hash: {dir_hash})", session_dir.display());
+        tracing::info!(target: "cake", "Looking for latest session in {} for {}", session_dir.display(), working_dir.display());
 
         if !session_dir.exists() {
             tracing::info!(target: "cake", "Session directory does not exist: {}", session_dir.display());
@@ -182,8 +191,10 @@ impl DataDir {
             .filter_map(Result::ok)
             .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "jsonl"))
             .filter_map(|entry| {
+                let path = entry.path();
                 let modified = entry.metadata().ok()?.modified().ok()?;
-                Some((entry.path(), modified))
+                let header = read_session_header(&path).ok()?;
+                (header.working_directory == working_dir).then_some((path, modified))
             })
             .max_by_key(|(_, modified)| *modified)
             .map(|(path, _)| Session::load(&path))
@@ -198,7 +209,7 @@ impl DataDir {
         Ok(result)
     }
 
-    /// Loads a specific session by UUID for a given working directory.
+    /// Loads a specific session by UUID.
     ///
     /// Returns the session with the given ID, or `None` if no such session exists.
     ///
@@ -206,11 +217,9 @@ impl DataDir {
     ///
     /// ```
     /// use cake::config::DataDir;
-    /// use std::path::PathBuf;
     ///
     /// let data_dir = DataDir::new()?;
     /// let session = data_dir.load_session(
-    ///     &PathBuf::from("/project"),
     ///     "550e8400-e29b-41d4-a716-446655440000"
     /// )?;
     /// ```
@@ -219,14 +228,10 @@ impl DataDir {
     ///
     /// Returns an error if the session ID is not a valid UUID, or if the
     /// session file exists but cannot be loaded.
-    pub fn load_session(&self, working_dir: &Path, id: &str) -> anyhow::Result<Option<Session>> {
+    pub fn load_session(&self, id: &str) -> anyhow::Result<Option<Session>> {
         uuid::Uuid::parse_str(id).map_err(|e| anyhow!("Invalid session UUID '{id}': {e}"))?;
 
-        let dir_hash = Self::dir_hash(working_dir);
-        let session_path = self
-            .sessions_dir()
-            .join(&dir_hash)
-            .join(format!("{id}.jsonl"));
+        let session_path = self.sessions_dir().join(format!("{id}.jsonl"));
 
         tracing::info!(target: "cake", "Loading session {id} from {}", session_path.display());
 
@@ -303,6 +308,32 @@ impl DataDir {
     }
 }
 
+/// Minimal header struct for quickly inspecting a session file without
+/// loading the entire conversation history.
+#[derive(Deserialize)]
+struct SessionFileHeader {
+    #[allow(dead_code)]
+    session_id: String,
+    working_directory: PathBuf,
+}
+
+/// Reads only the first line of a session file to extract its header.
+fn read_session_header(path: &Path) -> anyhow::Result<SessionFileHeader> {
+    let file = fs::File::open(path)
+        .with_context(|| format!("Failed to open session file: {}", path.display()))?;
+    let mut reader = BufReader::new(file);
+    let mut first_line = String::new();
+    reader.read_line(&mut first_line).with_context(|| {
+        format!(
+            "Failed to read header from session file: {}",
+            path.display()
+        )
+    })?;
+    let header: SessionFileHeader = serde_json::from_str(first_line.trim())
+        .with_context(|| format!("Failed to parse session header: {}", path.display()))?;
+    Ok(header)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -313,30 +344,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dd = DataDir {
             data_dir: tmp.path().to_path_buf(),
+            sessions_dir: tmp.path().join("sessions"),
         };
         (dd, tmp)
-    }
-
-    #[test]
-    fn dir_hash_deterministic() {
-        let path = PathBuf::from("/test/path");
-        assert_eq!(DataDir::dir_hash(&path), DataDir::dir_hash(&path));
-    }
-
-    #[test]
-    fn dir_hash_different_paths_differ() {
-        let a = DataDir::dir_hash(&PathBuf::from("/a"));
-        let b = DataDir::dir_hash(&PathBuf::from("/b"));
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn dir_hash_output_format() {
-        let path = PathBuf::from("/test/path");
-        let hash = DataDir::dir_hash(&path);
-        // Should be 16 hex characters (8 bytes)
-        assert_eq!(hash.len(), 16);
-        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]
@@ -344,10 +354,7 @@ mod tests {
         let (dd, _tmp) = test_data_dir();
         let session = Session::new(uuid::Uuid::new_v4().to_string(), PathBuf::from("/work"));
         dd.save_session(&session).unwrap();
-        let loaded = dd
-            .load_session(&PathBuf::from("/work"), &session.id)
-            .unwrap()
-            .unwrap();
+        let loaded = dd.load_session(&session.id).unwrap().unwrap();
         assert_eq!(loaded.id, session.id);
         assert_eq!(loaded.working_dir, session.working_dir);
     }
@@ -367,9 +374,7 @@ mod tests {
     #[test]
     fn load_session_missing_returns_none() {
         let (dd, _tmp) = test_data_dir();
-        let result = dd
-            .load_session(&PathBuf::from("/work"), &uuid::Uuid::new_v4().to_string())
-            .unwrap();
+        let result = dd.load_session(&uuid::Uuid::new_v4().to_string()).unwrap();
         assert!(result.is_none());
     }
 
@@ -400,7 +405,7 @@ mod tests {
     #[test]
     fn load_session_invalid_uuid_errors() {
         let (dd, _tmp) = test_data_dir();
-        let result = dd.load_session(&PathBuf::from("/work"), "not-a-uuid");
+        let result = dd.load_session("not-a-uuid");
         assert!(result.is_err());
         assert!(
             result
@@ -412,9 +417,9 @@ mod tests {
 
     #[test]
     fn sessions_dir_structure() {
-        let (dd, _tmp) = test_data_dir();
+        let (dd, tmp) = test_data_dir();
         let sessions_dir = dd.sessions_dir();
-        assert_eq!(sessions_dir, dd.data_dir.join("sessions"));
+        assert_eq!(sessions_dir, tmp.path().join("sessions"));
     }
 
     #[test]
@@ -429,14 +434,8 @@ mod tests {
         dd.save_session(&session2).unwrap();
 
         // Both sessions should be loadable
-        let loaded1 = dd
-            .load_session(&working_dir, &session1.id)
-            .unwrap()
-            .unwrap();
-        let loaded2 = dd
-            .load_session(&working_dir, &session2.id)
-            .unwrap()
-            .unwrap();
+        let loaded1 = dd.load_session(&session1.id).unwrap().unwrap();
+        let loaded2 = dd.load_session(&session2.id).unwrap().unwrap();
 
         assert_eq!(loaded1.id, session1.id);
         assert_eq!(loaded2.id, session2.id);

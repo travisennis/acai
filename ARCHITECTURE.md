@@ -46,14 +46,14 @@ The bridge to external AI services and the orchestration layer for tool executio
 Foundation modules that provide data persistence, core types, and prompt generation.
 
 **`config`**:
-- `DataDir`: Manages the data directory (defaults to `~/.cache/cake/`, overridable via `CAKE_DATA_DIR` env var), session storage, and AGENTS.md discovery
+- `DataDir`: Manages cache directory (`~/.cache/cake/`), session directory (`~/.local/share/cake/sessions/`), both overridable via `CAKE_DATA_DIR`, plus AGENTS.md discovery
 - `Session`: In-memory session state with JSONL serialization
 - `worktree`: Git worktree utilities for isolated execution environments
 - `model`: Contains `ApiType` enum (`Responses`/`ChatCompletions`), `ModelConfig` struct (model, api_type, base_url, api_key_env, temperature, top_p, max_output_tokens, reasoning_effort, reasoning_summary, reasoning_max_tokens, providers), and `ResolvedModelConfig` (resolves API key from env var)
 - `settings`: TOML-based configuration loading from `settings.toml` files. Supports loading from XDG-style global (`~/.config/cake/settings.toml`) and project-level (`.cake/settings.toml`) locations, with project settings overriding global settings for the same model name.
 - `defaults`: Default values for model, base URL, API key env var, and providers
 
-Sessions are stored in a directory hashed from the working directory path (SHA-256, first 16 hex chars), ensuring isolation between projects.
+Sessions are stored as flat `{uuid}.jsonl` files under `~/.local/share/cake/sessions/`. Each file's header contains the working directory, so `--continue` filters by matching the current directory.
 
 **`models`**:
 - `Message`: Simple role+content struct for high-level API
@@ -85,7 +85,7 @@ These constraints guide the design and are unlikely to change:
 
 5. **Bash tool blocks destructive commands**: Known-destructive commands (e.g. `git reset --hard`, `git push --force`, `rm -rf` outside temp dirs) are rejected before execution as a best-effort safety guard.
 
-6. **Session writes are atomic**: Sessions are written to a temp file, then renamed to the final path. The most recent session is determined by file modification time.
+6. **Session writes are atomic**: Sessions are written to a temp file, then renamed to the final path. The most recent session for a directory is determined by file modification time among files whose header matches the working directory.
 
 7. **Sandboxing is opt-out, not opt-in**: Sandboxing applies to all bash commands unless explicitly disabled via `CAKE_SANDBOX=0`.
 
@@ -103,7 +103,7 @@ Tools are pure functions from JSON arguments to `ToolResult`. The client owns th
 
 ### Config ↔ Filesystem Boundary
 
-All filesystem access for configuration and sessions goes through `DataDir`. No other module constructs paths into `~/.cache/cake/` directly.
+All filesystem access for configuration and sessions goes through `DataDir`. No other module constructs paths into `~/.cache/cake/` or `~/.local/share/cake/` directly.
 
 ### Host ↔ Sandbox Boundary
 
