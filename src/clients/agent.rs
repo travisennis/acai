@@ -97,11 +97,6 @@ impl Agent {
         &self.config.config.model
     }
 
-    /// Returns the number of registered tools.
-    pub const fn tool_count(&self) -> usize {
-        self.tools.len()
-    }
-
     /// Sets the session ID for a restored session.
     ///
     /// Use this when continuing a previous session to preserve the session ID.

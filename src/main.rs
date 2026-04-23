@@ -13,7 +13,6 @@ use std::time::{Duration, Instant};
 use crate::cli::CmdRunner;
 use crate::clients::{Agent, ConversationItem, set_additional_dirs};
 use std::collections::HashMap;
-use std::io::Write;
 
 use crate::config::{
     AgentsFile, DataDir, ModelConfig, ModelDefinition, ResolvedModelConfig, Session,
@@ -77,14 +76,6 @@ struct CodingAssistant {
     #[arg(long)]
     pub model: Option<String>,
 
-    /// Show detailed tool call progress on stderr (only applies to text output format)
-    #[arg(long, conflicts_with = "quiet")]
-    pub verbose: bool,
-
-    /// Suppress all progress output on stderr
-    #[arg(long, conflicts_with = "verbose")]
-    pub quiet: bool,
-
     /// Override reasoning effort level (none, low, medium, high, xhigh)
     #[arg(long, value_name = "EFFORT")]
     pub reasoning_effort: Option<String>,
@@ -98,29 +89,7 @@ struct CodingAssistant {
     pub add_dir: Vec<String>,
 }
 
-/// Determines how much progress information to show on stderr.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Verbosity {
-    /// No progress output at all
-    Quiet,
-    /// Spinner with current tool name (default)
-    Normal,
-    /// Full verbose output with timestamps and details
-    Verbose,
-}
-
 impl CodingAssistant {
-    /// Determine the effective verbosity level.
-    fn verbosity(&self) -> Verbosity {
-        if self.quiet || self.output_format != OutputFormat::Text {
-            Verbosity::Quiet
-        } else if self.verbose {
-            Verbosity::Verbose
-        } else {
-            Verbosity::Normal
-        }
-    }
-
     /// Read content from stdin if available (non-terminal)
     ///
     /// This function only reads from stdin if:
@@ -386,50 +355,27 @@ impl CmdRunner for CodingAssistant {
             });
         }
 
-        let verbosity = self.verbosity();
-
+        #[allow(clippy::useless_let_if_seq)]
         let mut normal_spinner: Option<ProgressBar> = None;
 
-        match verbosity {
-            Verbosity::Verbose => {
-                let model = client.model().to_string();
-                let tool_count = client.tool_count();
-                let start_time = Instant::now();
+        if self.output_format == OutputFormat::Text {
+            let spinner = ProgressBar::new_spinner();
+            #[allow(clippy::literal_string_with_formatting_args)]
+            let style = ProgressStyle::with_template("{spinner:.cyan} {msg}")
+                .unwrap_or_else(|_| ProgressStyle::default_spinner());
+            spinner.set_style(style);
+            spinner.enable_steady_tick(Duration::from_millis(80));
+            spinner.set_message("Thinking...");
 
-                client = client.with_progress_callback(move |item| {
-                    let elapsed = start_time.elapsed().as_secs_f64();
-                    let line = format_progress_item(item, elapsed);
-                    if !line.is_empty() {
-                        let _ = writeln!(std::io::stderr(), "{line}");
-                    }
-                });
+            let spinner_clone = spinner.clone();
+            client = client.with_progress_callback(move |item| {
+                let msg = format_spinner_message(item);
+                if let Some(msg) = msg {
+                    spinner_clone.set_message(msg);
+                }
+            });
 
-                eprintln!(
-                    "\x1b[1;36m-- start:\x1b[0m\n  dir: {}\n  session: {}\n  model: {model}\n  tools: {tool_count}",
-                    original_dir.display(),
-                    session.id
-                );
-            },
-            Verbosity::Normal => {
-                let spinner = ProgressBar::new_spinner();
-                #[allow(clippy::literal_string_with_formatting_args)]
-                let style = ProgressStyle::with_template("{spinner:.cyan} {msg}")
-                    .unwrap_or_else(|_| ProgressStyle::default_spinner());
-                spinner.set_style(style);
-                spinner.enable_steady_tick(Duration::from_millis(80));
-                spinner.set_message("Thinking...");
-
-                let spinner_clone = spinner.clone();
-                client = client.with_progress_callback(move |item| {
-                    let msg = format_spinner_message(item);
-                    if let Some(msg) = msg {
-                        spinner_clone.set_message(msg);
-                    }
-                });
-
-                normal_spinner = Some(spinner);
-            },
-            Verbosity::Quiet => {},
+            normal_spinner = Some(spinner);
         }
 
         let msg = Message {
@@ -470,9 +416,6 @@ impl CmdRunner for CodingAssistant {
         if let Some(spinner) = normal_spinner.take() {
             let summary = format_done_summary(duration_ms, &client);
             spinner.finish_with_message(format!("Done: {summary}"));
-        } else if verbosity == Verbosity::Verbose {
-            let summary = format_done_summary(duration_ms, &client);
-            eprintln!("\x1b[1;36m-- done:\x1b[0m {summary}");
         }
 
         if !self.no_session {
@@ -504,29 +447,6 @@ impl CmdRunner for CodingAssistant {
     }
 }
 
-/// Format a conversation item as a human-readable progress line for verbose mode.
-fn format_progress_item(item: &ConversationItem, elapsed_secs: f64) -> String {
-    // ANSI: dim white for timestamp, bold cyan for separator, default for content
-    let ts = format!("\x1b[2m[{elapsed_secs:>6.1}s]\x1b[0m");
-
-    match item {
-        ConversationItem::FunctionCall {
-            name, arguments, ..
-        } => {
-            let summary = clients::summarize_tool_args(name, arguments);
-            format!("{ts} \x1b[1;36m>\x1b[0m {name}: {summary}")
-        },
-        ConversationItem::Reasoning { .. } => {
-            format!("{ts} \x1b[1;35m*\x1b[0m thinking/reasoning...")
-        },
-        ConversationItem::Message { role, content, .. } if *role == Role::Assistant => {
-            format!("{ts} \x1b[1;33m<\x1b[0m {content}")
-        },
-        // Skip user messages, system messages, and function output items
-        _ => String::new(),
-    }
-}
-
 /// Format a completion summary with elapsed time, turns, and token usage.
 fn format_done_summary(duration_ms: u64, client: &Agent) -> String {
     // Precision loss acceptable: used only for display
@@ -537,7 +457,8 @@ fn format_done_summary(duration_ms: u64, client: &Agent) -> String {
     let output_tokens = client.total_usage.output_tokens;
     let cached_reads_tokens = client.total_usage.input_tokens_details.cached_tokens;
     format!(
-        "{secs:.1}s, {turns} turns, {input_tokens} input tokens, {cached_reads_tokens} cached reads, {output_tokens} output tokens"
+        "session {}, {secs:.1}s, {turns} turns, {input_tokens} input tokens, {cached_reads_tokens} cached reads, {output_tokens} output tokens",
+        client.session_id
     )
 }
 
@@ -884,73 +805,6 @@ mod tests {
         );
     }
 
-    // Tests for format_progress_item
-    #[test]
-    fn test_format_progress_item_function_call() {
-        let item = ConversationItem::FunctionCall {
-            id: "fc-1".to_string(),
-            call_id: "call-1".to_string(),
-            name: "Bash".to_string(),
-            arguments: r#"{"command":"ls -la"}"#.to_string(),
-            timestamp: None,
-        };
-        let output = format_progress_item(&item, 1.5);
-        assert!(output.contains("Bash:"));
-        assert!(output.contains("ls -la"));
-    }
-
-    #[test]
-    fn test_format_progress_item_reasoning() {
-        let item = ConversationItem::Reasoning {
-            id: "r-1".to_string(),
-            summary: vec!["thinking...".to_string()],
-            encrypted_content: None,
-            content: None,
-            timestamp: None,
-        };
-        let output = format_progress_item(&item, 2.0);
-        assert!(output.contains("thinking/reasoning"));
-    }
-
-    #[test]
-    fn test_format_progress_item_assistant_message() {
-        let item = ConversationItem::Message {
-            role: Role::Assistant,
-            content: "Here is the answer".to_string(),
-            id: Some("msg-1".to_string()),
-            status: Some("completed".to_string()),
-            timestamp: None,
-        };
-        let output = format_progress_item(&item, 3.0);
-        assert!(output.contains("Here is the answer"));
-    }
-
-    #[test]
-    fn test_format_progress_item_user_message_empty() {
-        let item = ConversationItem::Message {
-            role: Role::User,
-            content: "Hello".to_string(),
-            id: None,
-            status: None,
-            timestamp: None,
-        };
-        let output = format_progress_item(&item, 1.0);
-        // User messages should return empty string (not shown in verbose)
-        assert!(output.is_empty());
-    }
-
-    #[test]
-    fn test_format_progress_item_function_call_output_empty() {
-        let item = ConversationItem::FunctionCallOutput {
-            call_id: "call-1".to_string(),
-            output: "result".to_string(),
-            timestamp: None,
-        };
-        let output = format_progress_item(&item, 1.0);
-        // Function call outputs should return empty string (not shown in verbose)
-        assert!(output.is_empty());
-    }
-
     // Tests for format_spinner_message
     #[test]
     fn test_format_spinner_message_function_call() {
@@ -1016,29 +870,31 @@ mod tests {
         assert!(format_spinner_message(&item).is_none());
     }
 
-    // Tests for verbosity
     #[test]
-    fn test_verbosity_default_is_normal() {
-        let args = CodingAssistant::parse_from(["cake", "test prompt"]);
-        assert_eq!(args.verbosity(), Verbosity::Normal);
-    }
+    fn test_format_done_summary() {
+        temp_env::with_var("CAKE_TEST_VALID_KEY", Some("sk-test-123"), || {
+            let config = ModelConfig {
+                api_key_env: "CAKE_TEST_VALID_KEY".to_string(),
+                ..ModelConfig::default()
+            };
+            let resolved = match ResolvedModelConfig::resolve(config) {
+                Ok(resolved) => resolved,
+                Err(err) => panic!("test config should resolve: {err}"),
+            };
+            let mut agent = Agent::new(resolved, "test system prompt");
+            agent.session_id = "session-123".to_string();
+            agent.turn_count = 3;
+            agent.total_usage.input_tokens = 1000;
+            agent.total_usage.input_tokens_details.cached_tokens = 250;
+            agent.total_usage.output_tokens = 500;
 
-    #[test]
-    fn test_verbosity_verbose_flag() {
-        let args = CodingAssistant::parse_from(["cake", "--verbose", "test prompt"]);
-        assert_eq!(args.verbosity(), Verbosity::Verbose);
-    }
-
-    #[test]
-    fn test_verbosity_quiet_flag() {
-        let args = CodingAssistant::parse_from(["cake", "--quiet", "test prompt"]);
-        assert_eq!(args.verbosity(), Verbosity::Quiet);
-    }
-
-    #[test]
-    fn test_verbosity_stream_json_is_quiet() {
-        let args =
-            CodingAssistant::parse_from(["cake", "--output-format", "stream-json", "test prompt"]);
-        assert_eq!(args.verbosity(), Verbosity::Quiet);
+            let summary = format_done_summary(1500, &agent);
+            assert!(summary.contains("session session-123"));
+            assert!(summary.contains("1.5s"));
+            assert!(summary.contains("3 turns"));
+            assert!(summary.contains("1000 input tokens"));
+            assert!(summary.contains("250 cached reads"));
+            assert!(summary.contains("500 output tokens"));
+        });
     }
 }

@@ -22,7 +22,7 @@ When `--output-format text` is used (default):
 
 1. The final assistant response is printed to stdout as plain text
 2. No intermediate JSON is emitted
-3. With `--verbose`, human-readable tool call progress is streamed to stderr (see [cli.md](cli.md#verbose-mode---verbose))
+3. Human-readable progress is streamed to stderr, and the final progress line includes the session ID, duration, turn count, and token usage
 
 ## JSON Object Schema
 
