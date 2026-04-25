@@ -1,4 +1,6 @@
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::Utc;
@@ -65,6 +67,15 @@ pub struct Agent {
     /// Populated by `emit_init_message`, `stream_item`, and `emit_result_message`.
     /// Used to reconstruct the session file on save.
     stream: Vec<SessionRecord>,
+    /// Maps SKILL.md paths to skill names for activation deduplication.
+    /// When the Read tool targets one of these paths, the agent checks if the
+    /// skill has already been activated and returns a lightweight message instead.
+    skill_locations: HashMap<PathBuf, String>,
+    /// Names of skills that have been activated (read) in this session.
+    /// Shared between tool executions for concurrent access.
+    activated_skills: Arc<Mutex<HashSet<String>>>,
+    /// Session records containing prior skill activations (for resumed sessions)
+    prior_skill_activations: Vec<String>,
 }
 
 impl Agent {
@@ -95,6 +106,9 @@ impl Agent {
                 .build()
                 .unwrap_or_default(),
             stream: Vec::new(),
+            skill_locations: HashMap::new(),
+            activated_skills: Arc::new(Mutex::new(HashSet::new())),
+            prior_skill_activations: Vec::new(),
         }
     }
 
@@ -142,6 +156,40 @@ impl Agent {
             })
             .collect();
         self
+    }
+
+    /// Set the skill locations for deduplication.
+    ///
+    /// These paths are checked when the Read tool is used. If the model reads
+    /// a SKILL.md file that was already read in this session, a lightweight
+    /// "already activated" message is returned instead of the full content.
+    pub fn with_skill_locations(mut self, locations: HashMap<PathBuf, String>) -> Self {
+        self.skill_locations = locations;
+        self
+    }
+
+    /// Set the initially activated skills (used when resuming a session).
+    ///
+    /// These skills are pre-seeded into the activated set so they are not
+    /// re-read during the resumed session.
+    pub fn with_activated_skills(mut self, skills: HashSet<String>) -> Self {
+        // Seed the mutex with prior activations
+        if let Ok(mut guard) = self.activated_skills.lock() {
+            for skill in &skills {
+                guard.insert(skill.clone());
+            }
+        }
+        // Also store for reference
+        self.prior_skill_activations = skills.into_iter().collect();
+        self
+    }
+
+    /// Returns the names of skills that have been activated in this session.
+    #[allow(dead_code)]
+    pub fn activated_skills(&self) -> HashSet<String> {
+        self.activated_skills
+            .lock()
+            .map_or_else(|_| HashSet::new(), |guard| guard.clone())
     }
 
     /// Drains and returns the full stream buffer including Init and any Result record.
@@ -383,14 +431,77 @@ impl Agent {
             }
 
             // Execute tool calls concurrently
+            let skill_locations = self.skill_locations.clone();
+            let activated_skills = Arc::clone(&self.activated_skills);
             let futures = function_calls
                 .iter()
                 .map(|(_id, call_id, name, arguments)| {
                     let call_id = call_id.clone();
+                    let name = name.clone();
+                    let arguments = arguments.clone();
+                    let skill_locations = skill_locations.clone();
+                    let activated_skills = Arc::clone(&activated_skills);
                     async move {
-                        let result = match execute_tool(name, arguments).await {
-                            Ok(r) => r.output,
-                            Err(e) => format!("Error: {e}"),
+                        // Check for skill activation deduplication on Read tool
+                        let result = if name == "Read" {
+                            if let Some(path_str) =
+                                crate::clients::tools::read::extract_path(&arguments)
+                            {
+                                if let Ok(path) = std::path::PathBuf::from(&path_str).canonicalize()
+                                {
+                                    if let Some(skill_name) = skill_locations.get(&path) {
+                                        let already_active = activated_skills
+                                            .lock()
+                                            .map(|guard| guard.contains(skill_name))
+                                            .unwrap_or(false);
+                                        if already_active {
+                                            tracing::info!(
+                                                "Skill '{skill_name}' already activated, skipping re-read"
+                                            );
+                                            format!(
+                                                "Skill '{skill_name}' is already active in this session. \
+                                                 Its instructions are already in the conversation context."
+                                            )
+                                        } else {
+                                            // First activation - execute the read
+                                            let result = match execute_tool(&name, &arguments).await
+                                            {
+                                                Ok(r) => r.output,
+                                                Err(e) => format!("Error: {e}"),
+                                            };
+                                            if let Ok(mut guard) = activated_skills.lock() {
+                                                guard.insert(skill_name.clone());
+                                            }
+                                            tracing::info!("Skill '{}' activated", skill_name);
+                                            result
+                                        }
+                                    } else {
+                                        // Not a skill path - normal read
+                                        match execute_tool(&name, &arguments).await {
+                                            Ok(r) => r.output,
+                                            Err(e) => format!("Error: {e}"),
+                                        }
+                                    }
+                                } else {
+                                    // Path can't be canonicalized - just execute normally
+                                    match execute_tool(&name, &arguments).await {
+                                        Ok(r) => r.output,
+                                        Err(e) => format!("Error: {e}"),
+                                    }
+                                }
+                            } else {
+                                // Can't extract path - normal execution
+                                match execute_tool(&name, &arguments).await {
+                                    Ok(r) => r.output,
+                                    Err(e) => format!("Error: {e}"),
+                                }
+                            }
+                        } else {
+                            // Non-Read tool - normal execution
+                            match execute_tool(&name, &arguments).await {
+                                Ok(r) => r.output,
+                                Err(e) => format!("Error: {e}"),
+                            }
                         };
                         (call_id, result)
                     }
@@ -581,6 +692,9 @@ mod tests {
             turn_count: 0,
             client: reqwest::Client::new(),
             stream: Vec::new(),
+            skill_locations: HashMap::new(),
+            activated_skills: Arc::new(Mutex::new(HashSet::new())),
+            prior_skill_activations: Vec::new(),
         }
     }
 
@@ -928,6 +1042,9 @@ mod error_tests {
             turn_count: 0,
             client: reqwest::Client::new(),
             stream: Vec::new(),
+            skill_locations: HashMap::new(),
+            activated_skills: Arc::new(Mutex::new(HashSet::new())),
+            prior_skill_activations: Vec::new(),
         }
     }
 
@@ -960,6 +1077,9 @@ mod error_tests {
             turn_count: 0,
             client: reqwest::Client::new(),
             stream: Vec::new(),
+            skill_locations: HashMap::new(),
+            activated_skills: Arc::new(Mutex::new(HashSet::new())),
+            prior_skill_activations: Vec::new(),
         }
     }
 

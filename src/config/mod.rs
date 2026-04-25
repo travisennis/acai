@@ -16,6 +16,7 @@ pub mod defaults;
 pub mod model;
 pub mod session;
 pub mod settings;
+pub mod skills;
 pub mod worktree;
 
 #[doc(inline)]
@@ -26,3 +27,5 @@ pub use model::{ModelConfig, ResolvedModelConfig};
 pub use session::Session;
 #[doc(inline)]
 pub use settings::{ModelDefinition, SettingsLoader};
+#[doc(inline)]
+pub use skills::{DiagnosticLevel, SkillCatalog, discover_skills};

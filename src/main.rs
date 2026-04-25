@@ -11,13 +11,14 @@ mod prompts;
 use std::time::{Duration, Instant};
 
 use crate::cli::CmdRunner;
-use crate::clients::{Agent, ConversationItem, set_additional_dirs};
-use std::collections::HashMap;
+use crate::clients::{Agent, ConversationItem, set_additional_dirs, set_skill_dirs};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::config::{
-    AgentsFile, DataDir, ModelConfig, ModelDefinition, ResolvedModelConfig, Session,
-    SettingsLoader, load_session_from_path, looks_like_uuid, worktree,
+    AgentsFile, DataDir, DiagnosticLevel, ModelConfig, ModelDefinition, ResolvedModelConfig,
+    Session, SettingsLoader, SkillCatalog, discover_skills, load_session_from_path,
+    looks_like_uuid, worktree,
 };
 use crate::models::{Message, Role};
 use crate::prompts::build_system_prompt;
@@ -88,6 +89,14 @@ struct CodingAssistant {
     /// Add a directory to the sandbox config (read-only access). Can be repeated.
     #[arg(long, value_name = "DIR")]
     pub add_dir: Vec<String>,
+
+    /// Disable all skills for this session
+    #[arg(long)]
+    pub no_skills: bool,
+
+    /// Only load specific skills (comma-separated list of skill names)
+    #[arg(long, value_name = "NAMES")]
+    pub skills: Option<String>,
 }
 
 impl CodingAssistant {
@@ -286,6 +295,26 @@ impl CodingAssistant {
         resolved
     }
 
+    /// Extract activated skills from session history by scanning for Read tool
+    /// outputs that mention skill activation messages.
+    fn extract_activated_skills(messages: &[ConversationItem]) -> HashSet<String> {
+        let mut activated = HashSet::new();
+        for item in messages {
+            if let ConversationItem::FunctionCallOutput { output, .. } = item {
+                // Check for our "already active" or activation log messages
+                for line in output.lines() {
+                    if let Some(start) = line.find("Skill '")
+                        && let Some(end) = line[start + 7..].find('\'')
+                    {
+                        let name = &line[start + 7..start + 7 + end];
+                        activated.insert(name.to_string());
+                    }
+                }
+            }
+        }
+        activated
+    }
+
     #[allow(clippy::too_many_lines)]
     fn build_client_and_session(
         &self,
@@ -293,8 +322,16 @@ impl CodingAssistant {
         current_dir: PathBuf,
         agents_files: &[AgentsFile],
         settings: &HashMap<String, ModelDefinition>,
+        skill_catalog: &SkillCatalog,
     ) -> anyhow::Result<(Agent, Session)> {
-        let system_prompt = build_system_prompt(&current_dir, agents_files);
+        let system_prompt = build_system_prompt(&current_dir, agents_files, skill_catalog);
+
+        // Build skill location map for deduplication
+        let skill_locations: std::collections::HashMap<PathBuf, String> = skill_catalog
+            .skills
+            .iter()
+            .map(|s| (s.location.clone(), s.name.clone()))
+            .collect();
 
         if self.continue_session {
             info!(target: "cake", "Continuing latest session for directory: {}", current_dir.display());
@@ -303,20 +340,20 @@ impl CodingAssistant {
                 .ok_or_else(|| anyhow::anyhow!("No previous session found for this directory"))?;
             info!(target: "cake", "Continuing session: {}", restored.id);
 
-            // Resolve the model: if --model is given, use it (and reject mismatches
-            // with the session model). If --model is not given and the session has
-            // a stored model, use the session model. Otherwise fall back to default.
             let resolved = self.resolve_model_for_session(settings, restored.model.as_deref())?;
+            let messages = restored.messages();
+            let prior_skills = Self::extract_activated_skills(&messages);
 
             let agent = Agent::new(resolved.clone(), &system_prompt)
                 .with_session_id(restored.id.clone())
-                .with_history(restored.messages())
-                .with_stream_records(restored.records);
+                .with_history(messages)
+                .with_stream_records(restored.records)
+                .with_skill_locations(skill_locations)
+                .with_activated_skills(prior_skills);
             let mut s = Session::new(restored.id, restored.working_dir);
             s.model = Some(resolved.config.model);
             Ok((agent, s))
         } else if let Some(ref arg) = self.resume {
-            // --resume accepts either a UUID or a file path
             let restored = if looks_like_uuid(arg) {
                 data_dir
                     .load_session(arg)?
@@ -327,7 +364,6 @@ impl CodingAssistant {
             };
             info!(target: "cake", "Resumed session: {}", restored.id);
 
-            // Working directory check for file-based resume
             if !looks_like_uuid(arg) {
                 let restored_dir = &restored.working_dir;
                 if restored_dir != &current_dir {
@@ -341,11 +377,15 @@ impl CodingAssistant {
             }
 
             let resolved = self.resolve_model_for_session(settings, restored.model.as_deref())?;
+            let messages = restored.messages();
+            let prior_skills = Self::extract_activated_skills(&messages);
 
             let agent = Agent::new(resolved.clone(), &system_prompt)
                 .with_session_id(restored.id.clone())
-                .with_history(restored.messages())
-                .with_stream_records(restored.records);
+                .with_history(messages)
+                .with_stream_records(restored.records)
+                .with_skill_locations(skill_locations)
+                .with_activated_skills(prior_skills);
             let mut s = Session::new(restored.id, restored.working_dir);
             s.model = Some(resolved.config.model);
             Ok((agent, s))
@@ -364,7 +404,6 @@ impl CodingAssistant {
                 load_session_from_path(&path)?
             };
 
-            // Working directory check for file-based fork
             if !fork_id.is_empty() && !looks_like_uuid(fork_id) {
                 let restored_dir = &restored.working_dir;
                 if restored_dir != &current_dir {
@@ -383,7 +422,8 @@ impl CodingAssistant {
 
             let agent = Agent::new(resolved.clone(), &system_prompt)
                 .with_history(restored.messages())
-                .with_stream_records(restored.records);
+                .with_stream_records(restored.records)
+                .with_skill_locations(skill_locations);
             let new_id = agent.session_id.clone();
             info!(target: "cake", "New forked session: {new_id}");
             let mut s = Session::new(new_id, current_dir);
@@ -391,7 +431,8 @@ impl CodingAssistant {
             Ok((agent, s))
         } else {
             let resolved = ResolvedModelConfig::resolve(self.resolve_model_config(settings)?)?;
-            let agent = Agent::new(resolved.clone(), &system_prompt);
+            let agent =
+                Agent::new(resolved.clone(), &system_prompt).with_skill_locations(skill_locations);
             let new_id = agent.session_id.clone();
             info!(target: "cake", "New session: {new_id}");
             let mut s = Session::new(new_id, current_dir);
@@ -472,8 +513,65 @@ impl CmdRunner for CodingAssistant {
 
         let agents_files = data_dir.read_agents_files(&current_dir);
 
-        let (mut client, mut session) =
-            self.build_client_and_session(data_dir, current_dir, &agents_files, &settings)?;
+        // Load skill settings and discover skills
+        let skill_settings = SettingsLoader::load_skill_settings(Some(&current_dir));
+        let skill_config = SettingsLoader::resolve_skill_config(
+            self.no_skills,
+            self.skills.as_deref(),
+            &skill_settings,
+        );
+
+        let mut skill_catalog = discover_skills(&current_dir);
+        skill_catalog = skill_config.apply(skill_catalog);
+
+        // Set up skill directories for path validation
+        let skill_base_dirs: Vec<PathBuf> = skill_catalog
+            .skills
+            .iter()
+            .map(|s| s.base_directory.clone())
+            .collect();
+        set_skill_dirs(skill_base_dirs);
+
+        // Log diagnostics for skills
+        for diagnostic in &skill_catalog.diagnostics {
+            match diagnostic.level {
+                DiagnosticLevel::Warning => {
+                    tracing::warn!(
+                        "Skill diagnostic ({}): {}",
+                        diagnostic.file.display(),
+                        diagnostic.message
+                    );
+                },
+                DiagnosticLevel::Error => {
+                    tracing::error!(
+                        "Skill diagnostic ({}): {}",
+                        diagnostic.file.display(),
+                        diagnostic.message
+                    );
+                },
+            }
+        }
+
+        if !skill_catalog.skills.is_empty() {
+            tracing::info!(
+                "Discovered {} skill(s): {}",
+                skill_catalog.skills.len(),
+                skill_catalog
+                    .skills
+                    .iter()
+                    .map(|s| s.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+
+        let (mut client, mut session) = self.build_client_and_session(
+            data_dir,
+            current_dir,
+            &agents_files,
+            &settings,
+            &skill_catalog,
+        )?;
 
         if self.output_format == OutputFormat::StreamJson {
             client = client.with_streaming_json(|json| {
@@ -747,6 +845,28 @@ mod tests {
     fn test_cli_parsing_add_dir_none() {
         let args = CodingAssistant::parse_from(["cake", "test prompt"]);
         assert!(args.add_dir.is_empty());
+    }
+
+    #[test]
+    fn test_cli_parsing_no_skills() {
+        let args = CodingAssistant::parse_from(["cake", "--no-skills", "test prompt"]);
+        assert!(args.no_skills);
+        assert!(args.skills.is_none());
+    }
+
+    #[test]
+    fn test_cli_parsing_skills_filter() {
+        let args =
+            CodingAssistant::parse_from(["cake", "--skills", "debugging,review", "test prompt"]);
+        assert!(!args.no_skills);
+        assert_eq!(args.skills, Some("debugging,review".to_string()));
+    }
+
+    #[test]
+    fn test_cli_parsing_skills_defaults() {
+        let args = CodingAssistant::parse_from(["cake", "test prompt"]);
+        assert!(!args.no_skills);
+        assert!(args.skills.is_none());
     }
 
     #[test]

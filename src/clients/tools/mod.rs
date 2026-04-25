@@ -85,6 +85,8 @@ fn compute_temp_directories() -> Vec<PathBuf> {
 // These directories are read-only for the agent.
 thread_local! {
     static ADDITIONAL_DIRS: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
+    // Skill base directories (parent dirs of SKILL.md files) - read-only access
+    static SKILL_DIRS: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Set the additional directories for the current thread.
@@ -100,6 +102,19 @@ pub fn get_additional_dirs() -> Vec<PathBuf> {
     ADDITIONAL_DIRS.with(|cell| cell.borrow().clone())
 }
 
+/// Set the skill directories for the current thread.
+/// These directories are granted read-only access for the Read tool.
+pub fn set_skill_dirs(dirs: Vec<PathBuf>) {
+    SKILL_DIRS.with(|cell| {
+        *cell.borrow_mut() = dirs;
+    });
+}
+
+/// Get the skill directories for the current thread.
+pub fn get_skill_dirs() -> Vec<PathBuf> {
+    SKILL_DIRS.with(|cell| cell.borrow().clone())
+}
+
 // =============================================================================
 // Module Declarations
 // =============================================================================
@@ -107,7 +122,7 @@ pub fn get_additional_dirs() -> Vec<PathBuf> {
 mod bash;
 mod bash_safety;
 mod edit;
-mod read;
+pub mod read;
 mod write;
 
 // =============================================================================
@@ -200,6 +215,17 @@ pub(super) fn validate_path(path_str: &str) -> Result<ValidatedPath, String> {
     let additional_dirs = get_additional_dirs();
     for add_dir in &additional_dirs {
         if canonical.starts_with(add_dir) {
+            return Ok(ValidatedPath {
+                canonical,
+                access: PathAccess::ReadOnly,
+            });
+        }
+    }
+
+    // Allow paths in skill directories (read-only)
+    let skill_dirs = get_skill_dirs();
+    for skill_dir in &skill_dirs {
+        if canonical.starts_with(skill_dir) {
             return Ok(ValidatedPath {
                 canonical,
                 access: PathAccess::ReadOnly,

@@ -8,7 +8,15 @@ use std::path::Path;
 
 use chrono::Local;
 
-use crate::config::AgentsFile;
+use crate::config::{AgentsFile, SkillCatalog};
+
+const SKILL_USAGE_INSTRUCTIONS: &str = r"<skill_instructions>
+The following skills provide specialized instructions for specific tasks.
+When a task matches a skill's description, use your file-read tool to load
+the SKILL.md at the listed location before proceeding.
+When a skill references relative paths, resolve them against the skill's
+directory (the parent of SKILL.md) and use absolute paths in tool calls.
+</skill_instructions>";
 
 /// Builds the system prompt for the AI agent.
 ///
@@ -21,11 +29,15 @@ use crate::config::AgentsFile;
 /// use cake::prompts::build_system_prompt;
 /// use std::path::Path;
 ///
-/// let prompt = build_system_prompt(Path::new("/project"), &[]);
+/// let prompt = build_system_prompt(Path::new("/project"), &[], &Default::default());
 /// assert!(prompt.contains("You are cake"));
 /// assert!(prompt.contains("Current working directory: /project"));
 /// ```
-pub fn build_system_prompt(working_dir: &Path, agents_files: &[AgentsFile]) -> String {
+pub fn build_system_prompt(
+    working_dir: &Path,
+    agents_files: &[AgentsFile],
+    skill_catalog: &SkillCatalog,
+) -> String {
     let mut prompt = String::from(
         "You are cake. You are running as a coding agent in a CLI on the user's computer.",
     );
@@ -34,6 +46,19 @@ pub fn build_system_prompt(working_dir: &Path, agents_files: &[AgentsFile]) -> S
     if !context.is_empty() {
         prompt.push_str("\n\n");
         prompt.push_str(&context);
+    }
+
+    // Add skill catalog section
+    if !skill_catalog.skills.is_empty() {
+        let catalog_xml = skill_catalog.to_prompt_xml();
+        if !catalog_xml.is_empty() {
+            prompt.push_str("\n\n");
+            prompt.push_str("## Skills\n\n");
+            prompt.push_str(SKILL_USAGE_INSTRUCTIONS);
+            prompt.push('\n');
+            prompt.push('\n');
+            prompt.push_str(&catalog_xml);
+        }
     }
 
     // Append current working directory and today's date
@@ -80,10 +105,12 @@ fn format_agents_context(agents_files: &[AgentsFile]) -> String {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::config::skills::{Skill, SkillScope};
+    use std::path::PathBuf;
 
     #[test]
     fn empty_agents_files() {
-        let prompt = build_system_prompt(Path::new("/tmp"), &[]);
+        let prompt = build_system_prompt(Path::new("/tmp"), &[], &SkillCatalog::empty());
         assert!(prompt.starts_with(
             "You are cake. You are running as a coding agent in a CLI on the user's computer."
         ));
@@ -103,7 +130,7 @@ mod tests {
                 content: "Project level instructions".to_string(),
             },
         ];
-        let prompt = build_system_prompt(Path::new("/tmp"), &files);
+        let prompt = build_system_prompt(Path::new("/tmp"), &files, &SkillCatalog::empty());
         assert!(prompt.contains("## Additional Context:"));
         assert!(prompt.contains("~/.cake/AGENTS.md"));
         assert!(prompt.contains("./AGENTS.md"));
@@ -120,7 +147,7 @@ mod tests {
             path: "~/.cake/AGENTS.md".to_string(),
             content: "User instructions".to_string(),
         }];
-        let prompt = build_system_prompt(Path::new("/tmp"), &files);
+        let prompt = build_system_prompt(Path::new("/tmp"), &files, &SkillCatalog::empty());
         assert!(prompt.contains("## Additional Context:"));
         assert!(prompt.contains("~/.cake/AGENTS.md"));
         assert!(!prompt.contains("./AGENTS.md"));
@@ -140,11 +167,53 @@ mod tests {
                 content: "   ".to_string(), // whitespace only
             },
         ];
-        let prompt = build_system_prompt(Path::new("/tmp"), &files);
+        let prompt = build_system_prompt(Path::new("/tmp"), &files, &SkillCatalog::empty());
         // Should not include Project Context section since all files are empty
         assert!(!prompt.contains("## Additional Context:"));
         // But should still include working directory and date
         assert!(prompt.contains("Current working directory: /tmp"));
         assert!(prompt.contains("Today's date:"));
+    }
+
+    #[test]
+    fn with_skill_catalog() {
+        let mut catalog = SkillCatalog::empty();
+        catalog.skills.push(Skill {
+            name: "debugging".to_string(),
+            description: "How to debug things".to_string(),
+            location: PathBuf::from("/path/SKILL.md"),
+            base_directory: PathBuf::from("/path"),
+            scope: SkillScope::Project,
+        });
+
+        let prompt = build_system_prompt(Path::new("/tmp"), &[], &catalog);
+        assert!(prompt.contains("## Skills"));
+        assert!(prompt.contains("<skill_instructions>"));
+        assert!(prompt.contains("<available_skills>"));
+        assert!(prompt.contains("<name>debugging</name>"));
+        assert!(prompt.contains("<description>How to debug things</description>"));
+        assert!(prompt.contains("Current working directory: /tmp"));
+    }
+
+    #[test]
+    fn with_agents_and_skills() {
+        let files = vec![AgentsFile {
+            path: "./AGENTS.md".to_string(),
+            content: "Project instructions".to_string(),
+        }];
+        let mut catalog = SkillCatalog::empty();
+        catalog.skills.push(Skill {
+            name: "test-skill".to_string(),
+            description: "A test".to_string(),
+            location: PathBuf::from("/a/SKILL.md"),
+            base_directory: PathBuf::from("/a"),
+            scope: SkillScope::Project,
+        });
+
+        let prompt = build_system_prompt(Path::new("/tmp"), &files, &catalog);
+        // AGENTS.md comes before Skills
+        let agents_pos = prompt.find("## Additional Context:").unwrap();
+        let skills_pos = prompt.find("## Skills").unwrap();
+        assert!(agents_pos < skills_pos);
     }
 }

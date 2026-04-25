@@ -5,6 +5,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::defaults::{DEFAULT_API_KEY_ENV, DEFAULT_BASE_URL, DEFAULT_PROVIDERS};
 use crate::config::model::{ApiType, ModelConfig};
+use crate::config::skills::SkillConfig;
+
+/// Skill settings loaded from settings.toml.
+///
+/// Controls skill discovery and filtering behavior.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SkillSettings {
+    /// If true, disable all skills
+    #[serde(default)]
+    pub disabled: bool,
+    /// Optional list of skill names to load (empty = all)
+    #[serde(default)]
+    pub only: Vec<String>,
+}
 
 /// Root settings structure loaded from settings.toml.
 ///
@@ -26,6 +40,8 @@ use crate::config::model::{ApiType, ModelConfig};
 pub struct Settings {
     /// List of model definitions
     pub models: Vec<ModelDefinition>,
+    /// Skill configuration
+    pub skills: SkillSettings,
 }
 
 /// Definition of a named model in settings.toml.
@@ -221,6 +237,71 @@ impl SettingsLoader {
         let content = std::fs::read_to_string(path)?;
         let settings: Settings = toml::from_str(&content)?;
         Ok(Some(settings))
+    }
+
+    /// Load skill settings from global and project TOML files.
+    ///
+    /// Project settings override global settings.
+    pub fn load_skill_settings(project_dir: Option<&Path>) -> SkillSettings {
+        let mut settings = SkillSettings::default();
+
+        // Load global settings first
+        if let Some(home_dir) = dirs::home_dir() {
+            let global_path = home_dir.join(".config").join("cake").join("settings.toml");
+            if let Ok(Some(loaded)) = Self::load_file(&global_path) {
+                settings = loaded.skills;
+            }
+        }
+
+        // Load project settings last (override global)
+        if let Some(project_dir) = project_dir {
+            let project_path = project_dir.join(".cake").join("settings.toml");
+            if let Ok(Some(loaded)) = Self::load_file(&project_path) {
+                settings = loaded.skills;
+            }
+        }
+
+        settings
+    }
+
+    /// Resolve skill configuration from CLI flags and settings.
+    ///
+    /// Precedence (highest to lowest):
+    /// 1. `--no-skills` CLI flag
+    /// 2. `--skills name1,name2` CLI flag
+    /// 3. `skills.only` in settings
+    /// 4. `skills.disabled = true` in settings
+    /// 5. Default: load all discovered skills
+    pub fn resolve_skill_config(
+        no_skills: bool,
+        skills_flag: Option<&str>,
+        settings: &SkillSettings,
+    ) -> SkillConfig {
+        if no_skills {
+            return SkillConfig::Disabled;
+        }
+
+        if let Some(names) = skills_flag {
+            let skill_names: Vec<String> = names
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if skill_names.is_empty() {
+                return SkillConfig::Disabled;
+            }
+            return SkillConfig::Only(skill_names);
+        }
+
+        if !settings.only.is_empty() {
+            return SkillConfig::Only(settings.only.clone());
+        }
+
+        if settings.disabled {
+            return SkillConfig::Disabled;
+        }
+
+        SkillConfig::All
     }
 
     /// Loads and merges settings from global and project locations.

@@ -19,6 +19,6 @@ pub mod types;
 #[doc(inline)]
 pub use agent::Agent;
 #[doc(inline)]
-pub use tools::{set_additional_dirs, summarize_tool_args};
+pub use tools::{set_additional_dirs, set_skill_dirs, summarize_tool_args};
 #[doc(inline)]
 pub use types::{ConversationItem, SessionRecord};

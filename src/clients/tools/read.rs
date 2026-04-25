@@ -56,6 +56,15 @@ struct ReadArgs {
     end_line: Option<usize>,
 }
 
+/// Extract the path from Read tool arguments without full validation.
+///
+/// Returns `None` if the arguments cannot be parsed.
+pub fn extract_path(arguments: &str) -> Option<String> {
+    serde_json::from_str::<ReadArgs>(arguments)
+        .map(|args| args.path)
+        .ok()
+}
+
 /// Summarize read arguments for display
 pub fn summarize_args(arguments: &str) -> String {
     serde_json::from_str::<ReadArgs>(arguments)
