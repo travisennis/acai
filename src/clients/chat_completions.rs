@@ -27,7 +27,10 @@ pub(super) async fn send_request(
     history: &[ConversationItem],
     tools: &[Tool],
 ) -> anyhow::Result<reqwest::Response> {
-    let messages = build_messages(history);
+    let mut messages = build_messages(history);
+    if requires_reasoning_content_tool_call_fallback(&config.config.model) {
+        inject_reasoning_placeholders(&mut messages);
+    }
     let chat_tools = convert_tools(tools);
 
     let request = ChatRequest {
@@ -113,6 +116,9 @@ pub(super) async fn parse_response(response: reqwest::Response) -> anyhow::Resul
 /// - `FunctionCallOutput` → tool role message with `tool_call_id`
 /// - `Reasoning` → preserved as provider-specific `reasoning_content` on the
 ///   next assistant message for providers like Moonshot/Kimi
+///
+/// When a `FunctionCall` is followed by an `Assistant` message, the tool calls
+/// are merged into that assistant message rather than emitted separately.
 fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage<'_>> {
     let mut messages: Vec<ChatMessage<'_>> = Vec::new();
     let mut pending_tool_calls: Vec<ChatToolCallRef<'_>> = Vec::new();
@@ -121,19 +127,30 @@ fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage<'_>> {
     for item in history {
         match item {
             ConversationItem::Message { role, content, .. } => {
-                // Flush any pending tool calls as an assistant message
-                flush_tool_calls(
-                    &mut messages,
-                    &mut pending_tool_calls,
-                    &mut pending_reasoning_content,
-                );
-
                 let role_str = match role {
                     Role::System => "system",
                     Role::Assistant => "assistant",
                     Role::User => "user",
                     Role::Tool => "tool",
                 };
+
+                if matches!(role, Role::Assistant) && !pending_tool_calls.is_empty() {
+                    messages.push(ChatMessage {
+                        role: Cow::Borrowed(role_str),
+                        content: Some(Cow::Borrowed(content)),
+                        reasoning_content: pending_reasoning_content.take(),
+                        tool_calls: Some(std::mem::take(&mut pending_tool_calls)),
+                        tool_call_id: None,
+                    });
+                    continue;
+                }
+
+                // Flush any pending tool calls as an assistant message
+                flush_tool_calls(
+                    &mut messages,
+                    &mut pending_tool_calls,
+                    &mut pending_reasoning_content,
+                );
 
                 messages.push(ChatMessage {
                     role: Cow::Borrowed(role_str),
@@ -193,6 +210,23 @@ fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage<'_>> {
     );
 
     messages
+}
+
+const KIMI_REASONING_CONTENT_PLACEHOLDER: &str = " ";
+
+fn requires_reasoning_content_tool_call_fallback(model: &str) -> bool {
+    model.to_ascii_lowercase().contains("kimi")
+}
+
+/// Inject a placeholder `reasoning_content` into assistant messages that have
+/// `tool_calls` but no `reasoning_content`. Required by Kimi/Moonshot models
+/// which reject tool-call messages missing this field.
+fn inject_reasoning_placeholders(messages: &mut Vec<ChatMessage<'_>>) {
+    for msg in messages.iter_mut() {
+        if msg.role == "assistant" && msg.tool_calls.is_some() && msg.reasoning_content.is_none() {
+            msg.reasoning_content = Some(Cow::Borrowed(KIMI_REASONING_CONTENT_PLACEHOLDER));
+        }
+    }
 }
 
 fn extract_reasoning_content(
@@ -470,6 +504,143 @@ mod tests {
             Some("preserved reasoning")
         );
         assert!(msgs[1].tool_calls.is_some());
+    }
+
+    #[test]
+    fn build_messages_combines_tool_calls_with_assistant_text() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::User,
+                content: "do stuff".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::FunctionCall {
+                id: "fc-1".to_string(),
+                call_id: "call-1".to_string(),
+                name: "bash".to_string(),
+                arguments: r#"{"cmd":"ls"}"#.to_string(),
+                timestamp: None,
+            },
+            ConversationItem::Message {
+                role: Role::Assistant,
+                content: "Let me check that.".to_string(),
+                id: Some("msg-1".to_string()),
+                status: Some("completed".to_string()),
+                timestamp: None,
+            },
+            ConversationItem::FunctionCallOutput {
+                call_id: "call-1".to_string(),
+                output: "files".to_string(),
+                timestamp: None,
+            },
+        ];
+
+        let msgs = build_messages(&history);
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[1].role, "assistant");
+        assert_eq!(msgs[1].content.as_deref(), Some("Let me check that."));
+        assert!(msgs[1].tool_calls.is_some());
+        assert_eq!(msgs[2].role, "tool");
+    }
+
+    #[test]
+    fn inject_reasoning_placeholders_adds_placeholder_to_tool_call_messages() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::User,
+                content: "do stuff".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::FunctionCall {
+                id: "fc-1".to_string(),
+                call_id: "call-1".to_string(),
+                name: "bash".to_string(),
+                arguments: r#"{"cmd":"ls"}"#.to_string(),
+                timestamp: None,
+            },
+        ];
+
+        let mut msgs = build_messages(&history);
+        inject_reasoning_placeholders(&mut msgs);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[1].role, "assistant");
+        assert_eq!(msgs[1].reasoning_content.as_deref(), Some(" "));
+        assert!(msgs[1].tool_calls.is_some());
+    }
+
+    #[test]
+    fn inject_reasoning_placeholders_preserves_existing_reasoning_content() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::User,
+                content: "do stuff".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Reasoning {
+                id: "r-1".to_string(),
+                summary: vec!["thinking...".to_string()],
+                encrypted_content: None,
+                content: Some(vec![ReasoningContent {
+                    content_type: "reasoning_text".to_string(),
+                    text: Some("actual reasoning".to_string()),
+                }]),
+                timestamp: None,
+            },
+            ConversationItem::FunctionCall {
+                id: "fc-1".to_string(),
+                call_id: "call-1".to_string(),
+                name: "bash".to_string(),
+                arguments: r#"{"cmd":"ls"}"#.to_string(),
+                timestamp: None,
+            },
+        ];
+
+        let mut msgs = build_messages(&history);
+        inject_reasoning_placeholders(&mut msgs);
+        assert_eq!(
+            msgs[1].reasoning_content.as_deref(),
+            Some("actual reasoning")
+        );
+    }
+
+    #[test]
+    fn inject_reasoning_placeholders_does_not_affect_messages_without_tool_calls() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::User,
+                content: "hello".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Message {
+                role: Role::Assistant,
+                content: "hi there".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+        ];
+
+        let mut msgs = build_messages(&history);
+        inject_reasoning_placeholders(&mut msgs);
+        assert_eq!(msgs.len(), 2);
+        assert!(msgs[1].reasoning_content.is_none());
+    }
+
+    #[test]
+    fn requires_reasoning_content_tool_call_fallback_matches_kimi_models() {
+        assert!(requires_reasoning_content_tool_call_fallback("kimi-k2.6"));
+        assert!(requires_reasoning_content_tool_call_fallback(
+            "moonshot/kimi-k2.6"
+        ));
+        assert!(!requires_reasoning_content_tool_call_fallback("gpt-4.1"));
     }
 
     #[test]
