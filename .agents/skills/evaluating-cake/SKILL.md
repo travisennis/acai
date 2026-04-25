@@ -39,18 +39,14 @@ Before evaluating, understand what tools the cake CLI has available. This ensure
 
 ### Finding Sessions
 
-Sessions are stored in `~/.cache/cake/sessions/` organized by working directory hash:
+Sessions are stored in `~/.local/share/cake/sessions/` as flat `.jsonl` files:
 
 ```bash
-# Find session directory for current project
-echo -n "$(pwd)" | shasum -a 256 | cut -c1-16
+# List all session files
+ls ~/.local/share/cake/sessions/
 
-# Or list all session directories
-ls ~/.cache/cake/sessions/
-
-# Find latest session for a directory (most recently modified .jsonl)
-HASH=$(echo -n "$(pwd)" | shasum -a 256 | cut -c1-16)
-ls -t ~/.cache/cake/sessions/$HASH/*.jsonl 2>/dev/null | head -1
+# Find latest session (most recently modified .jsonl)
+ls -t ~/.local/share/cake/sessions/*.jsonl 2>/dev/null | head -1
 ```
 
 ### Reading Sessions
@@ -59,10 +55,10 @@ Read the raw JSONL file:
 
 ```bash
 # View full session
-jq '.' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
+jq '.' ~/.local/share/cake/sessions/{uuid}.jsonl
 
 # View last 10 messages (most relevant for evaluation)
-tail -10 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq '.'
+tail -10 ~/.local/share/cake/sessions/{uuid}.jsonl | jq '.'
 
 # View all user prompts
 jq 'select(.type == "message" and .role == "user") | .content' session.jsonl
@@ -291,6 +287,6 @@ When evaluation is complete:
 
 | File | Purpose |
 |------|---------|
-| `~/.cache/cake/sessions/{hash}/{uuid}.jsonl` | Session files (or `$CAKE_DATA_DIR/sessions/` if set) |
+| `~/.local/share/cake/sessions/{uuid}.jsonl` | Session files (or `$CAKE_DATA_DIR/sessions/` if set) |
 | `current-issues.md` | Documented issues |
 | `usage.md` | Usage patterns and learnings |

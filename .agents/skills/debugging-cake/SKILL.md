@@ -19,15 +19,14 @@ This skill helps investigate and debug issues with the cake CLI tool.
 
 ### Find Latest Session
 ```bash
-# List all session directories
-ls ~/.cache/cake/sessions/
+# List all session files
+ls ~/.local/share/cake/sessions/
 
-# Find the directory hash for current project
-echo -n "$(pwd)" | shasum -a 256 | cut -c1-16
+# Find the latest session for current directory
+ls -t ~/.local/share/cake/sessions/*.jsonl 2>/dev/null | head -1
 
 # Quick way to find latest session for current directory (most recently modified .jsonl)
-HASH=$(echo -n "$(pwd)" | shasum -a 256 | cut -c1-16)
-ls -t ~/.cache/cake/sessions/$HASH/*.jsonl 2>/dev/null | head -1
+ls -t ~/.local/share/cake/sessions/*.jsonl 2>/dev/null | head -1
 ```
 
 ### View Session Files
@@ -36,40 +35,40 @@ Sessions use JSON Lines (`.jsonl`) format. Use `jq -c` to process each line:
 
 ```bash
 # View full session (all lines, pretty-printed)
-jq '.' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
+jq '.' ~/.local/share/cake/sessions/{uuid}.jsonl
 
 # View session header (first line - metadata)
-head -1 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq '.'
+head -1 ~/.local/share/cake/sessions/{uuid}.jsonl | jq '.'
 
 # View last 5 messages (most useful)
-tail -5 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq '.'
+tail -5 ~/.local/share/cake/sessions/{uuid}.jsonl | jq '.'
 
 # View all user prompts (see what was asked)
-jq 'select(.type == "message" and .role == "user") | .content' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "message" and .role == "user") | .content' ~/.local/share/cake/sessions/{uuid}.jsonl
 
 # View all assistant responses (see what was returned)
-jq 'select(.role == "assistant") | .content' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
+jq 'select(.role == "assistant") | .content' ~/.local/share/cake/sessions/{uuid}.jsonl
 
 # Check if response was complete (last line)
-tail -1 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq '{type, status}'
+tail -1 ~/.local/share/cake/sessions/{uuid}.jsonl | jq '{type, status}'
 
 # View all reasoning messages
-jq 'select(.type == "reasoning")' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "reasoning")' ~/.local/share/cake/sessions/{uuid}.jsonl
 
 # View all tool calls
-jq 'select(.type == "function_call")' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "function_call")' ~/.local/share/cake/sessions/{uuid}.jsonl
 
 # View all tool outputs
-jq 'select(.type == "function_call_output")' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "function_call_output")' ~/.local/share/cake/sessions/{uuid}.jsonl
 
 # View tool calls AND outputs together (correlate calls with results)
-jq 'select(.type == "function_call" or .type == "function_call_output")' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "function_call" or .type == "function_call_output")' ~/.local/share/cake/sessions/{uuid}.jsonl
 
 # Count messages by type (see conversation structure)
-jq -r '.type' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | sort | uniq -c
+jq -r '.type' ~/.local/share/cake/sessions/{uuid}.jsonl | sort | uniq -c
 
 # Find what prompt caused a specific behavior (search by content)
-jq 'select(.type == "message" and .role == "user") | select(.content | contains("refactor"))' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "message" and .role == "user") | select(.content | contains("refactor"))' ~/.local/share/cake/sessions/{uuid}.jsonl
 ```
 
 ### Search Logs
@@ -108,12 +107,11 @@ ls -la ~/.cache/cake/cake.*.log
 
 ## Session Storage Structure
 
-Sessions are stored in `~/.cache/cake/sessions/` (or `$CAKE_DATA_DIR/sessions/`) organized by a hash of the working directory:
+Sessions are stored in `~/.local/share/cake/sessions/` (or `$CAKE_DATA_DIR/sessions/`) as flat `.jsonl` files:
 
 ```
-~/.cache/cake/sessions/
-  {dir_hash}/           # First 16 hex chars of SHA-256 of working dir path
-    {uuid}.jsonl        # Individual session files (JSON Lines format)
+~/.local/share/cake/sessions/
+  {uuid}.jsonl          # Individual session files (JSON Lines format)
 ```
 
 The most recent session is determined by file modification time (no symlink needed).
@@ -121,12 +119,8 @@ The most recent session is determined by file modification time (no symlink need
 ### Finding Your Session Directory
 
 ```bash
-# Find the most recently modified session for each directory
-for dir in ~/.cache/cake/sessions/*/; do
-  echo "Directory: $(basename $dir)"
-  ls -lt "$dir"*.jsonl 2>/dev/null | head -1
-  echo "---"
-done
+# Find the most recently modified session
+ls -lt ~/.local/share/cake/sessions/*.jsonl 2>/dev/null | head -5
 ```
 
 ### Session File Structure
@@ -177,7 +171,7 @@ Each conversation item (message, function_call, function_call_output, reasoning)
 ```bash
 # A complete response ends with type: "message" and status: "completed"
 # If it ends with "reasoning" or has no status, it was truncated
-tail -1 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq '{type, status}'
+tail -1 ~/.local/share/cake/sessions/{uuid}.jsonl | jq '{type, status}'
 ```
 
 **Example truncated response** (last line of `.jsonl` file):
@@ -197,7 +191,7 @@ Note: The `summary` array is cut off mid-sentence (incomplete reasoning).
 **Check**:
 ```bash
 # Find all function_call_output messages and check for errors
-jq 'select(.type == "function_call_output") | {call_id, output: .output[0:200]}' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "function_call_output") | {call_id, output: .output[0:200]}' ~/.local/share/cake/sessions/{uuid}.jsonl
 ```
 
 ### 3. "Tool Error" Without Explanation
@@ -214,13 +208,13 @@ jq 'select(.type == "function_call_output") | {call_id, output: .output[0:200]}'
 **Check**:
 ```bash
 # Check session file size
-ls -lh ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
+ls -lh ~/.local/share/cake/sessions/{uuid}.jsonl
 
 # Count total lines (messages + header)
-wc -l ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
+wc -l ~/.local/share/cake/sessions/{uuid}.jsonl
 
 # Count total characters in all content fields
-jq -r '.content // ""' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | wc -c
+jq -r '.content // ""' ~/.local/share/cake/sessions/{uuid}.jsonl | wc -c
 ```
 
 ### 5. Model Made Unexpected Tool Calls
@@ -228,18 +222,18 @@ jq -r '.content // ""' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | wc -c
 **Check**:
 ```bash
 # List all tool calls made
-jq 'select(.type == "function_call") | {name, arguments}' ~/.cache/cake/sessions/{hash}/{uuid}.jsonl
+jq 'select(.type == "function_call") | {name, arguments}' ~/.local/share/cake/sessions/{uuid}.jsonl
 ```
 
 ## Correlating Sessions with Logs
 
 ```bash
 # 1. Get the session ID from the header line
-SESSION_ID=$(head -1 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq -r '.session_id')
+SESSION_ID=$(head -1 ~/.local/share/cake/sessions/{uuid}.jsonl | jq -r '.session_id')
 echo "Session ID: $SESSION_ID"
 
 # 2. Find log entries around session creation time
-TIMESTAMP=$(head -1 ~/.cache/cake/sessions/{hash}/{uuid}.jsonl | jq -r '.timestamp')
+TIMESTAMP=$(head -1 ~/.local/share/cake/sessions/{uuid}.jsonl | jq -r '.timestamp')
 echo "Session start: $TIMESTAMP"
 
 # 3. Search logs for that session's activity
@@ -250,8 +244,7 @@ grep "$SESSION_ID" ~/.cache/cake/cake.*.log
 
 ```bash
 # Find latest session for current directory
-HASH=$(echo -n "$(pwd)" | shasum -a 256 | cut -c1-16)
-LATEST=$(ls -t ~/.cache/cake/sessions/$HASH/*.jsonl 2>/dev/null | head -1)
+LATEST=$(ls -t ~/.local/share/cake/sessions/*.jsonl 2>/dev/null | head -1)
 
 # View last 5 messages (most common debugging command)
 tail -5 "$LATEST" | jq '.'
@@ -271,7 +264,7 @@ less "$LATEST"
 When the user reports an issue:
 
 1. **Find the session**
-   - Locate the session directory using the hash of the working directory
+   - List session files in `~/.local/share/cake/sessions/`
    - Find the most recently modified `.jsonl` file
 
 2. **Check for truncation**
@@ -368,16 +361,18 @@ cat /tmp/cake/sandbox_profiles/cake_sandbox_*.sb
 
 | File Type | Location |
 |-----------|----------|
-| Sessions | `~/.cache/cake/sessions/{hash}/{uuid}.jsonl` |
+| Sessions | `~/.local/share/cake/sessions/{uuid}.jsonl` |
 | Logs | `~/.cache/cake/cake.YYYY-MM-DD.log` |
-| Config | `~/.cache/cake/` and `.cake` |
+| Global config | `~/.config/cake/settings.toml` |
+| Project config | `.cake/settings.toml` |
 | User-level AGENTS.md | `~/.cake/AGENTS.md` |
 | Project-level AGENTS.md | `./AGENTS.md` |
 
 ## Configuration
 
-- **Config directory**: `~/.cache/cake/` and `.cake` (see `src/config/data_dir.rs`)
-- **Data directory override**: Set `CAKE_DATA_DIR` to use a custom data directory instead of `~/.cache/cake/`
+- **Cache directory**: `~/.cache/cake/` (logs and ephemeral data)
+- **Sessions directory**: `~/.local/share/cake/sessions/` (session files)
+- **Data directory override**: Set `CAKE_DATA_DIR` to use a custom path for both cache and sessions
 - **Logs**: `~/.cache/cake/cake.YYYY-MM-DD.log` (or `$CAKE_DATA_DIR/cake.YYYY-MM-DD.log` if set, daily rotation)
 - **API key**: Required via environment variable (default: `OPENCODE_ZEN_API_TOKEN`)
 
