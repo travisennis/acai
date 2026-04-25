@@ -178,33 +178,49 @@ impl CodingAssistant {
     /// Resolve the effective `ModelConfig`, applying CLI overrides.
     fn resolve_model_config(
         &self,
-        settings: &HashMap<String, ModelDefinition>,
+        models: &HashMap<String, ModelDefinition>,
+        default_model: Option<&str>,
     ) -> anyhow::Result<ModelConfig> {
-        let mut config = if let Some(ref model_name) = self.model {
-            // Validate model name format
-            if let Err(e) = ModelDefinition::validate_name(model_name) {
-                anyhow::bail!(
-                    "Invalid model name '{model_name}': {e}. Model names must contain only lowercase letters, numbers, and hyphens."
-                );
-            }
+        let model_name = match self.model.as_deref() {
+            Some(name) => name,
+            None => match default_model {
+                Some(name) => name,
+                None => {
+                    anyhow::bail!(
+                        "No model specified. cake needs a model configuration to run.\n\n\
+                        Set up ~/.config/cake/settings.toml with at least one model:\n\n\
+                          default_model = \"zen\"\n\n\
+                          [[models]]\n\
+                          name = \"zen\"\n\
+                          model = \"glm-5\"\n\
+                          base_url = \"https://opencode.ai/zen/go/v1/\"\n\
+                          api_key_env = \"OPENCODE_ZEN_API_TOKEN\"\n\n\
+                        Then run 'cake <prompt>' or 'cake --model zen <prompt>'."
+                    );
+                },
+            },
+        };
 
-            // Look up the model in settings
-            if let Some(def) = settings.get(model_name) {
-                def.to_model_config()
-            } else {
-                let available: Vec<_> = settings.keys().cloned().collect();
-                let available_str = if available.is_empty() {
-                    String::new()
-                } else {
-                    format!(": {}", available.join(", "))
-                };
-                anyhow::bail!(
-                    "Unknown model '{model_name}'{available_str}.- Use a model name from settings.toml, or omit --model to use the default."
-                );
-            }
+        // Validate model name format
+        if let Err(e) = ModelDefinition::validate_name(model_name) {
+            anyhow::bail!(
+                "Invalid model name '{model_name}': {e}. Model names must contain only lowercase letters, numbers, and hyphens."
+            );
+        }
+
+        // Look up the model in settings
+        let mut config = if let Some(def) = models.get(model_name) {
+            def.to_model_config()
         } else {
-            // Use default config (current behavior)
-            ModelConfig::default()
+            let available: Vec<_> = models.keys().cloned().collect();
+            let available_str = if available.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", available.join(", "))
+            };
+            anyhow::bail!(
+                "Unknown model '{model_name}'{available_str}. Use a model name from settings.toml, or set default_model and omit --model."
+            );
         };
 
         // Apply CLI overrides
@@ -234,14 +250,15 @@ impl CodingAssistant {
     ///   to default model resolution.
     fn resolve_model_for_session(
         &self,
-        settings: &HashMap<String, ModelDefinition>,
+        models: &HashMap<String, ModelDefinition>,
+        default_model: Option<&str>,
         session_model: Option<&str>,
     ) -> anyhow::Result<ResolvedModelConfig> {
         let cli_model_explicit = self.model.is_some();
 
         if cli_model_explicit {
             // User explicitly passed --model. Resolve it and check against session.
-            let config = self.resolve_model_config(settings)?;
+            let config = self.resolve_model_config(models, default_model)?;
             let resolved = ResolvedModelConfig::resolve(config)?;
             let resolved_model = &resolved.config.model;
 
@@ -257,24 +274,21 @@ impl CodingAssistant {
             Ok(resolved)
         } else if let Some(sm) = session_model {
             // No --model, but session has a stored model. Use it.
-            let config = ModelConfig {
-                model: sm.to_string(),
-                ..ModelConfig::default()
-            };
             // Look up the model name in settings to get provider config
-            if let Some(def) = settings.get(sm) {
+            if let Some(def) = models.get(sm) {
                 let resolved = ResolvedModelConfig::resolve(def.to_model_config())?;
                 let resolved = self.apply_cli_overrides(resolved);
                 Ok(resolved)
             } else {
-                // The stored model name isn't in settings, treat it as a raw model string
-                let resolved = ResolvedModelConfig::resolve(config)?;
-                let resolved = self.apply_cli_overrides(resolved);
-                Ok(resolved)
+                anyhow::bail!(
+                    "Session model '{sm}' is not configured in settings.toml. \
+                     Add a [[models]] entry for '{sm}' to continue this session, \
+                     or start a new session."
+                );
             }
         } else {
             // No --model, no session model. Fall back to default.
-            let config = self.resolve_model_config(settings)?;
+            let config = self.resolve_model_config(models, default_model)?;
             let resolved = ResolvedModelConfig::resolve(config)?;
             Ok(resolved)
         }
@@ -321,7 +335,8 @@ impl CodingAssistant {
         data_dir: &DataDir,
         current_dir: PathBuf,
         agents_files: &[AgentsFile],
-        settings: &HashMap<String, ModelDefinition>,
+        models: &HashMap<String, ModelDefinition>,
+        default_model: Option<&str>,
         skill_catalog: &SkillCatalog,
     ) -> anyhow::Result<(Agent, Session)> {
         let system_prompt = build_system_prompt(&current_dir, agents_files, skill_catalog);
@@ -340,7 +355,8 @@ impl CodingAssistant {
                 .ok_or_else(|| anyhow::anyhow!("No previous session found for this directory"))?;
             info!(target: "cake", "Continuing session: {}", restored.id);
 
-            let resolved = self.resolve_model_for_session(settings, restored.model.as_deref())?;
+            let resolved =
+                self.resolve_model_for_session(models, default_model, restored.model.as_deref())?;
             let messages = restored.messages();
             let prior_skills = Self::extract_activated_skills(&messages);
 
@@ -376,7 +392,8 @@ impl CodingAssistant {
                 }
             }
 
-            let resolved = self.resolve_model_for_session(settings, restored.model.as_deref())?;
+            let resolved =
+                self.resolve_model_for_session(models, default_model, restored.model.as_deref())?;
             let messages = restored.messages();
             let prior_skills = Self::extract_activated_skills(&messages);
 
@@ -418,7 +435,8 @@ impl CodingAssistant {
 
             info!(target: "cake", "Forking from session: {}", restored.id);
 
-            let resolved = self.resolve_model_for_session(settings, restored.model.as_deref())?;
+            let resolved =
+                self.resolve_model_for_session(models, default_model, restored.model.as_deref())?;
 
             let agent = Agent::new(resolved.clone(), &system_prompt)
                 .with_history(restored.messages())
@@ -430,7 +448,8 @@ impl CodingAssistant {
             s.model = Some(resolved.config.model);
             Ok((agent, s))
         } else {
-            let resolved = ResolvedModelConfig::resolve(self.resolve_model_config(settings)?)?;
+            let resolved =
+                ResolvedModelConfig::resolve(self.resolve_model_config(models, default_model)?)?;
             let agent =
                 Agent::new(resolved.clone(), &system_prompt).with_skill_locations(skill_locations);
             let new_id = agent.session_id.clone();
@@ -509,7 +528,7 @@ impl CmdRunner for CodingAssistant {
             .map_err(|e| anyhow::anyhow!("Failed to get current directory: {e}"))?;
 
         // Load settings from TOML files
-        let settings = SettingsLoader::load(Some(&current_dir))?;
+        let loaded = SettingsLoader::load(Some(&current_dir))?;
 
         let agents_files = data_dir.read_agents_files(&current_dir);
 
@@ -569,7 +588,8 @@ impl CmdRunner for CodingAssistant {
             data_dir,
             current_dir,
             &agents_files,
-            &settings,
+            &loaded.models,
+            loaded.default_model.as_deref(),
             &skill_catalog,
         )?;
 
@@ -871,11 +891,41 @@ mod tests {
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    fn test_resolve_model_config_default() {
+    fn test_resolve_model_config_no_model_configured() {
         let args = CodingAssistant::parse_from(["cake", "test prompt"]);
-        let settings = HashMap::new();
-        let config = args.resolve_model_config(&settings).unwrap();
-        assert_eq!(config.model, "glm-5.1");
+        let models = HashMap::new();
+        let result = args.resolve_model_config(&models, None);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("No model specified"));
+        assert!(err.contains("settings.toml"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_resolve_model_config_default_model() {
+        let args = CodingAssistant::parse_from(["cake", "test prompt"]);
+        let mut models = HashMap::new();
+        models.insert(
+            "zen".to_string(),
+            ModelDefinition {
+                name: "zen".to_string(),
+                model: "glm-5".to_string(),
+                base_url: "https://opencode.ai/zen/go/v1/".to_string(),
+                api_key_env: "OPENCODE_ZEN_API_TOKEN".to_string(),
+                api_type: ApiType::ChatCompletions,
+                temperature: None,
+                top_p: None,
+                max_output_tokens: None,
+                reasoning_effort: None,
+                reasoning_summary: None,
+                reasoning_max_tokens: None,
+                providers: vec![],
+            },
+        );
+
+        let config = args.resolve_model_config(&models, Some("zen")).unwrap();
+        assert_eq!(config.model, "glm-5");
     }
 
     #[test]
@@ -884,8 +934,8 @@ mod tests {
         let mut args = CodingAssistant::parse_from(["cake", "test prompt"]);
         args.model = Some("nonexistent".to_string());
 
-        let settings = HashMap::new();
-        let result = args.resolve_model_config(&settings);
+        let models = HashMap::new();
+        let result = args.resolve_model_config(&models, None);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Unknown model 'nonexistent'"));
@@ -897,8 +947,8 @@ mod tests {
         let mut args = CodingAssistant::parse_from(["cake", "test prompt"]);
         args.model = Some("Invalid Name!".to_string());
 
-        let settings = HashMap::new();
-        let result = args.resolve_model_config(&settings);
+        let models = HashMap::new();
+        let result = args.resolve_model_config(&models, None);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Invalid model name 'Invalid Name!'"));
@@ -909,8 +959,8 @@ mod tests {
     fn test_resolve_model_config_from_settings() {
         let args = CodingAssistant::parse_from(["cake", "--model", "claude", "test"]);
 
-        let mut settings = HashMap::new();
-        settings.insert(
+        let mut models = HashMap::new();
+        models.insert(
             "claude".to_string(),
             ModelDefinition {
                 name: "claude".to_string(),
@@ -928,7 +978,7 @@ mod tests {
             },
         );
 
-        let config = args.resolve_model_config(&settings).unwrap();
+        let config = args.resolve_model_config(&models, None).unwrap();
         assert_eq!(config.model, "anthropic/claude-3-sonnet");
         assert_eq!(config.api_type, ApiType::Responses);
         assert_eq!(config.temperature, Some(0.7));
@@ -1111,8 +1161,17 @@ mod tests {
     fn test_format_done_summary() {
         temp_env::with_var("CAKE_TEST_VALID_KEY", Some("sk-test-123"), || {
             let config = ModelConfig {
+                model: "test/model".to_string(),
+                api_type: ApiType::ChatCompletions,
+                base_url: "https://api.example.com".to_string(),
                 api_key_env: "CAKE_TEST_VALID_KEY".to_string(),
-                ..ModelConfig::default()
+                temperature: None,
+                top_p: None,
+                max_output_tokens: None,
+                reasoning_effort: None,
+                reasoning_summary: None,
+                reasoning_max_tokens: None,
+                providers: vec![],
             };
             let resolved = match ResolvedModelConfig::resolve(config) {
                 Ok(resolved) => resolved,

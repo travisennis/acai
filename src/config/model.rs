@@ -1,9 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::config::defaults::{
-    DEFAULT_API_KEY_ENV, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_PROVIDERS,
-};
-
 /// The type of API endpoint to use for model completions.
 ///
 /// Cake supports multiple API backends for interacting with AI providers:
@@ -28,14 +24,8 @@ pub enum ApiType {
 /// Contains all settings needed to connect to an AI model API, including
 /// the model identifier, API endpoint, authentication, and generation parameters.
 ///
-/// # Examples
-///
-/// ```
-/// use cake::config::ModelConfig;
-///
-/// let config = ModelConfig::default();
-/// assert_eq!(config.model, "anthropic/claude-3.5-sonnet");
-/// ```
+/// `ModelConfig` has no `Default` impl — it must be constructed from a
+/// [`ModelDefinition`](crate::config::ModelDefinition) loaded from `settings.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfig {
     /// Model identifier (e.g. "openai/gpt-4o")
@@ -68,24 +58,6 @@ pub struct ModelConfig {
     pub providers: Vec<String>,
 }
 
-impl Default for ModelConfig {
-    fn default() -> Self {
-        Self {
-            model: DEFAULT_MODEL.to_string(),
-            api_type: ApiType::ChatCompletions,
-            base_url: DEFAULT_BASE_URL.to_string(),
-            api_key_env: DEFAULT_API_KEY_ENV.to_string(),
-            temperature: Some(0.8),
-            top_p: None,
-            max_output_tokens: Some(8000),
-            reasoning_effort: None,
-            reasoning_summary: None,
-            reasoning_max_tokens: None,
-            providers: DEFAULT_PROVIDERS.iter().map(|s| (*s).to_string()).collect(),
-        }
-    }
-}
-
 /// A `ModelConfig` with the API key resolved from the environment.
 ///
 /// This struct is created by calling [`ResolvedModelConfig::resolve`] and contains
@@ -94,11 +66,22 @@ impl Default for ModelConfig {
 /// # Examples
 ///
 /// ```no_run
-/// use cake::config::{ModelConfig, ResolvedModelConfig};
+/// use cake::config::{ModelConfig, ApiType, ResolvedModelConfig};
 ///
-/// let config = ModelConfig::default();
+/// let config = ModelConfig {
+///     model: "test/model".to_string(),
+///     api_type: ApiType::ChatCompletions,
+///     base_url: "https://api.example.com".to_string(),
+///     api_key_env: "MY_KEY".to_string(),
+///     temperature: None,
+///     top_p: None,
+///     max_output_tokens: None,
+///     reasoning_effort: None,
+///     reasoning_summary: None,
+///     reasoning_max_tokens: None,
+///     providers: vec![],
+/// };
 /// let resolved = ResolvedModelConfig::resolve(config)?;
-/// // Now use resolved.api_key for API requests
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 #[derive(Debug, Clone)]
@@ -118,9 +101,21 @@ impl ResolvedModelConfig {
     /// # Examples
     ///
     /// ```no_run
-    /// use cake::config::{ModelConfig, ResolvedModelConfig};
+    /// use cake::config::{ModelConfig, ApiType, ResolvedModelConfig};
     ///
-    /// let config = ModelConfig::default();
+    /// let config = ModelConfig {
+    ///     model: "test/model".to_string(),
+    ///     api_type: ApiType::ChatCompletions,
+    ///     base_url: "https://api.example.com".to_string(),
+    ///     api_key_env: "CAKE_TEST_KEY".to_string(),
+    ///     temperature: None,
+    ///     top_p: None,
+    ///     max_output_tokens: None,
+    ///     reasoning_effort: None,
+    ///     reasoning_summary: None,
+    ///     reasoning_max_tokens: None,
+    ///     providers: vec![],
+    /// };
     /// let resolved = ResolvedModelConfig::resolve(config)?;
     /// println!("Using API key from: {}", resolved.config.api_key_env);
     /// # Ok::<(), anyhow::Error>(())
@@ -153,19 +148,23 @@ impl ResolvedModelConfig {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_default_model_config() {
-        let config = ModelConfig::default();
-        assert_eq!(config.model, DEFAULT_MODEL);
-        assert_eq!(config.api_type, ApiType::ChatCompletions);
-        assert_eq!(config.base_url, DEFAULT_BASE_URL);
-        assert_eq!(config.api_key_env, DEFAULT_API_KEY_ENV);
-        assert_eq!(config.temperature, Some(0.8));
-        assert_eq!(config.top_p, None);
-        assert_eq!(config.max_output_tokens, Some(8000));
-        assert_eq!(config.reasoning_effort, None);
-        assert_eq!(config.reasoning_summary, None);
-        assert_eq!(config.reasoning_max_tokens, None);
+    /// Helper to create a minimal `ModelConfig` for tests.
+    fn test_config(overrides: impl FnOnce(&mut ModelConfig)) -> ModelConfig {
+        let mut config = ModelConfig {
+            model: "test/model".to_string(),
+            api_type: ApiType::ChatCompletions,
+            base_url: "https://api.example.com".to_string(),
+            api_key_env: "MY_KEY".to_string(),
+            temperature: Some(0.8),
+            top_p: None,
+            max_output_tokens: Some(8000),
+            reasoning_effort: None,
+            reasoning_summary: None,
+            reasoning_max_tokens: None,
+            providers: vec![],
+        };
+        overrides(&mut config);
+        config
     }
 
     #[test]
@@ -179,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_model_config_roundtrip() {
-        let config = ModelConfig::default();
+        let config = test_config(|_| {});
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: ModelConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.model, config.model);
@@ -190,10 +189,9 @@ mod tests {
     #[test]
     fn test_resolve_missing_env_var() {
         temp_env::with_var("CAKE_TEST_NONEXISTENT_KEY_12345", None::<&str>, || {
-            let config = ModelConfig {
-                api_key_env: "CAKE_TEST_NONEXISTENT_KEY_12345".to_string(),
-                ..ModelConfig::default()
-            };
+            let config = test_config(|c| {
+                c.api_key_env = "CAKE_TEST_NONEXISTENT_KEY_12345".to_string();
+            });
 
             let result = ResolvedModelConfig::resolve(config);
             assert!(result.is_err());
@@ -205,10 +203,9 @@ mod tests {
     #[test]
     fn test_resolve_empty_env_var() {
         temp_env::with_var("CAKE_TEST_EMPTY_KEY", Some(""), || {
-            let config = ModelConfig {
-                api_key_env: "CAKE_TEST_EMPTY_KEY".to_string(),
-                ..ModelConfig::default()
-            };
+            let config = test_config(|c| {
+                c.api_key_env = "CAKE_TEST_EMPTY_KEY".to_string();
+            });
 
             let result = ResolvedModelConfig::resolve(config);
             assert!(result.is_err());
@@ -220,10 +217,9 @@ mod tests {
     #[test]
     fn test_resolve_success() {
         temp_env::with_var("CAKE_TEST_VALID_KEY", Some("sk-test-123"), || {
-            let config = ModelConfig {
-                api_key_env: "CAKE_TEST_VALID_KEY".to_string(),
-                ..ModelConfig::default()
-            };
+            let config = test_config(|c| {
+                c.api_key_env = "CAKE_TEST_VALID_KEY".to_string();
+            });
 
             let resolved = ResolvedModelConfig::resolve(config).unwrap();
             assert_eq!(resolved.api_key, "sk-test-123");

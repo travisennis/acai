@@ -20,7 +20,7 @@ Settings files are loaded from two locations:
 | `~/.config/cake/settings.toml` | Global/system-wide settings |
 | `./.cake/settings.toml` | Project-specific settings |
 
-Both files are optional. If neither exists, cake uses the default `ModelConfig`.
+Both files are optional. If neither exists and no `default_model` is configured, cake errors with a setup guide.
 
 ## Merge Behavior
 
@@ -39,6 +39,8 @@ This allows you to:
 ## TOML Format
 
 ```toml
+default_model = "zen"
+
 [[models]]
 # Required: unique identifier for this model (lowercase alphanumeric + hyphens)
 name = "zen"
@@ -46,10 +48,10 @@ name = "zen"
 # Required: model identifier (e.g., "glm-5", "anthropic/claude-3-sonnet")
 model = "glm-5"
 
-# Optional: API endpoint base URL (defaults to OpenCode default)
+# Required: API endpoint base URL
 base_url = "https://opencode.ai/zen/go/v1/"
 
-# Optional: environment variable name for API key (defaults to OpenCode default)
+# Required: environment variable name for API key
 api_key_env = "OPENCODE_ZEN_API_TOKEN"
 
 # Optional: API type - "chat_completions" or "responses" (defaults to chat_completions)
@@ -127,12 +129,12 @@ Skill configuration is resolved with the following precedence (highest to lowest
 
 ### Optional Fields
 
-All other fields have defaults matching `ModelConfig::default()`:
+All fields except `name` and `model` are optional, but `base_url` and `api_key_env` are required for any model that will be used at runtime:
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `base_url` | OpenCode default | API endpoint base URL |
-| `api_key_env` | OpenCode default | Environment variable name for API key |
+| `base_url` | Required (no default) | API endpoint base URL |
+| `api_key_env` | Required (no default) | Environment variable name for API key |
 | `api_type` | `chat_completions` | API format (`chat_completions` or `responses`) |
 | `temperature` | `None` | Sampling temperature |
 | `top_p` | `None` | Nucleus sampling parameter |
@@ -173,7 +175,8 @@ cake --model deepseek "Your prompt here"
 |------|----------------|----------|
 | `--model foo` | Yes | Use model config from settings |
 | `--model foo` | No | Error with available model names |
-| No `--model` | N/A | Use `ModelConfig::default()` |
+| No `--model` | `default_model` set | Use the `default_model` from settings |
+| No `--model` | No `default_model` | Error with setup instructions |
 
 ### Error Messages
 
@@ -205,8 +208,8 @@ struct Settings {
 struct ModelDefinition {
     name: String,              // Required
     model: String,             // Required
-    base_url: String,          // Optional, defaults in code
-    api_key_env: String,       // Optional, defaults in code
+    base_url: String,          // Required (no default)
+    api_key_env: String,       // Required (no default)
     api_type: ApiType,         // Optional, defaults to ChatCompletions
     temperature: Option<f32>,  // Optional
     top_p: Option<f32>,         // Optional
@@ -235,6 +238,8 @@ impl SettingsLoader {
 
 `~/.config/cake/settings.toml`:
 ```toml
+default_model = "deepseek"
+
 [[models]]
 name = "deepseek"
 model = "deepseek/deepseek-chat-v3"
@@ -263,7 +268,7 @@ cake --model claude "Use claude"
 # Uses "deepseek" from global settings
 cake --model deepseek "Use deepseek"
 
-# Uses default (no settings needed)
+# Uses default_model from global settings (deepseek)
 cake "Use default model"
 ```
 

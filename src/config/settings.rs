@@ -3,7 +3,6 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::defaults::{DEFAULT_API_KEY_ENV, DEFAULT_BASE_URL, DEFAULT_PROVIDERS};
 use crate::config::model::{ApiType, ModelConfig};
 use crate::config::skills::SkillConfig;
 
@@ -22,26 +21,45 @@ pub struct SkillSettings {
 
 /// Root settings structure loaded from settings.toml.
 ///
-/// Contains a list of model definitions that can be selected via `--model`.
+/// Contains a list of model definitions and an optional default model name.
 ///
 /// # Examples
 ///
 /// ```no_run
 /// use cake::config::SettingsLoader;
 ///
-/// let models = SettingsLoader::load(None)?;
-/// for (name, def) in &models {
+/// let loaded = SettingsLoader::load(None)?;
+/// for (name, def) in &loaded.models {
 ///     println!("Model: {} -> {}", name, def.model);
+/// }
+/// if let Some(default) = &loaded.default_model {
+///     println!("Default model: {default}");
 /// }
 /// # Ok::<(), cake::config::SettingsError>(())
 /// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
 pub struct Settings {
+    /// Name of the model to use when `--model` is not specified
+    #[serde(default)]
+    pub default_model: Option<String>,
     /// List of model definitions
+    #[serde(default)]
     pub models: Vec<ModelDefinition>,
     /// Skill configuration
+    #[serde(default)]
     pub skills: SkillSettings,
+}
+
+/// Result of loading and merging settings from all sources.
+///
+/// Contains the merged model map and the resolved default model name.
+/// Separate from [`Settings`] to represent the post-merge state.
+#[derive(Debug, Clone)]
+pub struct LoadedSettings {
+    /// Map of model name to definition (global + project merged)
+    pub models: HashMap<String, ModelDefinition>,
+    /// Name of the default model from the highest-precedence settings file
+    pub default_model: Option<String>,
 }
 
 /// Definition of a named model in settings.toml.
@@ -54,8 +72,8 @@ pub struct Settings {
 /// ```no_run
 /// use cake::config::SettingsLoader;
 ///
-/// let models = SettingsLoader::load(None)?;
-/// if let Some(def) = models.get("my-model") {
+/// let loaded = SettingsLoader::load(None)?;
+/// if let Some(def) = loaded.models.get("my-model") {
 ///     println!("Using model: {}", def.model);
 /// }
 /// # Ok::<(), cake::config::SettingsError>(())
@@ -66,11 +84,9 @@ pub struct ModelDefinition {
     pub name: String,
     /// Model identifier (e.g. "glm-5", "anthropic/claude-3-sonnet")
     pub model: String,
-    /// Base URL for the API endpoint
-    #[serde(default = "default_base_url")]
+    /// Base URL for the API endpoint (required)
     pub base_url: String,
-    /// Name of the environment variable containing the API key
-    #[serde(default = "default_api_key_env")]
+    /// Name of the environment variable containing the API key (required)
     pub api_key_env: String,
     /// Which API format to use
     #[serde(default)]
@@ -94,20 +110,8 @@ pub struct ModelDefinition {
     #[serde(default)]
     pub reasoning_max_tokens: Option<u32>,
     /// Provider routing hints
-    #[serde(default = "default_providers")]
+    #[serde(default)]
     pub providers: Vec<String>,
-}
-
-fn default_base_url() -> String {
-    DEFAULT_BASE_URL.to_string()
-}
-
-fn default_api_key_env() -> String {
-    DEFAULT_API_KEY_ENV.to_string()
-}
-
-fn default_providers() -> Vec<String> {
-    DEFAULT_PROVIDERS.iter().map(|s| (*s).to_string()).collect()
 }
 
 impl ModelDefinition {
@@ -203,6 +207,13 @@ pub enum SettingsError {
     #[error("Duplicate model name '{name}' in settings")]
     DuplicateModelName { name: String },
 
+    #[error(
+        "Default model '{name}' not found in models list. \
+         Define a [[models]] entry with name = \"{name}\", \
+         or change default_model to an existing model name."
+    )]
+    DefaultModelNotFound { name: String },
+
     #[error("Failed to parse settings file: {0}")]
     ParseError(#[from] toml::de::Error),
 
@@ -221,7 +232,13 @@ pub enum SettingsError {
 /// use cake::config::SettingsLoader;
 /// use std::path::Path;
 ///
-/// let models = SettingsLoader::load(Some(Path::new("/project")))?;
+/// let loaded = SettingsLoader::load(Some(Path::new("/project")))?;
+///
+/// if let Some(model) = loaded.models.get("zen") {
+///     println!("Model: {}", model.model);
+/// }
+/// println!("Default: {:?}", loaded.default_model);
+/// # Ok::<(), cake::config::SettingsError>(())
 /// ```
 pub struct SettingsLoader;
 
@@ -310,7 +327,8 @@ impl SettingsLoader {
     /// 1. Global settings: `~/.config/cake/settings.toml`
     /// 2. Project settings: `{project_dir}/.cake/settings.toml`
     ///
-    /// Project settings override global settings for models with the same name.
+    /// Project settings override global settings for models with the same name
+    /// and for `default_model`.
     ///
     /// # Examples
     ///
@@ -318,9 +336,9 @@ impl SettingsLoader {
     /// use cake::config::SettingsLoader;
     /// use std::path::Path;
     ///
-    /// let models = SettingsLoader::load(Some(Path::new("/my/project")))?;
+    /// let loaded = SettingsLoader::load(Some(Path::new("/my/project")))?;
     ///
-    /// if let Some(model) = models.get("default") {
+    /// if let Some(model) = loaded.models.get("default") {
     ///     println!("Default model: {}", model.model);
     /// }
     /// # Ok::<(), cake::config::SettingsError>(())
@@ -329,17 +347,18 @@ impl SettingsLoader {
     /// # Errors
     ///
     /// Returns an error if a settings file exists but cannot be parsed,
-    /// or if duplicate model names are found within the same file.
-    pub fn load(
-        project_dir: Option<&Path>,
-    ) -> Result<HashMap<String, ModelDefinition>, SettingsError> {
+    /// if duplicate model names are found within the same file,
+    /// or if `default_model` references a model that doesn't exist.
+    pub fn load(project_dir: Option<&Path>) -> Result<LoadedSettings, SettingsError> {
         let mut models: HashMap<String, ModelDefinition> = HashMap::new();
+        let mut default_model: Option<String> = None;
 
         // Load global settings first.
         if let Some(home_dir) = dirs::home_dir() {
             let global_path = home_dir.join(".config").join("cake").join("settings.toml");
             if let Some(settings) = Self::load_file(&global_path)? {
                 Self::add_models_to_map(&mut models, settings.models)?;
+                default_model = settings.default_model;
             }
         }
 
@@ -348,10 +367,48 @@ impl SettingsLoader {
             let project_path = project_dir.join(".cake").join("settings.toml");
             if let Some(settings) = Self::load_file(&project_path)? {
                 Self::add_models_to_map(&mut models, settings.models)?;
+                if settings.default_model.is_some() {
+                    default_model = settings.default_model;
+                }
             }
         }
 
-        Ok(models)
+        // If project set default_model to None explicitly, respect that.
+        // We handle this by checking project settings file directly for the field.
+        if let Some(project_dir) = project_dir {
+            let project_path = project_dir.join(".cake").join("settings.toml");
+            if let Ok(Some(settings)) = Self::load_file(&project_path) {
+                // Did the project file contain a default_model key at all?
+                // Serde treats missing key as None, but we need to distinguish
+                // "not set" from "explicitly set to an empty/default".
+                // Read raw to check.
+                if let Ok(content) = std::fs::read_to_string(&project_path) {
+                    let raw: toml::Value = toml::from_str(&content)
+                        .unwrap_or_else(|_| toml::Value::Table(toml::Table::new()));
+                    if let Some(table) = raw.as_table()
+                        && table.contains_key("default_model")
+                    {
+                        // Project file explicitly mentions default_model.
+                        // If the parsed value is None, they explicitly cleared it.
+                        if settings.default_model.is_none() {
+                            default_model = None;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Validate that default_model (if set) refers to an existing model.
+        if let Some(ref name) = default_model
+            && !models.contains_key(name.as_str())
+        {
+            return Err(SettingsError::DefaultModelNotFound { name: name.clone() });
+        }
+
+        Ok(LoadedSettings {
+            models,
+            default_model,
+        })
     }
 
     /// Add models from a settings file to the map.
@@ -427,18 +484,20 @@ mod tests {
 [[models]]
 name = "test-model"
 model = "test/model"
+base_url = "https://example.com"
+api_key_env = "MY_KEY"
 "#,
         );
 
         let home = create_home_dir();
-        let models = with_var("HOME", Some(home.path()), || {
+        let loaded = with_var("HOME", Some(home.path()), || {
             SettingsLoader::load(Some(dir.path()))
         })
         .unwrap();
 
-        assert_eq!(models.len(), 1);
-        assert!(models.contains_key("test-model"));
-        assert_eq!(models.get("test-model").unwrap().model, "test/model");
+        assert_eq!(loaded.models.len(), 1);
+        assert!(loaded.models.contains_key("test-model"));
+        assert_eq!(loaded.models.get("test-model").unwrap().model, "test/model");
     }
 
     #[test]
@@ -451,10 +510,14 @@ model = "test/model"
 [[models]]
 name = "model-a"
 model = "global/model-a"
+base_url = "https://global.example.com"
+api_key_env = "GLOBAL_KEY"
 
 [[models]]
 name = "model-b"
 model = "global/model-b"
+base_url = "https://global.example.com"
+api_key_env = "GLOBAL_KEY"
 "#,
         );
 
@@ -464,25 +527,38 @@ model = "global/model-b"
 [[models]]
 name = "model-b"
 model = "project/model-b"
+base_url = "https://project.example.com"
+api_key_env = "PROJECT_KEY"
 
 [[models]]
 name = "model-c"
 model = "project/model-c"
+base_url = "https://project.example.com"
+api_key_env = "PROJECT_KEY"
 "#,
         );
 
-        let models = with_var("HOME", Some(home.path()), || {
+        let loaded = with_var("HOME", Some(home.path()), || {
             SettingsLoader::load(Some(project_dir.path()))
         })
         .unwrap();
 
-        assert_eq!(models.len(), 3);
+        assert_eq!(loaded.models.len(), 3);
         // model-a from global
-        assert_eq!(models.get("model-a").unwrap().model, "global/model-a");
+        assert_eq!(
+            loaded.models.get("model-a").unwrap().model,
+            "global/model-a"
+        );
         // model-b overridden by project
-        assert_eq!(models.get("model-b").unwrap().model, "project/model-b");
+        assert_eq!(
+            loaded.models.get("model-b").unwrap().model,
+            "project/model-b"
+        );
         // model-c from project
-        assert_eq!(models.get("model-c").unwrap().model, "project/model-c");
+        assert_eq!(
+            loaded.models.get("model-c").unwrap().model,
+            "project/model-c"
+        );
     }
 
     #[test]
@@ -494,13 +570,15 @@ model = "project/model-c"
 [[models]]
 name = "xdg-model"
 model = "xdg/model"
+base_url = "https://example.com"
+api_key_env = "XDG_KEY"
 "#,
         );
 
-        let models = with_var("HOME", Some(home.path()), || SettingsLoader::load(None)).unwrap();
+        let loaded = with_var("HOME", Some(home.path()), || SettingsLoader::load(None)).unwrap();
 
-        assert_eq!(models.len(), 1);
-        assert_eq!(models.get("xdg-model").unwrap().model, "xdg/model");
+        assert_eq!(loaded.models.len(), 1);
+        assert_eq!(loaded.models.get("xdg-model").unwrap().model, "xdg/model");
     }
 
     #[test]
@@ -512,6 +590,8 @@ model = "xdg/model"
 [[models]]
 name = "shared"
 model = "xdg/model"
+base_url = "https://global.example.com"
+api_key_env = "GLOBAL_KEY"
 "#,
         );
         let project_dir = create_project_settings(
@@ -519,25 +599,27 @@ model = "xdg/model"
 [[models]]
 name = "shared"
 model = "project/model"
+base_url = "https://project.example.com"
+api_key_env = "PROJECT_KEY"
 "#,
         );
 
-        let models = with_var("HOME", Some(home.path()), || {
+        let loaded = with_var("HOME", Some(home.path()), || {
             SettingsLoader::load(Some(project_dir.path()))
         })
         .unwrap();
 
-        assert_eq!(models.get("shared").unwrap().model, "project/model");
+        assert_eq!(loaded.models.get("shared").unwrap().model, "project/model");
     }
 
     #[test]
     fn test_load_missing_file_succeeds() {
         let home = create_home_dir();
-        let models = with_var("HOME", Some(home.path()), || {
+        let loaded = with_var("HOME", Some(home.path()), || {
             SettingsLoader::load(Some(Path::new("/nonexistent")))
         });
-        assert!(models.is_ok());
-        assert!(models.unwrap().is_empty());
+        assert!(loaded.is_ok());
+        assert!(loaded.unwrap().models.is_empty());
     }
 
     #[test]
@@ -547,10 +629,14 @@ model = "project/model"
 [[models]]
 name = "dup"
 model = "first"
+base_url = "https://example.com"
+api_key_env = "MY_KEY"
 
 [[models]]
 name = "dup"
 model = "second"
+base_url = "https://example.com"
+api_key_env = "MY_KEY"
 "#,
         );
 
@@ -568,6 +654,8 @@ model = "second"
 [[models]]
 name = "Invalid Name!"
 model = "test"
+base_url = "https://example.com"
+api_key_env = "MY_KEY"
 "#,
         );
 
@@ -582,24 +670,27 @@ model = "test"
     }
 
     #[test]
-    fn test_model_definition_defaults() {
+    fn test_model_definition_all_fields() {
         let dir = create_project_settings(
             r#"
 [[models]]
 name = "minimal"
 model = "test/model"
+base_url = "https://example.com"
+api_key_env = "MY_KEY"
 "#,
         );
 
         let home = create_home_dir();
-        let models = with_var("HOME", Some(home.path()), || {
+        let loaded = with_var("HOME", Some(home.path()), || {
             SettingsLoader::load(Some(dir.path()))
         })
         .unwrap();
-        let def = models.get("minimal").unwrap();
+        let def = loaded.models.get("minimal").unwrap();
 
-        assert_eq!(def.base_url, DEFAULT_BASE_URL);
-        assert_eq!(def.api_key_env, DEFAULT_API_KEY_ENV);
+        assert_eq!(def.model, "test/model");
+        assert_eq!(def.base_url, "https://example.com");
+        assert_eq!(def.api_key_env, "MY_KEY");
         assert_eq!(def.api_type, ApiType::ChatCompletions);
         assert!(def.providers.is_empty());
         assert_eq!(def.reasoning_effort, None);
@@ -655,5 +746,148 @@ model = "test/model"
         assert_eq!(config.reasoning_summary, Some("concise".to_string()));
         assert_eq!(config.reasoning_max_tokens, Some(8000));
         assert_eq!(config.providers, vec!["Provider1"]);
+    }
+
+    // --- LoadedSettings and default_model tests ---
+
+    #[test]
+    fn test_default_model_valid() {
+        let dir = create_project_settings(
+            r#"
+default_model = "zen"
+
+[[models]]
+name = "zen"
+model = "glm-5"
+base_url = "https://opencode.ai/zen/go/v1/"
+api_key_env = "OPENCODE_ZEN_API_TOKEN"
+"#,
+        );
+
+        let home = create_home_dir();
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(dir.path()))
+        })
+        .unwrap();
+
+        assert_eq!(loaded.default_model, Some("zen".to_string()));
+        assert!(loaded.models.contains_key("zen"));
+    }
+
+    #[test]
+    fn test_default_model_not_found() {
+        let dir = create_project_settings(
+            r#"
+default_model = "nonexistent"
+
+[[models]]
+name = "zen"
+model = "glm-5"
+base_url = "https://example.com"
+api_key_env = "KEY"
+"#,
+        );
+
+        let home = create_home_dir();
+        let result = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(dir.path()))
+        });
+        assert!(matches!(
+            result,
+            Err(SettingsError::DefaultModelNotFound { name }) if name == "nonexistent"
+        ));
+    }
+
+    #[test]
+    fn test_no_default_model() {
+        let dir = create_project_settings(
+            r#"
+[[models]]
+name = "zen"
+model = "glm-5"
+base_url = "https://example.com"
+api_key_env = "KEY"
+"#,
+        );
+
+        let home = create_home_dir();
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(dir.path()))
+        })
+        .unwrap();
+
+        assert_eq!(loaded.default_model, None);
+    }
+
+    #[test]
+    fn test_project_overrides_default_model() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+default_model = "global-model"
+
+[[models]]
+name = "global-model"
+model = "global/model"
+base_url = "https://global.example.com"
+api_key_env = "GLOBAL_KEY"
+"#,
+        );
+
+        let project_dir = create_project_settings(
+            r#"
+default_model = "project-model"
+
+[[models]]
+name = "project-model"
+model = "project/model"
+base_url = "https://project.example.com"
+api_key_env = "PROJECT_KEY"
+"#,
+        );
+
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(project_dir.path()))
+        })
+        .unwrap();
+
+        assert_eq!(loaded.default_model, Some("project-model".to_string()));
+    }
+
+    #[test]
+    fn test_project_explicitly_clears_default_model() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+default_model = "global-model"
+
+[[models]]
+name = "global-model"
+model = "global/model"
+base_url = "https://global.example.com"
+api_key_env = "GLOBAL_KEY"
+"#,
+        );
+
+        // Project file has no default_model line at all — global should persist.
+        let project_dir = create_project_settings(
+            r#"
+[[models]]
+name = "project-model"
+model = "project/model"
+base_url = "https://project.example.com"
+api_key_env = "PROJECT_KEY"
+"#,
+        );
+
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(project_dir.path()))
+        })
+        .unwrap();
+
+        // Project didn't set default_model, so global persists
+        assert_eq!(loaded.default_model, Some("global-model".to_string()));
     }
 }

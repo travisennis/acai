@@ -96,7 +96,7 @@ These constraints guide the design and are unlikely to change:
 
 ### CLI ↔ Client Boundary
 
-The CLI layer owns argument parsing and user-facing error messages. The client layer owns all network communication and tool execution. The boundary is the `CmdRunner` trait: `async fn run(&self, data_dir: &DataDir) -> anyhow::Result<()>`. The CLI creates an `Agent` via `ModelConfig::default()` → `ResolvedModelConfig::resolve()` → `Agent::new()`.
+The CLI layer owns argument parsing and user-facing error messages. The client layer owns all network communication and tool execution. The boundary is the `CmdRunner` trait: `async fn run(&self, data_dir: &DataDir) -> anyhow::Result<()>`. The CLI resolves a `ModelConfig` from settings.toml (or the `--model` flag) via `ModelDefinition::to_model_config()` → `ResolvedModelConfig::resolve()` → `Agent::new()`.
 
 ### Client ↔ Tool Boundary
 

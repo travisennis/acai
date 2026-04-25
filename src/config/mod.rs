@@ -12,7 +12,6 @@
 //! - [`SettingsLoader`] - Loads settings from TOML files
 
 mod data_dir;
-pub mod defaults;
 pub mod model;
 pub mod session;
 pub mod settings;

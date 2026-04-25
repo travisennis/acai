@@ -137,6 +137,16 @@ fn is_input_error(msg: &str) -> bool {
         return true;
     }
 
+    // No model specified (no --model and no default_model in settings)
+    if msg.contains("No model specified") {
+        return true;
+    }
+
+    // Session model not configured
+    if msg.contains("is not configured in settings.toml") {
+        return true;
+    }
+
     // Invalid session UUID
     if msg.contains("Invalid session UUID") {
         return true;
@@ -270,6 +280,21 @@ mod tests {
     fn classify_unknown_model() {
         let err = anyhow::anyhow!(
             "Unknown model 'nonexistent': claude, deepseek. Use a model name from settings.toml"
+        );
+        assert_eq!(classify_to_u8(&err), code::INPUT_ERROR);
+    }
+
+    #[test]
+    fn classify_no_model_specified() {
+        let err = anyhow::anyhow!("No model specified. cake needs a model configuration to run.");
+        assert_eq!(classify_to_u8(&err), code::INPUT_ERROR);
+    }
+
+    #[test]
+    fn classify_session_model_not_configured() {
+        let err = anyhow::anyhow!(
+            "Session model 'glm-5' is not configured in settings.toml. \
+             Add a [[models]] entry for 'glm-5' to continue this session"
         );
         assert_eq!(classify_to_u8(&err), code::INPUT_ERROR);
     }

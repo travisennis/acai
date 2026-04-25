@@ -664,11 +664,23 @@ fn resolve_assistant_message(items: &[ConversationItem]) -> Message {
 mod tests {
     use super::*;
     use crate::clients::types::{InputTokensDetails, OutputTokensDetails};
-    use crate::config::model::ModelConfig;
+    use crate::config::model::{ApiType, ModelConfig};
 
     fn test_config() -> ResolvedModelConfig {
         ResolvedModelConfig {
-            config: ModelConfig::default(),
+            config: ModelConfig {
+                model: "test/model".to_string(),
+                api_type: ApiType::ChatCompletions,
+                base_url: "https://api.example.com".to_string(),
+                api_key_env: "MY_KEY".to_string(),
+                temperature: None,
+                top_p: None,
+                max_output_tokens: None,
+                reasoning_effort: None,
+                reasoning_summary: None,
+                reasoning_max_tokens: None,
+                providers: vec![],
+            },
             api_key: "test-token".to_string(),
         }
     }
