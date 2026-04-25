@@ -45,8 +45,12 @@ just update-dependencies
 # Full CI check
 just ci
 ```
+---
+
+## Agent Instructions
 
 - Run the `Full CI check` command when you complete a task to make sure the code is correct.
+- Do not commit or push code unless explicitly asked to.
 
 ---
 
