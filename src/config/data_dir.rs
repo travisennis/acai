@@ -308,8 +308,14 @@ impl DataDir {
     }
 }
 
+/// Check whether a string looks like a UUID (8-4-4-4-12 hex format).
+/// Used to distinguish `--resume <uuid>` from `--resume <path>`.
+pub fn looks_like_uuid(s: &str) -> bool {
+    uuid::Uuid::parse_str(s).is_ok()
+}
+
 /// Minimal header struct for quickly inspecting a session file without
-/// loading the entire conversation history.
+/// loading the entire conversation history. Supports both v2 and v3 formats.
 #[derive(Deserialize)]
 struct SessionFileHeader {
     #[allow(dead_code)]
@@ -318,6 +324,7 @@ struct SessionFileHeader {
 }
 
 /// Reads only the first line of a session file to extract its header.
+/// Works with both v2 (`session_start`) and v3 (init) formats.
 fn read_session_header(path: &Path) -> anyhow::Result<SessionFileHeader> {
     let file = fs::File::open(path)
         .with_context(|| format!("Failed to open session file: {}", path.display()))?;
@@ -332,6 +339,18 @@ fn read_session_header(path: &Path) -> anyhow::Result<SessionFileHeader> {
     let header: SessionFileHeader = serde_json::from_str(first_line.trim())
         .with_context(|| format!("Failed to parse session header: {}", path.display()))?;
     Ok(header)
+}
+
+/// Loads a session from an arbitrary file path.
+///
+/// This is used by `--resume <path>` and `--fork <path>` to load sessions
+/// from files outside the sessions directory (e.g. redirected stream-json output).
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be loaded or parsed.
+pub fn load_session_from_path(path: &Path) -> anyhow::Result<Session> {
+    Session::load(path)
 }
 
 #[cfg(test)]

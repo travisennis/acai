@@ -236,17 +236,21 @@ cake "Remember the number 42"
 # Continue the most recent session in the current directory
 cake --continue "What number did I tell you?"
 
-# Resume a specific session by UUID
+# Resume a specific session by UUID or file path
 cake --resume 550e8400-e29b-41d4-a716-446655440000 "Continue our conversation"
+cake --resume ./saved_session.jsonl "Continue from a saved stream"
 
 # Fork the latest session (creates new session with same history)
 cake --fork "Let's discuss something different"
 
-# Fork a specific session by UUID
+# Fork a specific session by UUID or file path
 cake --fork 550e8400-e29b-41d4-a716-446655440000 "New branch of conversation"
+cake --fork ./saved_session.jsonl "Fork from a saved stream"
 ```
 
 Sessions are saved to `~/.local/share/cake/sessions/` (or `$CAKE_DATA_DIR/sessions/` if set) as flat `{uuid}.jsonl` files. Each file includes full conversation history with metadata. Sessions are saved on both success and error for crash recovery.
+
+The `--output-format stream-json` output uses the same JSONL schema as session files, so you can redirect stream-json output to a file and later resume from it with `--resume <path>`.
 
 For more details, see [Session Management](docs/design-docs/session-management.md).
 
@@ -256,7 +260,7 @@ Think of session management as branches of thought:
 
 - **`--continue`** is your "keep going" — great for multi-step tasks where cake needs to iterate.
 - **`--fork`** is your "what if?" — try a different approach without losing the original thread.
-- **`--resume <UUID>`** is your "go back to that idea from Tuesday."
+- **`--resume <UUID_OR_PATH>`** is your "go back to that idea from Tuesday."
 - **`--no-session`** is for throwaway questions that don't pollute your session history.
 
 ### Worktrees
@@ -374,8 +378,8 @@ fi
 - `--output-format` - Output format: `text` (default) or `stream-json`
 - `--model <NAME>` - Select a named model from settings.toml
 - `--continue` - Continue the most recent session for the current directory
-- `--resume <UUID>` - Resume a specific session by its UUID
-- `--fork [UUID]` - Fork a session (copy history into new session), optionally specify UUID
+- `--resume <UUID_OR_PATH>` - Resume a specific session by UUID or file path
+- `--fork [UUID_OR_PATH]` - Fork a session (copy history into new session), optionally specify UUID or file path
 - `--no-session` - Do not save the session to disk
 - `--worktree` (`-w`) - Run in an isolated git worktree (optionally provide a name)
 - `--reasoning-effort <EFFORT>` - Override reasoning effort level (none, low, medium, high, xhigh)

@@ -14,11 +14,11 @@ mod chat_completions;
 mod chat_types;
 mod responses;
 mod tools;
-mod types;
+pub mod types;
 
 #[doc(inline)]
 pub use agent::Agent;
 #[doc(inline)]
 pub use tools::{set_additional_dirs, summarize_tool_args};
 #[doc(inline)]
-pub use types::ConversationItem;
+pub use types::{ConversationItem, SessionRecord};

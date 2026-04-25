@@ -1,3 +1,6 @@
+use std::path::PathBuf;
+
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::models::Role;
@@ -162,6 +165,7 @@ impl ConversationItem {
     }
 
     /// Convert this item to JSON format for streaming output
+    #[allow(dead_code)]
     pub fn to_streaming_json(&self) -> serde_json::Value {
         match self {
             Self::Message {
@@ -217,6 +221,216 @@ impl ConversationItem {
                 })
             },
         }
+    }
+}
+
+// =============================================================================
+// Session Record Enum (for unified JSONL schema)
+// =============================================================================
+
+/// Subtype of a result record.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ResultSubtype {
+    Success,
+    ErrorDuringExecution,
+    ErrorMaxTurns,
+}
+
+/// A single line in a unified JSONL session/stream file.
+///
+/// Every line in both `--output-format stream-json` output and session history
+/// files is a `SessionRecord`. This makes it possible to redirect stream-json
+/// output to a file and later resume from that file with `--resume <path>`.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SessionRecord {
+    /// First line of every file. Replaces the old `SessionHeader`.
+    Init {
+        format_version: u32,
+        session_id: String,
+        /// Timestamp of the current saved snapshot.
+        timestamp: DateTime<Utc>,
+        working_directory: PathBuf,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        tools: Vec<String>,
+    },
+
+    Message {
+        role: Role,
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        status: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
+    },
+
+    FunctionCall {
+        id: String,
+        call_id: String,
+        name: String,
+        arguments: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
+    },
+
+    FunctionCallOutput {
+        call_id: String,
+        output: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
+    },
+
+    Reasoning {
+        id: String,
+        summary: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        encrypted_content: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        content: Option<Vec<ReasoningContent>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
+    },
+
+    Result {
+        subtype: ResultSubtype,
+        success: bool,
+        is_error: bool,
+        duration_ms: u64,
+        turn_count: u32,
+        num_turns: u32,
+        session_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        result: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+        usage: Usage,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        permission_denials: Option<Vec<String>>,
+    },
+}
+
+impl SessionRecord {
+    /// Convert a `ConversationItem` into its corresponding `SessionRecord` variant.
+    pub fn from_conversation_item(item: &ConversationItem) -> Self {
+        match item {
+            ConversationItem::Message {
+                role,
+                content,
+                id,
+                status,
+                timestamp,
+            } => Self::Message {
+                role: *role,
+                content: content.clone(),
+                id: id.clone(),
+                status: status.clone(),
+                timestamp: timestamp.clone(),
+            },
+            ConversationItem::FunctionCall {
+                id,
+                call_id,
+                name,
+                arguments,
+                timestamp,
+            } => Self::FunctionCall {
+                id: id.clone(),
+                call_id: call_id.clone(),
+                name: name.clone(),
+                arguments: arguments.clone(),
+                timestamp: timestamp.clone(),
+            },
+            ConversationItem::FunctionCallOutput {
+                call_id,
+                output,
+                timestamp,
+            } => Self::FunctionCallOutput {
+                call_id: call_id.clone(),
+                output: output.clone(),
+                timestamp: timestamp.clone(),
+            },
+            ConversationItem::Reasoning {
+                id,
+                summary,
+                encrypted_content,
+                content,
+                timestamp,
+            } => Self::Reasoning {
+                id: id.clone(),
+                summary: summary.clone(),
+                encrypted_content: encrypted_content.clone(),
+                content: content.clone(),
+                timestamp: timestamp.clone(),
+            },
+        }
+    }
+
+    /// Convert a `SessionRecord` back into a `ConversationItem`, if applicable.
+    /// Returns `None` for `Init` and `Result` records which have no
+    /// `ConversationItem` equivalent.
+    pub fn to_conversation_item(&self) -> Option<ConversationItem> {
+        match self {
+            Self::Message {
+                role,
+                content,
+                id,
+                status,
+                timestamp,
+            } => Some(ConversationItem::Message {
+                role: *role,
+                content: content.clone(),
+                id: id.clone(),
+                status: status.clone(),
+                timestamp: timestamp.clone(),
+            }),
+            Self::FunctionCall {
+                id,
+                call_id,
+                name,
+                arguments,
+                timestamp,
+            } => Some(ConversationItem::FunctionCall {
+                id: id.clone(),
+                call_id: call_id.clone(),
+                name: name.clone(),
+                arguments: arguments.clone(),
+                timestamp: timestamp.clone(),
+            }),
+            Self::FunctionCallOutput {
+                call_id,
+                output,
+                timestamp,
+            } => Some(ConversationItem::FunctionCallOutput {
+                call_id: call_id.clone(),
+                output: output.clone(),
+                timestamp: timestamp.clone(),
+            }),
+            Self::Reasoning {
+                id,
+                summary,
+                encrypted_content,
+                content,
+                timestamp,
+            } => Some(ConversationItem::Reasoning {
+                id: id.clone(),
+                summary: summary.clone(),
+                encrypted_content: encrypted_content.clone(),
+                content: content.clone(),
+                timestamp: timestamp.clone(),
+            }),
+            Self::Init { .. } | Self::Result { .. } => None,
+        }
+    }
+
+    /// Convert this record to a JSON value suitable for streaming output.
+    pub fn to_streaming_json(&self) -> serde_json::Value {
+        // We serialize the whole record; serde handles the tag.
+        serde_json::to_value(self).unwrap_or_else(
+            |_| serde_json::json!({"type": "error", "error": "serialization failed"}),
+        )
     }
 }
 

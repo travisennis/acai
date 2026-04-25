@@ -150,6 +150,24 @@ fn is_input_error(msg: &str) -> bool {
         return true;
     }
 
+    // Resume/fork file path errors
+    if msg.contains("Failed to open session file") {
+        return true;
+    }
+    if msg.contains("Failed to parse") && msg.contains("session file") {
+        return true;
+    }
+
+    // Working directory mismatch for file-based resume/fork
+    if msg.contains("Working directory mismatch") {
+        return true;
+    }
+
+    // Model mismatch when resuming a session
+    if msg.contains("Session model mismatch") {
+        return true;
+    }
+
     // clap argument errors (e.g. required arguments missing, bad flag values)
     if msg.contains("error:") && msg.contains("USAGE") {
         return true;

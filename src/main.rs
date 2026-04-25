@@ -13,10 +13,11 @@ use std::time::{Duration, Instant};
 use crate::cli::CmdRunner;
 use crate::clients::{Agent, ConversationItem, set_additional_dirs};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::config::{
     AgentsFile, DataDir, ModelConfig, ModelDefinition, ResolvedModelConfig, Session,
-    SettingsLoader, worktree,
+    SettingsLoader, load_session_from_path, looks_like_uuid, worktree,
 };
 use crate::models::{Message, Role};
 use crate::prompts::build_system_prompt;
@@ -55,13 +56,13 @@ struct CodingAssistant {
     #[arg(long = "continue")]
     pub continue_session: bool,
 
-    /// Resume a specific session by UUID
-    #[arg(long, value_name = "UUID")]
+    /// Resume a specific session by UUID or file path.
+    #[arg(long, value_name = "UUID_OR_PATH")]
     pub resume: Option<String>,
 
     /// Fork a session: copy its history into a new session with a fresh ID.
-    /// Use without a value to fork the latest session, or provide a UUID.
-    #[arg(long, num_args = 0..=1, default_missing_value = "", value_name = "UUID")]
+    /// Use without a value to fork the latest session, or provide a UUID or file path.
+    #[arg(long, num_args = 0..=1, default_missing_value = "", value_name = "UUID_OR_PATH")]
     pub fork: Option<String>,
 
     /// Do not save the session to disk
@@ -211,16 +212,89 @@ impl CodingAssistant {
         Ok(config)
     }
 
+    /// Resolve the model for a session restore (--continue, --resume, --fork).
+    ///
+    /// Policy (per the plan):
+    /// - If `--model` is explicitly provided and the session has a stored model that
+    ///   differs from it, error out with a clear message.
+    /// - If `--model` is explicitly provided and matches the session model (or session
+    ///   has no model), use the explicitly provided model.
+    /// - If `--model` is not provided and the session has a stored model, use the
+    ///   session model.
+    /// - If `--model` is not provided and the session has no stored model, fall back
+    ///   to default model resolution.
+    fn resolve_model_for_session(
+        &self,
+        settings: &HashMap<String, ModelDefinition>,
+        session_model: Option<&str>,
+    ) -> anyhow::Result<ResolvedModelConfig> {
+        let cli_model_explicit = self.model.is_some();
+
+        if cli_model_explicit {
+            // User explicitly passed --model. Resolve it and check against session.
+            let config = self.resolve_model_config(settings)?;
+            let resolved = ResolvedModelConfig::resolve(config)?;
+            let resolved_model = &resolved.config.model;
+
+            if let Some(sm) = session_model
+                && sm != resolved_model
+            {
+                anyhow::bail!(
+                    "Session model mismatch: session uses '{sm}' but --model resolves to '{resolved_model}'. \
+                     Use --model {sm} to continue with the session's model, or start a new session."
+                );
+            }
+
+            Ok(resolved)
+        } else if let Some(sm) = session_model {
+            // No --model, but session has a stored model. Use it.
+            let config = ModelConfig {
+                model: sm.to_string(),
+                ..ModelConfig::default()
+            };
+            // Look up the model name in settings to get provider config
+            if let Some(def) = settings.get(sm) {
+                let resolved = ResolvedModelConfig::resolve(def.to_model_config())?;
+                let resolved = self.apply_cli_overrides(resolved);
+                Ok(resolved)
+            } else {
+                // The stored model name isn't in settings, treat it as a raw model string
+                let resolved = ResolvedModelConfig::resolve(config)?;
+                let resolved = self.apply_cli_overrides(resolved);
+                Ok(resolved)
+            }
+        } else {
+            // No --model, no session model. Fall back to default.
+            let config = self.resolve_model_config(settings)?;
+            let resolved = ResolvedModelConfig::resolve(config)?;
+            Ok(resolved)
+        }
+    }
+
+    /// Apply CLI overrides (`max_tokens`, `reasoning_effort`, `reasoning_budget`) to a
+    /// resolved model config.
+    fn apply_cli_overrides(&self, mut resolved: ResolvedModelConfig) -> ResolvedModelConfig {
+        if let Some(max_tokens) = self.max_tokens {
+            resolved.config.max_output_tokens = Some(max_tokens);
+        }
+        if let Some(ref effort) = self.reasoning_effort {
+            resolved.config.reasoning_effort = Some(effort.clone());
+        }
+        if let Some(budget) = self.reasoning_budget {
+            resolved.config.reasoning_max_tokens = Some(budget);
+        }
+        resolved
+    }
+
+    #[allow(clippy::too_many_lines)]
     fn build_client_and_session(
         &self,
         data_dir: &DataDir,
-        current_dir: std::path::PathBuf,
+        current_dir: PathBuf,
         agents_files: &[AgentsFile],
         settings: &HashMap<String, ModelDefinition>,
     ) -> anyhow::Result<(Agent, Session)> {
         let system_prompt = build_system_prompt(&current_dir, agents_files);
-        let model_config = self.resolve_model_config(settings)?;
-        let resolved = ResolvedModelConfig::resolve(model_config)?;
 
         if self.continue_session {
             info!(target: "cake", "Continuing latest session for directory: {}", current_dir.display());
@@ -228,46 +302,100 @@ impl CodingAssistant {
                 .load_latest_session(&current_dir)?
                 .ok_or_else(|| anyhow::anyhow!("No previous session found for this directory"))?;
             info!(target: "cake", "Continuing session: {}", restored.id);
-            let agent = Agent::new(resolved, &system_prompt)
+
+            // Resolve the model: if --model is given, use it (and reject mismatches
+            // with the session model). If --model is not given and the session has
+            // a stored model, use the session model. Otherwise fall back to default.
+            let resolved = self.resolve_model_for_session(settings, restored.model.as_deref())?;
+
+            let agent = Agent::new(resolved.clone(), &system_prompt)
                 .with_session_id(restored.id.clone())
-                .with_history(restored.messages.clone());
-            Ok((agent, restored))
-        } else if let Some(ref uuid) = self.resume {
-            info!(target: "cake", "Resuming session: {uuid}");
-            uuid::Uuid::parse_str(uuid)
-                .map_err(|e| anyhow::anyhow!("Invalid session UUID '{uuid}': {e}"))?;
-            let restored = data_dir
-                .load_session(uuid)?
-                .ok_or_else(|| anyhow::anyhow!("Session {uuid} not found"))?;
+                .with_history(restored.messages())
+                .with_stream_records(restored.records);
+            let mut s = Session::new(restored.id, restored.working_dir);
+            s.model = Some(resolved.config.model);
+            Ok((agent, s))
+        } else if let Some(ref arg) = self.resume {
+            // --resume accepts either a UUID or a file path
+            let restored = if looks_like_uuid(arg) {
+                data_dir
+                    .load_session(arg)?
+                    .ok_or_else(|| anyhow::anyhow!("Session {arg} not found"))?
+            } else {
+                let path = PathBuf::from(arg);
+                load_session_from_path(&path)?
+            };
             info!(target: "cake", "Resumed session: {}", restored.id);
-            let agent = Agent::new(resolved, &system_prompt)
+
+            // Working directory check for file-based resume
+            if !looks_like_uuid(arg) {
+                let restored_dir = &restored.working_dir;
+                if restored_dir != &current_dir {
+                    anyhow::bail!(
+                        "Working directory mismatch: session was created in '{}' but current directory is '{}'. \
+                         Run the command from the original directory, or use --resume with a UUID to skip this check.",
+                        restored_dir.display(),
+                        current_dir.display()
+                    );
+                }
+            }
+
+            let resolved = self.resolve_model_for_session(settings, restored.model.as_deref())?;
+
+            let agent = Agent::new(resolved.clone(), &system_prompt)
                 .with_session_id(restored.id.clone())
-                .with_history(restored.messages.clone());
-            Ok((agent, restored))
+                .with_history(restored.messages())
+                .with_stream_records(restored.records);
+            let mut s = Session::new(restored.id, restored.working_dir);
+            s.model = Some(resolved.config.model);
+            Ok((agent, s))
         } else if let Some(ref fork_id) = self.fork {
             info!(target: "cake", "Forking session");
             let restored = if fork_id.is_empty() {
                 data_dir.load_latest_session(&current_dir)?.ok_or_else(|| {
                     anyhow::anyhow!("No previous session found for this directory")
                 })?
-            } else {
-                uuid::Uuid::parse_str(fork_id)
-                    .map_err(|e| anyhow::anyhow!("Invalid session UUID '{fork_id}': {e}"))?;
+            } else if looks_like_uuid(fork_id) {
                 data_dir
                     .load_session(fork_id)?
                     .ok_or_else(|| anyhow::anyhow!("Session {fork_id} not found"))?
+            } else {
+                let path = PathBuf::from(fork_id);
+                load_session_from_path(&path)?
             };
+
+            // Working directory check for file-based fork
+            if !fork_id.is_empty() && !looks_like_uuid(fork_id) {
+                let restored_dir = &restored.working_dir;
+                if restored_dir != &current_dir {
+                    anyhow::bail!(
+                        "Working directory mismatch: session was created in '{}' but current directory is '{}'. \
+                         Run the command from the original directory, or use --fork with a UUID to skip this check.",
+                        restored_dir.display(),
+                        current_dir.display()
+                    );
+                }
+            }
+
             info!(target: "cake", "Forking from session: {}", restored.id);
-            let agent = Agent::new(resolved, &system_prompt).with_history(restored.messages);
+
+            let resolved = self.resolve_model_for_session(settings, restored.model.as_deref())?;
+
+            let agent = Agent::new(resolved.clone(), &system_prompt)
+                .with_history(restored.messages())
+                .with_stream_records(restored.records);
             let new_id = agent.session_id.clone();
             info!(target: "cake", "New forked session: {new_id}");
-            let s = Session::new(new_id, current_dir);
+            let mut s = Session::new(new_id, current_dir);
+            s.model = Some(resolved.config.model);
             Ok((agent, s))
         } else {
-            let agent = Agent::new(resolved, &system_prompt);
+            let resolved = ResolvedModelConfig::resolve(self.resolve_model_config(settings)?)?;
+            let agent = Agent::new(resolved.clone(), &system_prompt);
             let new_id = agent.session_id.clone();
             info!(target: "cake", "New session: {new_id}");
-            let s = Session::new(new_id, current_dir);
+            let mut s = Session::new(new_id, current_dir);
+            s.model = Some(resolved.config.model);
             Ok((agent, s))
         }
     }
@@ -389,26 +517,15 @@ impl CmdRunner for CodingAssistant {
 
         let duration_ms: u64 = start.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
 
-        if self.output_format == OutputFormat::StreamJson {
-            match &result {
-                Ok(_) => {
-                    client.emit_result_message(
-                        true,
-                        duration_ms,
-                        None,
-                        crate::exit_code::code::SUCCESS,
-                    );
-                },
-                Err(e) => {
-                    let code_val = crate::exit_code::classify_to_u8(e);
-                    client.emit_result_message(
-                        false,
-                        duration_ms,
-                        Some(e.to_string().as_ref()),
-                        code_val,
-                    );
-                },
-            }
+        // Emit and store the Result record for both text and stream-json modes.
+        match &result {
+            Ok(response_msg) => {
+                let result_text = response_msg.as_ref().map(|m| m.content.clone());
+                client.emit_result_message(true, duration_ms, result_text, None);
+            },
+            Err(e) => {
+                client.emit_result_message(false, duration_ms, None, Some(e.to_string()));
+            },
         }
 
         if let Some(spinner) = normal_spinner.take() {
@@ -417,9 +534,11 @@ impl CmdRunner for CodingAssistant {
         }
 
         if !self.no_session {
-            session.messages = client.drain_history_without_system();
-            session.model = Some(client.model().to_string());
-            info!(target: "cake", "Saving session {} ({} messages)", session.id, session.messages.len());
+            session.records = client.drain_stream();
+            if session.model.is_none() {
+                session.model = Some(client.model().to_string());
+            }
+            info!(target: "cake", "Saving session {} ({} records)", session.id, session.records.len());
             if let Err(e) = data_dir.save_session(&session) {
                 tracing::error!("Failed to save session: {e}");
             }

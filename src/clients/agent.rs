@@ -1,15 +1,16 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
+use chrono::Utc;
 use tokio::time::sleep;
 use tracing::debug;
-
-use crate::config::model::{ApiType, ResolvedModelConfig};
-use crate::models::{Message, Role};
 
 use crate::clients::chat_completions;
 use crate::clients::responses;
 use crate::clients::tools::{Tool, bash_tool, edit_tool, execute_tool, read_tool, write_tool};
-use crate::clients::types::{ConversationItem, Usage};
+use crate::clients::types::{ConversationItem, ResultSubtype, SessionRecord, Usage};
+use crate::config::model::{ApiType, ResolvedModelConfig};
+use crate::models::{Message, Role};
 
 /// Callback type for streaming JSON output
 type StreamingCallback = Box<dyn Fn(&str) + Send + Sync>;
@@ -60,6 +61,10 @@ pub struct Agent {
     pub turn_count: u32,
     /// Reusable HTTP client for connection pooling
     client: reqwest::Client,
+    /// Buffer of all session records emitted during this run.
+    /// Populated by `emit_init_message`, `stream_item`, and `emit_result_message`.
+    /// Used to reconstruct the session file on save.
+    stream: Vec<SessionRecord>,
 }
 
 impl Agent {
@@ -89,6 +94,7 @@ impl Agent {
                 .timeout(std::time::Duration::from_secs(300))
                 .build()
                 .unwrap_or_default(),
+            stream: Vec::new(),
         }
     }
 
@@ -120,12 +126,42 @@ impl Agent {
         self
     }
 
+    /// Seed the stream buffer with prior session records when resuming a session.
+    ///
+    /// This ensures that the full prior conversation is preserved in the stream
+    /// output so it can be saved to the session file.
+    ///
+    /// Drops any trailing Result and leading Init records: the agent will
+    /// always emit its own Init on start, and the next save writes a fresh Result.
+    pub fn with_stream_records(mut self, records: Vec<SessionRecord>) -> Self {
+        self.stream = records
+            .into_iter()
+            .filter(|r| {
+                !matches!(r, SessionRecord::Result { .. })
+                    && !matches!(r, SessionRecord::Init { .. })
+            })
+            .collect();
+        self
+    }
+
+    /// Drains and returns the full stream buffer including Init and any Result record.
+    ///
+    /// The caller is responsible for appending a Result record before draining
+    /// if they want one in the output.
+    pub fn drain_stream(&mut self) -> Vec<SessionRecord> {
+        std::mem::take(&mut self.stream)
+    }
+
     /// Drains and returns conversation history without the system message.
     ///
     /// This is used when saving sessions to disk, as the system prompt is
     /// regenerated on load rather than stored. Takes `&mut self` to drain
     /// the internal history, avoiding a deep clone of potentially large
     /// items (e.g. tool outputs with 50KB+ strings).
+    ///
+    /// Prefer `drain_stream()` for the new unified session format.
+    #[allow(dead_code)]
+    #[deprecated(note = "Use drain_stream() instead for the unified session format")]
     pub fn drain_history_without_system(&mut self) -> Vec<ConversationItem> {
         let skip = usize::from(self.history.first().is_some_and(|item| {
             matches!(
@@ -167,35 +203,44 @@ impl Agent {
         }
     }
 
-    /// Stream a conversation item as JSON via the streaming callback, if set.
-    fn stream_item(&self, item: &ConversationItem) {
+    /// Stream a session record via the streaming callback, if set.
+    /// Also appends the record to the internal stream buffer.
+    fn stream_record(&mut self, record: SessionRecord) {
         if let Some(ref callback) = self.streaming_callback
-            && let Ok(json) = serde_json::to_string(&item.to_streaming_json())
+            && let Ok(json) = serde_json::to_string(&record.to_streaming_json())
         {
             callback(&json);
         }
+        self.stream.push(record);
     }
 
-    /// Emit the init message with session info, cwd, and tools
-    pub fn emit_init_message(&self) {
-        if let Some(ref callback) = self.streaming_callback {
-            let cwd = std::env::current_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_default();
-
-            let tools: Vec<String> = self.tools.iter().map(|tool| tool.name.clone()).collect();
-
-            let json = serde_json::json!({
-                "type": "init",
-                "session_id": self.session_id,
-                "cwd": cwd,
-                "tools": tools
-            });
-
-            if let Ok(json_str) = serde_json::to_string(&json) {
-                callback(&json_str);
-            }
+    /// Stream a conversation item as JSON via the streaming callback, if set.
+    fn stream_item(&mut self, item: &ConversationItem) {
+        let record = SessionRecord::from_conversation_item(item);
+        if let Some(ref callback) = self.streaming_callback
+            && let Ok(json) = serde_json::to_string(&record.to_streaming_json())
+        {
+            callback(&json);
         }
+        self.stream.push(record);
+    }
+
+    /// Emit the init message with session info, cwd, and tools.
+    /// Appends an Init record to the stream buffer.
+    pub fn emit_init_message(&mut self) {
+        let cwd: PathBuf = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let tools: Vec<String> = self.tools.iter().map(|tool| tool.name.clone()).collect();
+
+        let record = SessionRecord::Init {
+            format_version: 3,
+            session_id: self.session_id.clone(),
+            timestamp: Utc::now(),
+            working_directory: cwd,
+            model: Some(self.config.config.model.clone()),
+            tools,
+        };
+
+        self.stream_record(record);
     }
 
     /// Accumulate usage from an API turn
@@ -214,37 +259,36 @@ impl Agent {
         }
     }
 
-    /// Emit the result message with success/error, duration, usage stats, and exit code
+    /// Emit the result message with success/error, duration, usage stats.
+    /// Appends a Result record to the stream buffer.
     pub fn emit_result_message(
-        &self,
+        &mut self,
         success: bool,
         duration_ms: u64,
-        error_message: Option<&str>,
-        exit_code: u8,
+        result_text: Option<String>,
+        error_message: Option<String>,
     ) {
-        if let Some(ref callback) = self.streaming_callback {
-            let mut json = serde_json::json!({
-                "type": "result",
-                "success": success,
-                "duration_ms": duration_ms,
-                "turn_count": self.turn_count,
-                "usage": self.total_usage,
-                "exit_code": exit_code
-            });
+        let subtype = if success {
+            ResultSubtype::Success
+        } else {
+            ResultSubtype::ErrorDuringExecution
+        };
 
-            if success {
-                json["subtype"] = serde_json::json!("success");
-            } else {
-                json["subtype"] = serde_json::json!("error");
-                if let Some(err_msg) = error_message {
-                    json["error"] = serde_json::json!(err_msg);
-                }
-            }
+        let record = SessionRecord::Result {
+            subtype,
+            success,
+            is_error: !success,
+            duration_ms,
+            turn_count: self.turn_count,
+            num_turns: self.turn_count,
+            session_id: self.session_id.clone(),
+            result: result_text,
+            error: error_message,
+            usage: self.total_usage.clone(),
+            permission_denials: None,
+        };
 
-            if let Ok(json_str) = serde_json::to_string(&json) {
-                callback(&json_str);
-            }
-        }
+        self.stream_record(record);
     }
 
     /// Sends a message and runs the agent loop until completion.
@@ -266,20 +310,18 @@ impl Agent {
             content: user_content.clone(),
             id: None,
             status: None,
-            timestamp: Some(timestamp),
+            timestamp: Some(timestamp.clone()),
         });
 
         // Stream user message
-        if let Some(ref callback) = self.streaming_callback {
-            let json = serde_json::json!({
-                "type": "message",
-                "role": "user",
-                "content": user_content
-            });
-            if let Ok(json_str) = serde_json::to_string(&json) {
-                callback(&json_str);
-            }
-        }
+        let user_item = ConversationItem::Message {
+            role: Role::User,
+            content: user_content.clone(),
+            id: None,
+            status: None,
+            timestamp: Some(timestamp),
+        };
+        self.stream_item(&user_item);
 
         // Agent loop: continue until model stops making tool calls
         loop {
@@ -538,6 +580,7 @@ mod tests {
             total_usage: Usage::default(),
             turn_count: 0,
             client: reqwest::Client::new(),
+            stream: Vec::new(),
         }
     }
 
@@ -594,45 +637,45 @@ mod tests {
     fn emit_result_message_success() {
         let captured = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
         let captured_clone = captured.clone();
-        let agent = test_agent().with_streaming_json(move |json| {
+        let mut agent = test_agent().with_streaming_json(move |json| {
             *captured_clone.lock().unwrap() = json.to_string();
         });
-        agent.emit_result_message(true, 1000, None, 0);
+        agent.emit_result_message(true, 1000, None, None);
         drop(agent);
         let json: serde_json::Value = serde_json::from_str(&captured.lock().unwrap()).unwrap();
         assert_eq!(json["type"], "result");
         assert_eq!(json["subtype"], "success");
         assert_eq!(json["success"], true);
+        assert_eq!(json["is_error"], false);
         assert_eq!(json["duration_ms"], 1000);
-        assert_eq!(json["exit_code"], 0);
     }
 
     #[test]
     fn emit_result_message_error() {
         let captured = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
         let captured_clone = captured.clone();
-        let agent = test_agent().with_streaming_json(move |json| {
+        let mut agent = test_agent().with_streaming_json(move |json| {
             *captured_clone.lock().unwrap() = json.to_string();
         });
-        agent.emit_result_message(false, 500, Some("boom"), 1);
+        agent.emit_result_message(false, 500, None, Some("boom".to_string()));
         drop(agent);
         let json: serde_json::Value = serde_json::from_str(&captured.lock().unwrap()).unwrap();
-        assert_eq!(json["subtype"], "error");
+        assert_eq!(json["subtype"], "error_during_execution");
         assert_eq!(json["error"], "boom");
-        assert_eq!(json["exit_code"], 1);
+        assert_eq!(json["is_error"], true);
     }
 
     #[test]
     fn emit_result_message_no_callback() {
-        let agent = test_agent();
-        agent.emit_result_message(true, 1000, None, 0);
+        let mut agent = test_agent();
+        agent.emit_result_message(true, 1000, None, None);
     }
 
     #[test]
     fn emit_init_message() {
         let captured = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
         let captured_clone = captured.clone();
-        let agent = test_agent().with_streaming_json(move |json| {
+        let mut agent = test_agent().with_streaming_json(move |json| {
             *captured_clone.lock().unwrap() = json.to_string();
         });
         agent.emit_init_message();
@@ -640,9 +683,11 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&captured.lock().unwrap()).unwrap();
         assert_eq!(json["type"], "init");
         assert_eq!(json["session_id"], "test-session");
+        assert_eq!(json["format_version"], 3);
     }
 
     #[test]
+    #[allow(deprecated)]
     fn drain_history_without_system_excludes_system_message() {
         let mut agent = test_agent();
         // test_agent already provides a system message at index 0.
@@ -666,6 +711,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn drain_history_without_system_no_system_message() {
         let mut agent = test_agent();
         agent.history.push(ConversationItem::Message {
@@ -680,6 +726,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn drain_history_without_system_empty_history() {
         let mut agent = test_agent();
         let history = agent.drain_history_without_system();
@@ -687,6 +734,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn drain_history_without_system_drains_the_internal_vec() {
         let mut agent = test_agent();
         agent.history.push(ConversationItem::Message {
@@ -797,7 +845,7 @@ mod tests {
         let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let captured_clone = captured.clone();
 
-        let agent = test_agent().with_streaming_json(move |json| {
+        let mut agent = test_agent().with_streaming_json(move |json| {
             captured_clone.lock().unwrap().push(json.to_string());
         });
 
@@ -879,6 +927,7 @@ mod error_tests {
             total_usage: Usage::default(),
             turn_count: 0,
             client: reqwest::Client::new(),
+            stream: Vec::new(),
         }
     }
 
@@ -910,6 +959,7 @@ mod error_tests {
             total_usage: Usage::default(),
             turn_count: 0,
             client: reqwest::Client::new(),
+            stream: Vec::new(),
         }
     }
 

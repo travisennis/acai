@@ -19,7 +19,7 @@ pub mod settings;
 pub mod worktree;
 
 #[doc(inline)]
-pub use data_dir::{AgentsFile, DataDir};
+pub use data_dir::{AgentsFile, DataDir, load_session_from_path, looks_like_uuid};
 #[doc(inline)]
 pub use model::{ModelConfig, ResolvedModelConfig};
 #[doc(inline)]
