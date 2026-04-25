@@ -50,7 +50,8 @@ Foundation modules that provide data persistence, core types, and prompt generat
 - `Session`: In-memory session state with JSONL serialization
 - `worktree`: Git worktree utilities for isolated execution environments
 - `model`: Contains `ApiType` enum (`Responses`/`ChatCompletions`), `ModelConfig` struct (model, api_type, base_url, api_key_env, temperature, top_p, max_output_tokens, reasoning_effort, reasoning_summary, reasoning_max_tokens, providers), and `ResolvedModelConfig` (resolves API key from env var)
-- `settings`: TOML-based configuration loading from `settings.toml` files. Supports loading from XDG-style global (`~/.config/cake/settings.toml`) and project-level (`.cake/settings.toml`) locations, with project settings overriding global settings for the same model name.
+- `settings`: TOML-based configuration loading from `settings.toml` files. Supports loading from XDG-style global (`~/.config/cake/settings.toml`) and project-level (`.cake/settings.toml`) locations, with project settings overriding global settings for the same model name. Includes a `[skills]` section for controlling skill discovery.
+- `skills`: Skill discovery, parsing, and catalog management. Discovers `SKILL.md` files from `.agents/skills/` directories, parses YAML frontmatter, and builds an XML catalog for the system prompt. Skills are activated lazily via the Read tool and deduplicated within a session.
 - `defaults`: Default values for model, base URL, API key env var, and providers
 
 Sessions are stored as flat `{uuid}.jsonl` files under `~/.local/share/cake/sessions/`. Each file's header contains the working directory, so `--continue` filters by matching the current directory.
@@ -61,7 +62,7 @@ Sessions are stored as flat `{uuid}.jsonl` files under `~/.local/share/cake/sess
 
 These types are intentionally simple—most of the system uses `ConversationItem` directly.
 
-**`prompts`**: System prompt construction with AGENTS.md integration. Reads user-level (`~/.cake/AGENTS.md`), XDG config (`~/.config/AGENTS.md`), and project-level (`./AGENTS.md`) instruction files and injects them into the system prompt.
+**`prompts`**: System prompt construction with AGENTS.md and skill catalog integration. Reads user-level (`~/.cake/AGENTS.md`), XDG config (`~/.config/AGENTS.md`), and project-level (`./AGENTS.md`) instruction files, plus discovered skills from `.agents/skills/`, and injects them into the system prompt.
 
 ### Layer 1: Foundation
 
@@ -81,7 +82,7 @@ These constraints guide the design and are unlikely to change:
 
 3. **ConversationItem is the single source of truth**: All conversation state flows through this enum. There is no parallel representation.
 
-4. **Tools validate paths before execution**: Every filesystem operation checks that the target path is within the working directory or an allowed temp directory (`/tmp`, `/var/folders`, etc.).
+4. **Tools validate paths before execution**: Every filesystem operation checks that the target path is within the working directory, an allowed temp directory (`/tmp`, `/var/folders`, etc.), or a registered skill directory.
 
 5. **Bash tool blocks destructive commands**: Known-destructive commands (e.g. `git reset --hard`, `git push --force`, `rm -rf` outside temp dirs) are rejected before execution as a best-effort safety guard.
 

@@ -8,12 +8,17 @@ The system prompt is the first message sent to the AI model, establishing:
 
 1. **Identity**: "You are cake. You are running as a coding agent..."
 2. **Context**: Project-specific instructions from `AGENTS.md` files
-3. **Capabilities**: Implicitly defined by the available tools
+3. **Skills**: Available skills catalog with activation instructions
+4. **Capabilities**: Implicitly defined by the available tools
 
 The module provides a single public function:
 
 ```rust
-pub fn build_system_prompt(_working_dir: &Path, agents_files: &[AgentsFile]) -> String
+pub fn build_system_prompt(
+    working_dir: &Path,
+    agents_files: &[AgentsFile],
+    skill_catalog: &SkillCatalog,
+) -> String
 ```
 
 ## AGENTS.md Files
@@ -46,6 +51,34 @@ The base system prompt establishes the AI's identity:
 ```rust
 "You are cake. You are running as a coding agent in a CLI on the user's computer."
 ```
+
+### Skills Section
+
+If any skills were discovered, a "Skills" section is appended after the AGENTS.md context:
+
+```markdown
+## Skills
+
+<skill_instructions>
+The following skills provide specialized instructions for specific tasks.
+When a task matches a skill's description, use your file-read tool to load
+the SKILL.md at the listed location before proceeding.
+When a skill references relative paths, resolve them against the skill's
+directory (the parent of SKILL.md) and use absolute paths in tool calls.
+</skill_instructions>
+
+<available_skills>
+  <skill>
+    <name>debugging-cake</name>
+    <description>How to investigate and debug issues with the cake CLI tool...</description>
+    <location>/path/to/SKILL.md</location>
+  </skill>
+</available_skills>
+```
+
+Skills are lazy-loaded: the model reads the `SKILL.md` file via the Read tool when it determines the skill is relevant. Once activated, the skill is deduplicated (subsequent reads return a lightweight "already active" message).
+
+For full details on the skills system, see [skills.md](./skills.md).
 
 ### Project Context Section
 
@@ -144,11 +177,12 @@ The `_working_dir` parameter is currently unused but kept for:
 
 The prompt construction flow:
 
-1. **`cli::instruct`** calls `data_dir.read_agents_files(&current_dir)`
+1. **`main.rs`** calls `data_dir.read_agents_files(&current_dir)`
 2. **`config::DataDir`** reads and parses `~/.cake/AGENTS.md`, `~/.config/AGENTS.md`, and `./AGENTS.md`
-3. **`cli::instruct`** passes `agents_files` to `build_system_prompt()`
-4. **`prompts`** constructs the final string
-5. **`clients::responses`** includes it as the first message in API requests
+3. **`main.rs`** calls `discover_skills(&current_dir)` to find available skills
+4. **`main.rs`** passes `agents_files` and `skill_catalog` to `build_system_prompt()`
+5. **`prompts`** constructs the final string with AGENTS.md context and skills catalog
+6. **`clients::responses`** includes it as the first message in API requests
 
 ## Use Cases
 
@@ -229,6 +263,7 @@ Potential improvements:
 - **Dynamic prompts**: Include current git status, recent files
 - **Template system**: Allow variable substitution in AGENTS.md
 - **Conditional rules**: Different instructions based on file type
-- **Validation**: Lint AGENTS.md for common issues
+- **Validation**: Lint AGENTS.md and SKILL.md for common issues
+- **Skill dependencies**: Allow skills to declare dependencies on other skills
 
 These would be additions to the current simple, reliable approach rather than replacements.

@@ -84,7 +84,37 @@ api_key_env = "OPENROUTER_API_KEY"
 api_type = "responses"
 temperature = 0.7
 top_p = 0.9
+
+# Skill configuration
+[skills]
+disabled = false
+only = ["debugging-cake", "evaluating-cake"]
 ```
+
+## Skill Configuration
+
+The `[skills]` section controls skill discovery and filtering:
+
+```toml
+[skills]
+disabled = false       # Set to true to disable all skills
+only = []              # List of skill names to load (empty = all)
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `disabled` | `false` | If `true`, no skills are discovered or shown in the system prompt |
+| `only` | `[]` | If non-empty, only skills with these names are loaded |
+
+### Precedence
+
+Skill configuration is resolved with the following precedence (highest to lowest):
+
+1. `--no-skills` CLI flag
+2. `--skills name1,name2` CLI flag
+3. `skills.only` in settings.toml
+4. `skills.disabled = true` in settings.toml
+5. Default: load all discovered skills
 
 ## Required vs Optional Fields
 

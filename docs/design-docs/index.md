@@ -18,6 +18,7 @@ See the [../adr/](../adr/) directory for architectural decision records (ADRs).
 | [sandbox.md](sandbox.md) | Sandbox environment design |
 | [session-management.md](session-management.md) | Session lifecycle and state management |
 | [settings.md](settings.md) | Settings TOML configuration |
+| [skills.md](skills.md) | Agent skills discovery and activation |
 | [streaming-json-output.md](streaming-json-output.md) | Streaming JSON output format |
 | [tools.md](tools.md) | Tool system architecture |
 
