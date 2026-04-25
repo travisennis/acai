@@ -276,8 +276,14 @@ impl CodingAssistant {
             Ok(resolved)
         } else if let Some(sm) = session_model {
             // No --model, but session has a stored model. Use it.
-            // Look up the model name in settings to get provider config
-            if let Some(def) = models.get(sm) {
+            // Look up the model name in settings to get provider config.
+            // Try by name first (for sessions that store the config name),
+            // then by model identifier (for backward compatibility with older
+            // sessions that stored the API model string).
+            let def = models
+                .get(sm)
+                .or_else(|| models.values().find(|d| d.model == sm));
+            if let Some(def) = def {
                 let resolved = ResolvedModelConfig::resolve(def.to_model_config())?;
                 let resolved = self.apply_cli_overrides(resolved);
                 Ok(resolved)
@@ -1212,6 +1218,41 @@ mod tests {
             assert!(summary.contains("1000 input tokens"));
             assert!(summary.contains("250 cached reads"));
             assert!(summary.contains("500 output tokens"));
+        });
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_resolve_model_for_session_by_model_field() {
+        // Session stores the API model identifier, not the config name.
+        // This test verifies that --continue works when the session model
+        // matches a definition's `model` field even if the `name` differs.
+        temp_env::with_var("CAKE_TEST_VALID_KEY", Some("sk-test-123"), || {
+            let args = CodingAssistant::parse_from(["cake", "test prompt"]);
+
+            let mut models = HashMap::new();
+            models.insert(
+                "my-alias".to_string(),
+                ModelDefinition {
+                    name: "my-alias".to_string(),
+                    model: "deepseek-v4-pro".to_string(),
+                    base_url: "https://api.example.com".to_string(),
+                    api_key_env: "CAKE_TEST_VALID_KEY".to_string(),
+                    api_type: ApiType::ChatCompletions,
+                    temperature: None,
+                    top_p: None,
+                    max_output_tokens: None,
+                    reasoning_effort: None,
+                    reasoning_summary: None,
+                    reasoning_max_tokens: None,
+                    providers: vec![],
+                },
+            );
+
+            let resolved = args
+                .resolve_model_for_session(&models, None, Some("deepseek-v4-pro"))
+                .unwrap();
+            assert_eq!(resolved.config.model, "deepseek-v4-pro");
         });
     }
 }
