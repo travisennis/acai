@@ -50,7 +50,7 @@ Foundation modules that provide data persistence, core types, and prompt generat
 - `Session`: In-memory session state with JSONL serialization
 - `worktree`: Git worktree utilities for isolated execution environments
 - `model`: Contains `ApiType` enum (`Responses`/`ChatCompletions`), `ModelConfig` struct (model, api_type, base_url, api_key_env, temperature, top_p, max_output_tokens, reasoning_effort, reasoning_summary, reasoning_max_tokens, providers), and `ResolvedModelConfig` (resolves API key from env var)
-- `settings`: TOML-based configuration loading from `settings.toml` files. Supports loading from XDG-style global (`~/.config/cake/settings.toml`) and project-level (`.cake/settings.toml`) locations, with project settings overriding global settings for the same model name. Includes a `[skills]` section for controlling skill discovery.
+- `settings`: TOML-based configuration loading from `settings.toml` files. Supports loading from XDG-style global (`~/.config/cake/settings.toml`) and project-level (`.cake/settings.toml`) locations, with project settings overriding global settings for the same model name. Includes a `[skills]` section for controlling skill discovery and a `directories` key for declaring additional read-write directories (merged across global and project files).
 - `skills`: Skill discovery, parsing, and catalog management. Discovers `SKILL.md` files from `.agents/skills/` directories, parses YAML frontmatter, and builds an XML catalog for the system prompt. Skills are activated lazily via the Read tool and deduplicated within a session.
 - `defaults`: Default values for model, base URL, API key env var, and providers
 

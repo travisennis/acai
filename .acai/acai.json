@@ -5,6 +5,7 @@
 	"logs": {
 		"path": "~/.cache/cake/cake.log"
 	},
+	"allowedDirs": ["~/.cache/cake/", "~/.local/share/cake", "~/.config/cake"],
 	"tools": {
 		"maxTokens": 30000,
 		"maxResults": 30,

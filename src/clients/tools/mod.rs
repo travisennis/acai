@@ -87,6 +87,8 @@ thread_local! {
     static ADDITIONAL_DIRS: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
     // Skill base directories (parent dirs of SKILL.md files) - read-only access
     static SKILL_DIRS: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
+    // Settings directories (from settings.toml) - read-write access
+    static SETTINGS_DIRS: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Set the additional directories for the current thread.
@@ -113,6 +115,20 @@ pub fn set_skill_dirs(dirs: Vec<PathBuf>) {
 /// Get the skill directories for the current thread.
 pub fn get_skill_dirs() -> Vec<PathBuf> {
     SKILL_DIRS.with(|cell| cell.borrow().clone())
+}
+
+/// Set the settings directories for the current thread.
+/// These directories are granted read-write access and are loaded from
+/// settings.toml (both global and project-level).
+pub fn set_settings_dirs(dirs: Vec<PathBuf>) {
+    SETTINGS_DIRS.with(|cell| {
+        *cell.borrow_mut() = dirs;
+    });
+}
+
+/// Get the settings directories for the current thread.
+pub fn get_settings_dirs() -> Vec<PathBuf> {
+    SETTINGS_DIRS.with(|cell| cell.borrow().clone())
 }
 
 // =============================================================================
@@ -204,6 +220,17 @@ pub(super) fn validate_path(path_str: &str) -> Result<ValidatedPath, String> {
     // Allow paths in standard temp directories (read-write)
     for temp_dir in cached_temp_dirs() {
         if canonical.starts_with(temp_dir) {
+            return Ok(ValidatedPath {
+                canonical,
+                access: PathAccess::ReadWrite,
+            });
+        }
+    }
+
+    // Allow paths in settings directories from settings.toml (read-write)
+    let settings_dirs = get_settings_dirs();
+    for settings_dir in &settings_dirs {
+        if canonical.starts_with(settings_dir) {
             return Ok(ValidatedPath {
                 canonical,
                 access: PathAccess::ReadWrite,

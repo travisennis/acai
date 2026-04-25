@@ -11,7 +11,9 @@ mod prompts;
 use std::time::{Duration, Instant};
 
 use crate::cli::CmdRunner;
-use crate::clients::{Agent, ConversationItem, set_additional_dirs, set_skill_dirs};
+use crate::clients::{
+    Agent, ConversationItem, set_additional_dirs, set_settings_dirs, set_skill_dirs,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -550,6 +552,25 @@ impl CmdRunner for CodingAssistant {
             .map(|s| s.base_directory.clone())
             .collect();
         set_skill_dirs(skill_base_dirs);
+
+        // Set up settings directories (from settings.toml) for read-write access
+        let settings_dirs: Vec<PathBuf> = loaded
+            .directories
+            .iter()
+            .map(PathBuf::from)
+            .filter(|p| {
+                if p.exists() && p.is_dir() {
+                    true
+                } else {
+                    tracing::warn!(
+                        "settings.toml directory '{}' does not exist or is not a directory, ignoring",
+                        p.display()
+                    );
+                    false
+                }
+            })
+            .collect();
+        set_settings_dirs(settings_dirs);
 
         // Log diagnostics for skills
         for diagnostic in &skill_catalog.diagnostics {

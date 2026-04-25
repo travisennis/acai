@@ -140,6 +140,9 @@ fn validate_path_for_write(path_str: &str) -> Result<std::path::PathBuf, String>
     let is_in_temp = super::get_temp_directories()
         .iter()
         .any(|temp_dir| canonical_parent.starts_with(temp_dir));
+    let is_in_settings = super::get_settings_dirs()
+        .iter()
+        .any(|settings_dir| canonical_parent.starts_with(settings_dir));
 
     // Check if parent is in a read-only additional directory
     let additional_dirs = super::get_additional_dirs();
@@ -154,7 +157,7 @@ fn validate_path_for_write(path_str: &str) -> Result<std::path::PathBuf, String>
         ));
     }
 
-    if !is_in_cwd && !is_in_temp {
+    if !is_in_cwd && !is_in_temp && !is_in_settings {
         return Err(format!(
             "Path '{}' is outside the working directory",
             path.display()

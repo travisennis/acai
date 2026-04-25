@@ -45,13 +45,17 @@ impl SandboxConfig {
     /// Build a sandbox configuration for the current context
     #[allow(dead_code)]
     pub fn build(cwd: &std::path::Path) -> Self {
-        Self::build_with_additional_dirs(cwd, &[])
+        Self::build_with_additional_dirs(cwd, &[], &[])
     }
 
-    /// Build a sandbox configuration with additional read-only directories
+    /// Build a sandbox configuration with additional directories.
+    ///
+    /// `additional_dirs` are added as read-only (from `--add-dir`).
+    /// `settings_dirs` are added as read-write (from `settings.toml`).
     pub fn build_with_additional_dirs(
         cwd: &std::path::Path,
         additional_dirs: &[std::path::PathBuf],
+        settings_dirs: &[std::path::PathBuf],
     ) -> Self {
         let mut read_write = vec![cwd.to_path_buf()];
 
@@ -105,6 +109,17 @@ impl SandboxConfig {
                 home.join("Library/Caches/mise"),
                 home.join("Library/Application Support/Mozilla.sccache"),
             ]);
+        }
+
+        // Add settings directories from settings.toml as read-write
+        for dir in settings_dirs {
+            if dir.exists() {
+                read_write.push(dir.clone());
+                // Also add canonical path to handle symlinks
+                if let Ok(canonical) = dir.canonicalize() {
+                    read_write.push(canonical);
+                }
+            }
         }
 
         // Include both original and canonical paths to handle symlinks

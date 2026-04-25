@@ -21,7 +21,8 @@ pub struct SkillSettings {
 
 /// Root settings structure loaded from settings.toml.
 ///
-/// Contains a list of model definitions and an optional default model name.
+/// Contains a list of model definitions, an optional default model name,
+/// and optional additional directories for read-write access.
 ///
 /// # Examples
 ///
@@ -48,11 +49,16 @@ pub struct Settings {
     /// Skill configuration
     #[serde(default)]
     pub skills: SkillSettings,
+    /// Additional directories for read-write access.
+    /// Merged from global and project settings.
+    #[serde(default)]
+    pub directories: Vec<String>,
 }
 
 /// Result of loading and merging settings from all sources.
 ///
-/// Contains the merged model map and the resolved default model name.
+/// Contains the merged model map, the resolved default model name,
+/// and merged directories.
 /// Separate from [`Settings`] to represent the post-merge state.
 #[derive(Debug, Clone)]
 pub struct LoadedSettings {
@@ -60,6 +66,8 @@ pub struct LoadedSettings {
     pub models: HashMap<String, ModelDefinition>,
     /// Name of the default model from the highest-precedence settings file
     pub default_model: Option<String>,
+    /// Additional directories for read-write access (global + project merged)
+    pub directories: Vec<String>,
 }
 
 /// Definition of a named model in settings.toml.
@@ -352,6 +360,7 @@ impl SettingsLoader {
     pub fn load(project_dir: Option<&Path>) -> Result<LoadedSettings, SettingsError> {
         let mut models: HashMap<String, ModelDefinition> = HashMap::new();
         let mut default_model: Option<String> = None;
+        let mut directories: HashSet<String> = HashSet::new();
 
         // Load global settings first.
         if let Some(home_dir) = dirs::home_dir() {
@@ -359,6 +368,9 @@ impl SettingsLoader {
             if let Some(settings) = Self::load_file(&global_path)? {
                 Self::add_models_to_map(&mut models, settings.models)?;
                 default_model = settings.default_model;
+                for dir in settings.directories {
+                    directories.insert(dir);
+                }
             }
         }
 
@@ -369,6 +381,9 @@ impl SettingsLoader {
                 Self::add_models_to_map(&mut models, settings.models)?;
                 if settings.default_model.is_some() {
                     default_model = settings.default_model;
+                }
+                for dir in settings.directories {
+                    directories.insert(dir);
                 }
             }
         }
@@ -408,6 +423,7 @@ impl SettingsLoader {
         Ok(LoadedSettings {
             models,
             default_model,
+            directories: directories.into_iter().collect(),
         })
     }
 
@@ -853,6 +869,88 @@ api_key_env = "PROJECT_KEY"
         .unwrap();
 
         assert_eq!(loaded.default_model, Some("project-model".to_string()));
+    }
+
+    #[test]
+    fn test_directories_merge_global_and_project() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+directories = ["/global/dir1", "/global/dir2"]
+
+[[models]]
+name = "zen"
+model = "glm-5"
+base_url = "https://example.com"
+api_key_env = "KEY"
+"#,
+        );
+
+        let project_dir = create_project_settings(
+            r#"
+directories = ["/project/dir1", "/global/dir2"]
+
+[[models]]
+name = "proj"
+model = "proj/model"
+base_url = "https://project.example.com"
+api_key_env = "PROJ_KEY"
+"#,
+        );
+
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(project_dir.path()))
+        })
+        .unwrap();
+
+        // Directories are merged without duplicates
+        assert_eq!(loaded.directories.len(), 3);
+        assert!(loaded.directories.contains(&"/global/dir1".to_string()));
+        assert!(loaded.directories.contains(&"/global/dir2".to_string()));
+        assert!(loaded.directories.contains(&"/project/dir1".to_string()));
+    }
+
+    #[test]
+    fn test_directories_only_global() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+directories = ["/global/dir"]
+
+[[models]]
+name = "zen"
+model = "glm-5"
+base_url = "https://example.com"
+api_key_env = "KEY"
+"#,
+        );
+
+        let loaded = with_var("HOME", Some(home.path()), || SettingsLoader::load(None)).unwrap();
+
+        assert_eq!(loaded.directories, vec!["/global/dir".to_string()]);
+    }
+
+    #[test]
+    fn test_directories_empty_by_default() {
+        let dir = create_project_settings(
+            r#"
+[[models]]
+name = "zen"
+model = "glm-5"
+base_url = "https://example.com"
+api_key_env = "KEY"
+"#,
+        );
+
+        let home = create_home_dir();
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(dir.path()))
+        })
+        .unwrap();
+
+        assert!(loaded.directories.is_empty());
     }
 
     #[test]

@@ -1,0 +1,5 @@
+directories = [
+    "/Users/travisennis/.cache/cake",
+    "/Users/travisennis/.local/share/cake",
+    "/Users/travisennis/.config/cake",
+]

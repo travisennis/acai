@@ -304,6 +304,15 @@ cake --add-dir ~/Documents/references --add-dir ~/Projects/shared "Review the co
 
 The agent will be able to **read** files from these directories but **not write** to them.
 
+For persistent read-write access, add directories to `settings.toml`:
+
+```toml
+# In ~/.config/cake/settings.toml (global) or .cake/settings.toml (project)
+directories = ["~/Projects", "~/Documents/notes"]
+```
+
+Directories from global and project settings are merged. These directories get full read-write access and persist across sessions.
+
 For more details, see [Filesystem Sandbox](docs/design-docs/sandbox.md).
 
 ### AGENTS.md — Per-Project AI Behavior

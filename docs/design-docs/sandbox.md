@@ -93,6 +93,29 @@ This is useful when you want the agent to:
 - Read shared utility code from another project
 - Access configuration files or templates
 
+### Persistent Read-Write Directories (settings.toml)
+
+Use the `directories` key in `settings.toml` to declare directories that cake can read from and write to. Unlike `--add-dir` which grants read-only access, directories listed here get full read-write access. This is useful for configuring persistent workspace directories.
+
+**Global settings** (`~/.config/cake/settings.toml`):
+
+```toml
+directories = ["~/Projects", "~/Documents/notes"]
+```
+
+**Project settings** (`.cake/settings.toml`):
+
+```toml
+directories = ["../shared-libs", "/data/exports"]
+```
+
+**Key points:**
+
+- Directories are added as **read-write** — the agent can create, modify, and delete files
+- Lists from global and project settings are **merged** (union with deduplication)
+- Non-existent directories are logged as warnings and ignored
+- Both the original path and its canonical (symlink-resolved) path are added to the sandbox
+
 ### Additional Read-Write Paths
 
 The sandbox automatically includes:
