@@ -3,6 +3,9 @@
 ## Project Overview
 
 cake is an AI coding assistant CLI that:
+- Written with Rust 2024 edition with Tokio async runtime
+- Uses clap for CLI parsing, anyhow/thiserror for error, tracing for logging
+- Use reqwest + serde/serde_json for HTTP/JSON
 - Integrates with LLMs via an API compatible for with OpenAI Chat Completions or the Responses API.
 - Executes tools (Bash, Read, Edit, Write) in a sandboxed environment
 - Manages conversation sessions with continue/resume/fork capabilities
