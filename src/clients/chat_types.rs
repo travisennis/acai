@@ -29,6 +29,8 @@ pub(super) struct ChatMessage<'a> {
     pub(super) role: Cow<'a, str>,
     pub(super) content: Option<Cow<'a, str>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) reasoning_content: Option<Cow<'a, str>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) tool_calls: Option<Vec<ChatToolCallRef<'a>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) tool_call_id: Option<Cow<'a, str>>,
@@ -89,6 +91,7 @@ pub(super) struct ChatResponseMessage {
     #[expect(dead_code)]
     pub(super) role: Option<String>,
     pub(super) content: Option<String>,
+    pub(super) reasoning_content: Option<String>,
     pub(super) tool_calls: Option<Vec<ChatToolCall>>,
 }
 

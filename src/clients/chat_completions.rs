@@ -111,16 +111,22 @@ pub(super) async fn parse_response(response: reqwest::Response) -> anyhow::Resul
 /// - `ConversationItem::Message` → `ChatMessage` with role/content
 /// - Consecutive `FunctionCall` items → one assistant message with `tool_calls`
 /// - `FunctionCallOutput` → tool role message with `tool_call_id`
-/// - `Reasoning` → skipped (not supported by Chat Completions API)
+/// - `Reasoning` → preserved as provider-specific `reasoning_content` on the
+///   next assistant message for providers like Moonshot/Kimi
 fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage<'_>> {
     let mut messages: Vec<ChatMessage<'_>> = Vec::new();
     let mut pending_tool_calls: Vec<ChatToolCallRef<'_>> = Vec::new();
+    let mut pending_reasoning_content: Option<Cow<'_, str>> = None;
 
     for item in history {
         match item {
             ConversationItem::Message { role, content, .. } => {
                 // Flush any pending tool calls as an assistant message
-                flush_tool_calls(&mut messages, &mut pending_tool_calls);
+                flush_tool_calls(
+                    &mut messages,
+                    &mut pending_tool_calls,
+                    &mut pending_reasoning_content,
+                );
 
                 let role_str = match role {
                     Role::System => "system",
@@ -132,6 +138,9 @@ fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage<'_>> {
                 messages.push(ChatMessage {
                     role: Cow::Borrowed(role_str),
                     content: Some(Cow::Borrowed(content)),
+                    reasoning_content: matches!(role, Role::Assistant)
+                        .then(|| pending_reasoning_content.take())
+                        .flatten(),
                     tool_calls: None,
                     tool_call_id: None,
                 });
@@ -155,31 +164,48 @@ fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage<'_>> {
                 call_id, output, ..
             } => {
                 // Flush any pending tool calls first
-                flush_tool_calls(&mut messages, &mut pending_tool_calls);
+                flush_tool_calls(
+                    &mut messages,
+                    &mut pending_tool_calls,
+                    &mut pending_reasoning_content,
+                );
 
                 messages.push(ChatMessage {
                     role: Cow::Borrowed("tool"),
                     content: Some(Cow::Borrowed(output)),
+                    reasoning_content: None,
                     tool_calls: None,
                     tool_call_id: Some(Cow::Borrowed(call_id)),
                 });
             },
-            ConversationItem::Reasoning { .. } => {
-                // Reasoning is not supported by Chat Completions API — skip
+            ConversationItem::Reasoning { content, .. } => {
+                pending_reasoning_content =
+                    extract_reasoning_content(content.as_ref()).map(Cow::Borrowed);
             },
         }
     }
 
     // Flush any remaining tool calls
-    flush_tool_calls(&mut messages, &mut pending_tool_calls);
+    flush_tool_calls(
+        &mut messages,
+        &mut pending_tool_calls,
+        &mut pending_reasoning_content,
+    );
 
     messages
+}
+
+fn extract_reasoning_content(
+    content: Option<&Vec<super::types::ReasoningContent>>,
+) -> Option<&str> {
+    content.and_then(|items| items.iter().find_map(|item| item.text.as_deref()))
 }
 
 /// Flush accumulated tool calls into an assistant message.
 fn flush_tool_calls<'a>(
     messages: &mut Vec<ChatMessage<'a>>,
     tool_calls: &mut Vec<ChatToolCallRef<'a>>,
+    reasoning_content: &mut Option<Cow<'a, str>>,
 ) {
     if tool_calls.is_empty() {
         return;
@@ -188,6 +214,7 @@ fn flush_tool_calls<'a>(
     messages.push(ChatMessage {
         role: Cow::Borrowed("assistant"),
         content: None,
+        reasoning_content: reasoning_content.take(),
         tool_calls: Some(std::mem::take(tool_calls)),
         tool_call_id: None,
     });
@@ -217,9 +244,22 @@ fn parse_choices(response: &ChatResponse) -> Vec<ConversationItem> {
     };
 
     let message = &choice.message;
+    let timestamp = chrono::Utc::now().to_rfc3339();
+
+    if let Some(reasoning_content) = &message.reasoning_content {
+        items.push(ConversationItem::Reasoning {
+            id: response.id.clone().unwrap_or_default(),
+            summary: vec!["Thinking...".to_string()],
+            encrypted_content: None,
+            content: Some(vec![super::types::ReasoningContent {
+                content_type: "reasoning_text".to_string(),
+                text: Some(reasoning_content.clone()),
+            }]),
+            timestamp: Some(timestamp.clone()),
+        });
+    }
 
     // Extract tool calls first
-    let timestamp = chrono::Utc::now().to_rfc3339();
     if let Some(tool_calls) = &message.tool_calls {
         for tc in tool_calls {
             items.push(ConversationItem::FunctionCall {
@@ -269,6 +309,7 @@ mod tests {
         ChatChoice, ChatFunctionCall, ChatResponse, ChatResponseMessage, ChatToolCall, ChatUsage,
         PromptTokensDetails,
     };
+    use crate::clients::types::ReasoningContent;
 
     #[test]
     fn build_messages_simple_conversation() {
@@ -341,6 +382,7 @@ mod tests {
         // Second: assistant with grouped tool_calls
         assert_eq!(msgs[1].role, "assistant");
         assert!(msgs[1].content.is_none());
+        assert!(msgs[1].reasoning_content.is_none());
         let tcs = msgs[1].tool_calls.as_ref().unwrap();
         assert_eq!(tcs.len(), 2);
         assert_eq!(tcs[0].function.name, "bash");
@@ -354,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn build_messages_skips_reasoning() {
+    fn build_messages_preserves_reasoning_content_for_assistant_messages() {
         let history = vec![
             ConversationItem::Message {
                 role: Role::User,
@@ -367,7 +409,10 @@ mod tests {
                 id: "r-1".to_string(),
                 summary: vec!["thinking...".to_string()],
                 encrypted_content: None,
-                content: None,
+                content: Some(vec![ReasoningContent {
+                    content_type: "reasoning_text".to_string(),
+                    text: Some("internal reasoning".to_string()),
+                }]),
                 timestamp: None,
             },
             ConversationItem::Message {
@@ -382,6 +427,49 @@ mod tests {
         assert_eq!(msgs.len(), 2);
         assert_eq!(msgs[0].role, "user");
         assert_eq!(msgs[1].role, "assistant");
+        assert_eq!(
+            msgs[1].reasoning_content.as_deref(),
+            Some("internal reasoning")
+        );
+    }
+
+    #[test]
+    fn build_messages_preserves_reasoning_content_for_assistant_tool_calls() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::User,
+                content: "do stuff".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Reasoning {
+                id: "r-1".to_string(),
+                summary: vec!["thinking...".to_string()],
+                encrypted_content: None,
+                content: Some(vec![ReasoningContent {
+                    content_type: "reasoning_text".to_string(),
+                    text: Some("preserved reasoning".to_string()),
+                }]),
+                timestamp: None,
+            },
+            ConversationItem::FunctionCall {
+                id: "fc-1".to_string(),
+                call_id: "call-1".to_string(),
+                name: "bash".to_string(),
+                arguments: r#"{"cmd":"ls"}"#.to_string(),
+                timestamp: None,
+            },
+        ];
+
+        let msgs = build_messages(&history);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[1].role, "assistant");
+        assert_eq!(
+            msgs[1].reasoning_content.as_deref(),
+            Some("preserved reasoning")
+        );
+        assert!(msgs[1].tool_calls.is_some());
     }
 
     #[test]
@@ -408,6 +496,7 @@ mod tests {
                 message: ChatResponseMessage {
                     role: Some("assistant".to_string()),
                     content: Some("Hello!".to_string()),
+                    reasoning_content: None,
                     tool_calls: None,
                 },
                 finish_reason: Some("stop".to_string()),
@@ -432,6 +521,7 @@ mod tests {
                 message: ChatResponseMessage {
                     role: Some("assistant".to_string()),
                     content: None,
+                    reasoning_content: None,
                     tool_calls: Some(vec![ChatToolCall {
                         id: "call-abc".to_string(),
                         type_: "function".to_string(),
@@ -448,6 +538,40 @@ mod tests {
         let items = parse_choices(&response);
         assert_eq!(items.len(), 1);
         assert!(matches!(&items[0], ConversationItem::FunctionCall {
+            name, call_id, ..
+        } if name == "bash" && call_id == "call-abc"));
+    }
+
+    #[test]
+    fn parse_choices_preserves_reasoning_content_for_tool_calls() {
+        let response = ChatResponse {
+            id: Some("chatcmpl-456".to_string()),
+            choices: vec![ChatChoice {
+                index: 0,
+                message: ChatResponseMessage {
+                    role: Some("assistant".to_string()),
+                    content: None,
+                    reasoning_content: Some("preserved reasoning".to_string()),
+                    tool_calls: Some(vec![ChatToolCall {
+                        id: "call-abc".to_string(),
+                        type_: "function".to_string(),
+                        function: ChatFunctionCall {
+                            name: "bash".to_string(),
+                            arguments: r#"{"cmd":"ls"}"#.to_string(),
+                        },
+                    }]),
+                },
+                finish_reason: Some("tool_calls".to_string()),
+            }],
+            usage: None,
+        };
+
+        let items = parse_choices(&response);
+        assert_eq!(items.len(), 2);
+        assert!(matches!(&items[0], ConversationItem::Reasoning {
+            content: Some(content), ..
+        } if content[0].text.as_deref() == Some("preserved reasoning")));
+        assert!(matches!(&items[1], ConversationItem::FunctionCall {
             name, call_id, ..
         } if name == "bash" && call_id == "call-abc"));
     }
@@ -472,6 +596,7 @@ mod tests {
                 message: ChatResponseMessage {
                     role: Some("assistant".to_string()),
                     content: Some("Hi".to_string()),
+                    reasoning_content: None,
                     tool_calls: None,
                 },
                 finish_reason: Some("stop".to_string()),
@@ -559,6 +684,7 @@ mod tests {
                 message: ChatResponseMessage {
                     role: Some("assistant".to_string()),
                     content: Some(String::new()), // Empty content
+                    reasoning_content: None,
                     tool_calls: None,
                 },
                 finish_reason: Some("stop".to_string()),
@@ -585,6 +711,7 @@ mod tests {
                 message: ChatResponseMessage {
                     role: Some("assistant".to_string()),
                     content: None, // No content
+                    reasoning_content: None,
                     tool_calls: None,
                 },
                 finish_reason: Some("stop".to_string()),
@@ -610,6 +737,7 @@ mod tests {
                 message: ChatResponseMessage {
                     role: Some("assistant".to_string()),
                     content: None,
+                    reasoning_content: None,
                     tool_calls: Some(vec![
                         ChatToolCall {
                             id: "call-1".to_string(),
@@ -653,6 +781,7 @@ mod tests {
                 message: ChatResponseMessage {
                     role: Some("assistant".to_string()),
                     content: Some("Let me help you with that.".to_string()),
+                    reasoning_content: None,
                     tool_calls: Some(vec![ChatToolCall {
                         id: "call-1".to_string(),
                         type_: "function".to_string(),
@@ -687,6 +816,7 @@ mod tests {
                 message: ChatResponseMessage {
                     role: Some("assistant".to_string()),
                     content: Some("Hello".to_string()),
+                    reasoning_content: None,
                     tool_calls: None,
                 },
                 finish_reason: Some("stop".to_string()),
@@ -710,6 +840,7 @@ mod tests {
                 message: ChatResponseMessage {
                     role: None, // Missing role
                     content: Some("Hello".to_string()),
+                    reasoning_content: None,
                     tool_calls: None,
                 },
                 finish_reason: Some("stop".to_string()),
@@ -930,6 +1061,7 @@ mod response_parsing_tests {
                     "message": {
                         "role": "assistant",
                         "content": null,
+                        "reasoning_content": "preserved reasoning",
                         "tool_calls": [{
                             "id": "call-abc",
                             "type": "function",
@@ -955,9 +1087,15 @@ mod response_parsing_tests {
         let result = parse_response(response).await;
         assert!(result.is_ok());
         let turn_result = result.unwrap();
-        assert_eq!(turn_result.items.len(), 1);
+        assert_eq!(turn_result.items.len(), 2);
         assert!(
-            matches!(&turn_result.items[0], ConversationItem::FunctionCall {
+            matches!(&turn_result.items[0], ConversationItem::Reasoning {
+            content: Some(content),
+            ..
+        } if content[0].text.as_deref() == Some("preserved reasoning"))
+        );
+        assert!(
+            matches!(&turn_result.items[1], ConversationItem::FunctionCall {
             name,
             call_id,
             ..
