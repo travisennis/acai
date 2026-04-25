@@ -737,8 +737,13 @@ name: something
         create_skill_file(&agents_dir, "skill-b", "Second skill");
 
         let catalog = discover_skills(tmp.path());
-        assert_eq!(catalog.skills.len(), 2);
-        let names: Vec<_> = catalog.skills.iter().map(|s| s.name.clone()).collect();
+        let project_skills: Vec<_> = catalog
+            .skills
+            .iter()
+            .filter(|s| s.scope == SkillScope::Project)
+            .collect();
+        assert_eq!(project_skills.len(), 2);
+        let names: Vec<_> = project_skills.iter().map(|s| s.name.clone()).collect();
         assert!(names.contains(&"skill-a".to_string()));
         assert!(names.contains(&"skill-b".to_string()));
     }
@@ -758,8 +763,13 @@ name: something
         create_skill_file(&agents_dir, "normal-skill", "Should appear");
 
         let catalog = discover_skills(tmp.path());
-        assert_eq!(catalog.skills.len(), 1);
-        assert_eq!(catalog.skills[0].name, "normal-skill");
+        let project_skills: Vec<_> = catalog
+            .skills
+            .iter()
+            .filter(|s| s.scope == SkillScope::Project)
+            .collect();
+        assert_eq!(project_skills.len(), 1);
+        assert_eq!(project_skills[0].name, "normal-skill");
     }
 
     #[test]
@@ -818,7 +828,12 @@ name: something
         create_skill_file(&agents_dir, "shallow-skill", "Should appear");
 
         let catalog = discover_skills(tmp.path());
-        assert_eq!(catalog.skills.len(), 1);
-        assert_eq!(catalog.skills[0].name, "shallow-skill");
+        let project_skills: Vec<_> = catalog
+            .skills
+            .iter()
+            .filter(|s| s.scope == SkillScope::Project)
+            .collect();
+        assert_eq!(project_skills.len(), 1);
+        assert_eq!(project_skills[0].name, "shallow-skill");
     }
 }
