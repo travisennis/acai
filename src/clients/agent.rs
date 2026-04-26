@@ -344,26 +344,17 @@ impl Agent {
     /// Returns an error if the API request fails, the response cannot be parsed,
     /// or a tool execution fails critically.
     pub async fn send(&mut self, message: Message) -> anyhow::Result<Option<Message>> {
-        // Add user message to history
-        let user_content = message.content.clone();
-        let timestamp = chrono::Utc::now().to_rfc3339();
-        self.history.push(ConversationItem::Message {
-            role: Role::User,
-            content: user_content.clone(),
-            id: None,
-            status: None,
-            timestamp: Some(timestamp.clone()),
-        });
-
-        // Stream user message
         let user_item = ConversationItem::Message {
             role: Role::User,
-            content: user_content.clone(),
+            content: message.content.clone(),
             id: None,
             status: None,
-            timestamp: Some(timestamp),
+            timestamp: Some(chrono::Utc::now().to_rfc3339()),
         };
+
+        // Stream user message before updating history so callers see it immediately.
         self.stream_item(&user_item);
+        self.history.push(user_item);
 
         // Agent loop: continue until model stops making tool calls
         loop {
