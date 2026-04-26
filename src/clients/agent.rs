@@ -348,7 +348,6 @@ impl Agent {
     ///
     /// Returns an error if the API request fails, the response cannot be parsed,
     /// or a tool execution fails critically.
-    #[allow(clippy::too_many_lines)]
     pub async fn send(&mut self, message: Message) -> anyhow::Result<Option<Message>> {
         // Add user message to history
         let user_content = message.content.clone();
@@ -442,67 +441,13 @@ impl Agent {
                     let skill_locations = skill_locations.clone();
                     let activated_skills = Arc::clone(&activated_skills);
                     async move {
-                        // Check for skill activation deduplication on Read tool
-                        let result = if name == "Read" {
-                            if let Some(path_str) =
-                                crate::clients::tools::read::extract_path(&arguments)
-                            {
-                                if let Ok(path) = std::path::PathBuf::from(&path_str).canonicalize()
-                                {
-                                    if let Some(skill_name) = skill_locations.get(&path) {
-                                        let already_active = activated_skills
-                                            .lock()
-                                            .map(|guard| guard.contains(skill_name))
-                                            .unwrap_or(false);
-                                        if already_active {
-                                            tracing::info!(
-                                                "Skill '{skill_name}' already activated, skipping re-read"
-                                            );
-                                            format!(
-                                                "Skill '{skill_name}' is already active in this session. \
-                                                 Its instructions are already in the conversation context."
-                                            )
-                                        } else {
-                                            // First activation - execute the read
-                                            let result = match execute_tool(&name, &arguments).await
-                                            {
-                                                Ok(r) => r.output,
-                                                Err(e) => format!("Error: {e}"),
-                                            };
-                                            if let Ok(mut guard) = activated_skills.lock() {
-                                                guard.insert(skill_name.clone());
-                                            }
-                                            tracing::info!("Skill '{}' activated", skill_name);
-                                            result
-                                        }
-                                    } else {
-                                        // Not a skill path - normal read
-                                        match execute_tool(&name, &arguments).await {
-                                            Ok(r) => r.output,
-                                            Err(e) => format!("Error: {e}"),
-                                        }
-                                    }
-                                } else {
-                                    // Path can't be canonicalized - just execute normally
-                                    match execute_tool(&name, &arguments).await {
-                                        Ok(r) => r.output,
-                                        Err(e) => format!("Error: {e}"),
-                                    }
-                                }
-                            } else {
-                                // Can't extract path - normal execution
-                                match execute_tool(&name, &arguments).await {
-                                    Ok(r) => r.output,
-                                    Err(e) => format!("Error: {e}"),
-                                }
-                            }
-                        } else {
-                            // Non-Read tool - normal execution
-                            match execute_tool(&name, &arguments).await {
-                                Ok(r) => r.output,
-                                Err(e) => format!("Error: {e}"),
-                            }
-                        };
+                        let result = execute_tool_with_skill_dedup(
+                            &name,
+                            &arguments,
+                            &skill_locations,
+                            &activated_skills,
+                        )
+                        .await;
                         (call_id, result)
                     }
                 });
@@ -619,6 +564,55 @@ impl Agent {
             Err(crate::exit_code::ApiError { status, body }.into())
         }
     }
+}
+
+async fn execute_tool_output(name: &str, arguments: &str) -> String {
+    match execute_tool(name, arguments).await {
+        Ok(result) => result.output,
+        Err(error) => format!("Error: {error}"),
+    }
+}
+
+async fn execute_tool_with_skill_dedup(
+    name: &str,
+    arguments: &str,
+    skill_locations: &HashMap<PathBuf, String>,
+    activated_skills: &Arc<Mutex<HashSet<String>>>,
+) -> String {
+    if name != "Read" {
+        return execute_tool_output(name, arguments).await;
+    }
+
+    let Some(path_str) = crate::clients::tools::read::extract_path(arguments) else {
+        return execute_tool_output(name, arguments).await;
+    };
+
+    let Ok(path) = PathBuf::from(&path_str).canonicalize() else {
+        return execute_tool_output(name, arguments).await;
+    };
+
+    let Some(skill_name) = skill_locations.get(&path) else {
+        return execute_tool_output(name, arguments).await;
+    };
+
+    let already_active = activated_skills
+        .lock()
+        .map(|guard| guard.contains(skill_name))
+        .unwrap_or(false);
+    if already_active {
+        tracing::info!("Skill '{skill_name}' already activated, skipping re-read");
+        return format!(
+            "Skill '{skill_name}' is already active in this session. \
+             Its instructions are already in the conversation context."
+        );
+    }
+
+    let result = execute_tool_output(name, arguments).await;
+    if let Ok(mut guard) = activated_skills.lock() {
+        guard.insert(skill_name.clone());
+    }
+    tracing::info!("Skill '{}' activated", skill_name);
+    result
 }
 
 /// Extract the assistant message from conversation history, or return a meaningful
