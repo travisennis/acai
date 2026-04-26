@@ -158,7 +158,7 @@ impl SandboxConfig {
                 PathBuf::from("/bin"),
                 PathBuf::from("/sbin"),
                 PathBuf::from("/Library"),
-                PathBuf::from("/System"),
+                PathBuf::from("/System/Library"),
                 PathBuf::from("/Applications"),
                 PathBuf::from("/opt/homebrew"),
                 PathBuf::from("/opt/local"),
@@ -245,25 +245,39 @@ pub(super) trait SandboxStrategy: Send + Sync {
     ) -> Result<(), String>;
 }
 
-/// Detect the appropriate sandbox strategy for the current platform
-pub(super) fn detect_platform() -> Option<Box<dyn SandboxStrategy>> {
+/// Detect the appropriate sandbox strategy for the current platform.
+///
+/// If sandboxing is expected on a supported platform but cannot be enforced,
+/// return an error instead of silently falling back to unsandboxed execution.
+pub(super) fn detect_platform() -> Result<Option<Box<dyn SandboxStrategy>>, String> {
     #[cfg(target_os = "macos")]
     {
-        if std::path::Path::new("/usr/bin/sandbox-exec").exists() {
-            tracing::debug!("Using macOS sandbox-exec for filesystem sandboxing");
-            Some(Box::new(MacOsSandbox))
-        } else {
-            tracing::warn!(
-                "sandbox-exec not found at /usr/bin/sandbox-exec; bash commands will run unsandboxed"
+        if !std::path::Path::new("/usr/bin/sandbox-exec").exists() {
+            return Err(
+                "macOS sandbox unavailable: /usr/bin/sandbox-exec was not found. \
+                 Set CAKE_SANDBOX=off to run Bash commands without filesystem sandboxing."
+                    .to_string(),
             );
-            None
         }
+
+        if !MacOsSandbox::can_apply_profile() {
+            return Err(
+                "macOS sandbox unavailable: sandbox-exec could not apply a Seatbelt profile \
+                 in this process context. This commonly happens when cake is already running \
+                 inside another sandbox. Set CAKE_SANDBOX=off to run Bash commands without \
+                 filesystem sandboxing."
+                    .to_string(),
+            );
+        }
+
+        tracing::debug!("Using macOS sandbox-exec for filesystem sandboxing");
+        Ok(Some(Box::new(MacOsSandbox)))
     }
 
     #[cfg(target_os = "linux")]
     {
         tracing::debug!("Using Linux Landlock LSM for filesystem sandboxing");
-        Some(Box::new(LandlockSandbox))
+        Ok(Some(Box::new(LandlockSandbox)))
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
@@ -272,7 +286,7 @@ pub(super) fn detect_platform() -> Option<Box<dyn SandboxStrategy>> {
             "No sandbox available for this platform ({}); bash commands will run unsandboxed",
             std::env::consts::OS
         );
-        None
+        Ok(None)
     }
 }
 
@@ -288,5 +302,24 @@ pub(super) fn is_sandbox_disabled() -> bool {
             false
         },
         _ => false,
+    }
+}
+
+/// Check whether this process can enforce the platform sandbox.
+#[cfg(test)]
+pub(super) fn can_enforce_platform_sandbox() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        std::path::Path::new("/usr/bin/sandbox-exec").exists() && MacOsSandbox::can_apply_profile()
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        true
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        false
     }
 }

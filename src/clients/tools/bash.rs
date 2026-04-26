@@ -48,6 +48,15 @@ impl BashExecutionArgs {
     }
 }
 
+#[cfg(test)]
+impl BashExecutionArgs {
+    fn from_json_with_sandbox(arguments: &str, use_sandbox: bool) -> Result<Self, String> {
+        let mut args = Self::from_json(arguments)?;
+        args.use_sandbox = use_sandbox;
+        Ok(args)
+    }
+}
+
 // =============================================================================
 // Bash Tool Definition
 // =============================================================================
@@ -84,9 +93,18 @@ pub(super) fn bash_tool() -> super::Tool {
 
 /// Detect if command output indicates a sandbox-related permission failure
 fn is_sandbox_violation(output: &str) -> bool {
+    if is_sandbox_initialization_failure(output) {
+        return false;
+    }
+
     output.contains("Operation not permitted")
         || output.contains("os error 1")
         || (output.contains("Permission denied") && output.contains("sandbox"))
+}
+
+/// Detect when the sandbox engine itself failed before the requested command ran.
+fn is_sandbox_initialization_failure(output: &str) -> bool {
+    output.contains("sandbox-exec: sandbox_apply")
 }
 
 /// Check if raw bytes appear to be binary data rather than text.
@@ -271,7 +289,11 @@ pub fn summarize_args(arguments: &str) -> String {
 #[allow(clippy::too_many_lines)]
 pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, String> {
     let args = BashExecutionArgs::from_json(arguments)?;
+    Box::pin(execute_bash_with_args(args)).await
+}
 
+#[allow(clippy::too_many_lines)]
+async fn execute_bash_with_args(args: BashExecutionArgs) -> Result<super::ToolResult, String> {
     // Pre-execution safety check: block known-destructive commands
     super::bash_safety::validate_command_safety(&args.command)?;
 
@@ -298,7 +320,7 @@ pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, S
 
     // Apply sandbox if enabled
     if args.use_sandbox {
-        if let Some(strategy) = super::sandbox::detect_platform() {
+        if let Some(strategy) = super::sandbox::detect_platform()? {
             strategy.apply(&mut command, &sandbox_config)?;
         }
     } else {
@@ -384,6 +406,17 @@ pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, S
         .is_some_and(std::process::ExitStatus::success);
     let exit_code = status.and_then(|s| s.code()).unwrap_or(-1);
 
+    if args.use_sandbox && is_sandbox_initialization_failure(&output_str) {
+        return Err(format!(
+            "{}\n\n\
+            macOS sandbox unavailable: sandbox-exec could not apply a sandbox profile, \
+            so the requested command did not run. This commonly happens when cake is \
+            itself running inside another Seatbelt sandbox. Set CAKE_SANDBOX=off to \
+            run Bash commands without filesystem sandboxing.",
+            output_str.trim_end()
+        ));
+    }
+
     let result = if output_str.is_empty() {
         String::new()
     } else if hit_cap {
@@ -406,6 +439,12 @@ pub(super) async fn execute_bash(arguments: &str) -> Result<super::ToolResult, S
     let result = truncate_output(&result, exit_code, elapsed_ms);
 
     Ok(super::ToolResult { output: result })
+}
+
+#[cfg(test)]
+async fn execute_bash_unsandboxed(arguments: &str) -> Result<super::ToolResult, String> {
+    let args = BashExecutionArgs::from_json_with_sandbox(arguments, false)?;
+    Box::pin(execute_bash_with_args(args)).await
 }
 
 /// If `output` exceeds [`BASH_OUTPUT_MAX_BYTES`], write the full text to a
@@ -469,6 +508,29 @@ pub(super) fn truncate_output(output: &str, exit_code: i32, elapsed_ms: u128) ->
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    fn skip_if_sandbox_unavailable() -> bool {
+        if super::super::sandbox::is_sandbox_disabled() {
+            eprintln!("skipping macOS sandbox integration test: CAKE_SANDBOX disables sandboxing");
+            return true;
+        }
+
+        if !super::super::sandbox::can_enforce_platform_sandbox() {
+            eprintln!(
+                "skipping macOS sandbox integration test: sandbox-exec cannot apply profiles in this process context"
+            );
+            return true;
+        }
+
+        false
+    }
+
+    #[cfg(target_os = "macos")]
+    fn path_outside_cwd_for_sandbox_test() -> Option<std::path::PathBuf> {
+        let cwd = std::env::current_dir().ok()?;
+        cwd.parent().map(std::path::Path::to_path_buf)
+    }
 
     #[test]
     fn truncate_output_passes_through_small_output() {
@@ -572,7 +634,7 @@ mod tests {
     async fn test_streaming_small_output() {
         // Command with small output returns it verbatim with metadata footer
         let args = r#"{"command": "echo hello world"}"#;
-        let result = Box::pin(execute_bash(args)).await.unwrap();
+        let result = Box::pin(execute_bash_unsandboxed(args)).await.unwrap();
         assert!(result.output.contains("hello world"));
         assert!(result.output.contains("[exit:0 |"));
     }
@@ -582,7 +644,7 @@ mod tests {
         // Command that produces output beyond BASH_READ_CAP is truncated
         // Produce ~200KB of output (well over the 100KB cap)
         let args = r#"{"command": "yes | head -c 200000"}"#;
-        let result = Box::pin(execute_bash(args)).await.unwrap();
+        let result = Box::pin(execute_bash_unsandboxed(args)).await.unwrap();
         // Should contain the truncation marker
         assert!(result.output.contains("[... output truncated at"));
         // Should still have useful content
@@ -595,7 +657,7 @@ mod tests {
     async fn test_streaming_timeout() {
         // Command that hangs respects the timeout
         let args = r#"{"command": "sleep 999", "timeout": 1}"#;
-        let result = Box::pin(execute_bash(args)).await;
+        let result = Box::pin(execute_bash_unsandboxed(args)).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("timed out"));
     }
@@ -604,7 +666,7 @@ mod tests {
     async fn test_streaming_stderr_included() {
         // Command that writes to stderr has it captured with metadata footer
         let args = r#"{"command": "echo err >&2"}"#;
-        let result = Box::pin(execute_bash(args)).await.unwrap();
+        let result = Box::pin(execute_bash_unsandboxed(args)).await.unwrap();
         assert!(result.output.contains("err"));
         assert!(result.output.contains("[exit:0 |"));
     }
@@ -615,10 +677,33 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[tokio::test]
+    async fn test_sandbox_unavailable_fails_closed() {
+        if super::super::sandbox::is_sandbox_disabled()
+            || super::super::sandbox::can_enforce_platform_sandbox()
+        {
+            return;
+        }
+
+        let args = r#"{"command": "echo should-not-run"}"#;
+        let result = Box::pin(execute_bash(args)).await;
+        let error = result.expect_err("sandbox initialization failure should fail closed");
+        assert!(
+            error.contains("macOS sandbox unavailable"),
+            "Expected sandbox unavailable error, got: {error}"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
     async fn test_sandbox_blocks_write_outside_cwd() {
-        // Use ~/Desktop which is outside the sandbox's read-write set
-        // (/tmp is allowed as a temp directory, so we can't test with it)
-        let target = format!("~/Desktop/cake_sandbox_test_{}", uuid::Uuid::new_v4());
+        if skip_if_sandbox_unavailable() {
+            return;
+        }
+
+        let outside = path_outside_cwd_for_sandbox_test()
+            .expect("should find a parent directory outside cwd");
+        let target = outside.join(format!("cake_sandbox_test_{}", uuid::Uuid::new_v4()));
+        let target = target.display();
         let args = format!(r#"{{"command": "touch {target}"}}"#);
         let result = Box::pin(execute_bash(&args)).await.unwrap();
         assert!(
@@ -632,6 +717,10 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn test_sandbox_allows_read_in_cwd() {
+        if skip_if_sandbox_unavailable() {
+            return;
+        }
+
         let args = r#"{"command": "ls Cargo.toml"}"#;
         let result = Box::pin(execute_bash(args)).await.unwrap();
         assert!(
@@ -646,12 +735,21 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn test_sandbox_blocks_read_outside_cwd() {
-        let args = r#"{"command": "ls ~/Desktop"}"#;
-        let result = Box::pin(execute_bash(args)).await.unwrap();
+        if skip_if_sandbox_unavailable() {
+            return;
+        }
+
+        let outside = path_outside_cwd_for_sandbox_test()
+            .expect("should find a parent directory outside cwd");
+        let temp_dir =
+            tempfile::TempDir::new_in(outside).expect("should create test dir outside cwd");
+        let outside_dir = temp_dir.path().display();
+        let args = format!(r#"{{"command": "ls {outside_dir}"}}"#);
+        let result = Box::pin(execute_bash(&args)).await.unwrap();
         assert!(
             result.output.contains("Operation not permitted")
                 || result.output.contains("Permission denied"),
-            "Expected sandbox to block read of ~/Desktop, got: {}",
+            "Expected sandbox to block read outside cwd, got: {}",
             result.output
         );
     }
@@ -708,6 +806,13 @@ mod tests {
         // A few null bytes (below threshold) should not trigger binary detection
         let text_with_few_nulls = b"hello\x00world";
         assert!(!is_binary_data(text_with_few_nulls));
+    }
+
+    #[test]
+    fn sandbox_initialization_failure_is_not_a_sandbox_violation() {
+        let output = "sandbox-exec: sandbox_apply: Operation not permitted";
+        assert!(is_sandbox_initialization_failure(output));
+        assert!(!is_sandbox_violation(output));
     }
 
     #[test]
@@ -770,7 +875,7 @@ mod tests {
     async fn test_binary_output_handling() {
         // Command that produces binary output (random bytes)
         let args = r#"{"command": "head -c 100 /dev/urandom"}"#;
-        let result = Box::pin(execute_bash(args)).await.unwrap();
+        let result = Box::pin(execute_bash_unsandboxed(args)).await.unwrap();
         // Should detect binary and show appropriate message
         assert!(
             result.output.contains("[Binary output detected") || result.output.contains("[exit:"),
@@ -783,7 +888,7 @@ mod tests {
     async fn test_binary_output_with_known_type() {
         // Create a small gzip-compressed file and read it
         let args = r#"{"command": "echo 'hello' | gzip | head -c 20"}"#;
-        let result = Box::pin(execute_bash(args)).await.unwrap();
+        let result = Box::pin(execute_bash_unsandboxed(args)).await.unwrap();
         // Should detect gzip magic number
         assert!(
             result.output.contains("application/gzip") || result.output.contains("[exit:"),
@@ -796,7 +901,7 @@ mod tests {
     async fn test_text_output_not_detected_as_binary() {
         // Normal text output should not be detected as binary
         let args = r#"{"command": "echo 'Hello, world!'"}"#;
-        let result = Box::pin(execute_bash(args)).await.unwrap();
+        let result = Box::pin(execute_bash_unsandboxed(args)).await.unwrap();
         assert!(
             !result.output.contains("[Binary output detected"),
             "Text output should not be detected as binary, got: {}",

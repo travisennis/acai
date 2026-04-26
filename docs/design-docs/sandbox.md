@@ -9,7 +9,7 @@ When the Bash tool executes a command, cake wraps it in an OS-level sandbox that
 | Access Level | Paths | Purpose |
 |---|---|---|
 | **Read-write** | Current working directory, temp directories, `~/.cargo`, `~/.rustup`, `~/.cache/sccache`, `~/.config/gh`, `~/.config/glab-cli`, `~/.config/mise`, `~/.asdf`, `~/.volta`, and related cache/state directories | Project files, build artifacts, toolchain caches, SCM CLI configs |
-| **Read-only + execute** | `/usr`, `/bin`, `/sbin`, system paths, `/Library`, `/System`, `/Applications`, `/opt/homebrew`, `/opt/local` (macOS); `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc/alternatives`, `/snap` (Linux) | Running system tools and compilers |
+| **Read-only + execute** | `/usr`, `/bin`, `/sbin`, system paths, `/Library`, `/System/Library`, `/Applications`, `/opt/homebrew`, `/opt/local` (macOS); `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc/alternatives`, `/snap` (Linux) | Running system tools and compilers |
 | **Read-only** | `/etc`, `/dev`, `/var`, `/proc`, `/sys` (Linux); `/etc`, `/private/etc`, `/private/var`, `/dev`, `/var` (macOS); `~/.config/git`, `~/.gitattributes`; **plus any directories added via `--add-dir`** | Configuration, device access, git config, user-specified reference directories |
 | **Denied** | Everything else | Home directory (except allowed paths), other projects, etc. |
 
@@ -29,7 +29,12 @@ On macOS, cake uses `sandbox-exec` with a dynamically generated [Seatbelt profil
 
 Sandbox profiles are written to temporary files under `$TMPDIR/cake/sandbox_profiles/`.
 
-Requires `/usr/bin/sandbox-exec` (present on all standard macOS installations).
+Requires `/usr/bin/sandbox-exec` (present on all standard macOS installations) and a
+process context where macOS allows `sandbox-exec` to apply a Seatbelt profile.
+Cake probes this at runtime. If the binary exists but profile application is
+denied, Bash commands fail closed rather than running without cake's filesystem
+sandbox. This commonly happens when cake itself is already running inside
+another Seatbelt sandbox.
 
 ### Linux — Landlock LSM
 
@@ -156,9 +161,20 @@ The sandbox is blocking access to a path outside the allowed set. Options:
 1. Ensure you're running cake from the correct project directory
 2. If the command legitimately needs broader access, disable the sandbox with `CAKE_SANDBOX=off`
 
-### "sandbox-exec not found" warning (macOS)
+### "sandbox-exec not found" error (macOS)
 
-The `sandbox-exec` binary is missing from `/usr/bin/`. This is unusual on standard macOS installations. Commands will run without sandboxing.
+The `sandbox-exec` binary is missing from `/usr/bin/`. This is unusual on
+standard macOS installations. Bash commands fail closed unless sandboxing is
+explicitly disabled with `CAKE_SANDBOX=off`.
+
+### "sandbox-exec cannot apply profiles" error (macOS)
+
+The `sandbox-exec` binary exists, but macOS rejected applying a test Seatbelt
+profile in this process context. The most common cause is nested sandboxing:
+cake was started by another sandboxed tool, and macOS does not allow that process
+to apply another Seatbelt profile. Bash commands fail closed. Run cake from a
+normal terminal to preserve sandbox enforcement, or set `CAKE_SANDBOX=off` when
+intentionally running without cake's filesystem sandbox.
 
 ### "Landlock feature not enabled" warning (Linux)
 

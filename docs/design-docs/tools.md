@@ -337,7 +337,7 @@ The Bash tool integrates with the `tools::sandbox` module:
 ```rust
 // Check if sandboxing is disabled
 if !super::sandbox::is_sandbox_disabled() {
-    if let Some(strategy) = super::sandbox::detect_platform() {
+    if let Some(strategy) = super::sandbox::detect_platform()? {
         strategy.apply(&mut command, &sandbox_config)?;
     }
 }

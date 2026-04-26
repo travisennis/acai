@@ -6,14 +6,74 @@
 //! explicitly allowed.
 
 use crate::clients::tools::sandbox::{SandboxConfig, SandboxStrategy};
+use std::io::Write;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::OnceLock;
 
 /// macOS sandbox strategy using sandbox-exec
 #[derive(Debug, Clone, Copy)]
 pub struct MacOsSandbox;
 
 impl MacOsSandbox {
+    /// Return whether `sandbox-exec` can apply a profile in this process context.
+    ///
+    /// macOS can reject applying a new Seatbelt profile from an already-sandboxed
+    /// process. Probing avoids treating the mere presence of `/usr/bin/sandbox-exec`
+    /// as proof that Bash commands can be sandboxed.
+    pub(super) fn can_apply_profile() -> bool {
+        static CAN_APPLY: OnceLock<bool> = OnceLock::new();
+        *CAN_APPLY.get_or_init(Self::probe_can_apply_profile)
+    }
+
+    fn probe_can_apply_profile() -> bool {
+        let tmp_dir = std::env::temp_dir().join("cake").join("sandbox_profiles");
+        if let Err(e) = std::fs::create_dir_all(&tmp_dir) {
+            tracing::warn!("Failed to create sandbox profile probe directory: {e}");
+            return false;
+        }
+
+        let mut temp_file = match tempfile::Builder::new()
+            .prefix("cake_sandbox_probe_")
+            .suffix(".sb")
+            .tempfile_in(&tmp_dir)
+        {
+            Ok(file) => file,
+            Err(e) => {
+                tracing::warn!("Failed to create sandbox profile probe file: {e}");
+                return false;
+            },
+        };
+
+        if let Err(e) = temp_file.write_all(b"(version 1)\n(allow default)\n") {
+            tracing::warn!("Failed to write sandbox profile probe file: {e}");
+            return false;
+        }
+
+        let output = std::process::Command::new("/usr/bin/sandbox-exec")
+            .arg("-f")
+            .arg(temp_file.path())
+            .arg("/bin/echo")
+            .arg("cake-sandbox-probe")
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => true,
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                tracing::warn!(
+                    "macOS sandbox-exec is present but cannot apply profiles: {}",
+                    stderr.trim()
+                );
+                false
+            },
+            Err(e) => {
+                tracing::warn!("Failed to run sandbox-exec probe: {e}");
+                false
+            },
+        }
+    }
+
     /// Append device and PTY rules to the profile
     fn append_device_rules(lines: &mut Vec<String>) {
         lines.push("; Allow access to standard and PTY devices".to_string());
