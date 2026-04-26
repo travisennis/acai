@@ -170,11 +170,8 @@ impl Agent {
     /// These skills are pre-seeded into the activated set so they are not
     /// re-read during the resumed session.
     pub fn with_activated_skills(self, skills: HashSet<String>) -> Self {
-        // Seed the mutex with prior activations
         if let Ok(mut guard) = self.activated_skills.lock() {
-            for skill in skills {
-                guard.insert(skill);
-            }
+            *guard = skills;
         }
         self
     }
