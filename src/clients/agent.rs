@@ -37,6 +37,22 @@ const fn is_retryable_status(status: reqwest::StatusCode) -> bool {
     matches!(status.as_u16(), 429 | 500 | 502 | 503 | 504)
 }
 
+/// Calculate the exponential backoff delay for a given attempt number (1-based).
+const fn retry_delay(attempt: u32) -> Duration {
+    Duration::from_secs(INITIAL_DELAY_SECS * 2_u64.pow(attempt.saturating_sub(1)))
+}
+
+/// Increment the attempt counter and decide whether to continue retrying.
+/// Returns `Some(delay)` if another retry is allowed, `None` if max retries exceeded.
+const fn check_retry(attempt: &mut u32) -> Option<Duration> {
+    *attempt += 1;
+    if *attempt > MAX_RETRIES {
+        None
+    } else {
+        Some(retry_delay(*attempt))
+    }
+}
+
 // =============================================================================
 // Agent (shared loop over any backend)
 // =============================================================================
@@ -474,17 +490,14 @@ impl Agent {
                         break resp;
                     }
 
-                    attempt += 1;
-                    if attempt > MAX_RETRIES {
+                    let Some(delay) = check_retry(&mut attempt) else {
                         break resp;
-                    }
-
-                    let delay_secs = INITIAL_DELAY_SECS * 2_u64.pow(attempt - 1);
-                    let delay = Duration::from_secs(delay_secs);
+                    };
 
                     debug!(
                         target: "cake",
-                        "API request failed with status {status}, retrying in {delay_secs}s (attempt {attempt}/{MAX_RETRIES})"
+                        "API request failed with status {status}, retrying in {}s (attempt {attempt}/{MAX_RETRIES})",
+                        delay.as_secs()
                     );
 
                     sleep(delay).await;
@@ -496,17 +509,14 @@ impl Agent {
                         .is_some_and(|req_err| req_err.is_connect() || req_err.is_timeout());
 
                     if is_network_error {
-                        attempt += 1;
-                        if attempt > MAX_RETRIES {
+                        let Some(delay) = check_retry(&mut attempt) else {
                             return Err(e);
-                        }
-
-                        let delay_secs = INITIAL_DELAY_SECS * 2_u64.pow(attempt - 1);
-                        let delay = Duration::from_secs(delay_secs);
+                        };
 
                         debug!(
                             target: "cake",
-                            "API request failed with network error: {e}, retrying in {delay_secs}s (attempt {attempt}/{MAX_RETRIES})"
+                            "API request failed with network error: {e}, retrying in {}s (attempt {attempt}/{MAX_RETRIES})",
+                            delay.as_secs()
                         );
 
                         sleep(delay).await;
