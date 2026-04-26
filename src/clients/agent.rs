@@ -74,8 +74,6 @@ pub struct Agent {
     /// Names of skills that have been activated (read) in this session.
     /// Shared between tool executions for concurrent access.
     activated_skills: Arc<Mutex<HashSet<String>>>,
-    /// Session records containing prior skill activations (for resumed sessions)
-    prior_skill_activations: Vec<String>,
 }
 
 impl Agent {
@@ -108,7 +106,6 @@ impl Agent {
             stream: Vec::new(),
             skill_locations: HashMap::new(),
             activated_skills: Arc::new(Mutex::new(HashSet::new())),
-            prior_skill_activations: Vec::new(),
         }
     }
 
@@ -172,15 +169,13 @@ impl Agent {
     ///
     /// These skills are pre-seeded into the activated set so they are not
     /// re-read during the resumed session.
-    pub fn with_activated_skills(mut self, skills: HashSet<String>) -> Self {
+    pub fn with_activated_skills(self, skills: HashSet<String>) -> Self {
         // Seed the mutex with prior activations
         if let Ok(mut guard) = self.activated_skills.lock() {
-            for skill in &skills {
-                guard.insert(skill.clone());
+            for skill in skills {
+                guard.insert(skill);
             }
         }
-        // Also store for reference
-        self.prior_skill_activations = skills.into_iter().collect();
         self
     }
 
@@ -700,7 +695,6 @@ mod tests {
             stream: Vec::new(),
             skill_locations: HashMap::new(),
             activated_skills: Arc::new(Mutex::new(HashSet::new())),
-            prior_skill_activations: Vec::new(),
         }
     }
 
@@ -1050,7 +1044,6 @@ mod error_tests {
             stream: Vec::new(),
             skill_locations: HashMap::new(),
             activated_skills: Arc::new(Mutex::new(HashSet::new())),
-            prior_skill_activations: Vec::new(),
         }
     }
 
@@ -1085,7 +1078,6 @@ mod error_tests {
             stream: Vec::new(),
             skill_locations: HashMap::new(),
             activated_skills: Arc::new(Mutex::new(HashSet::new())),
-            prior_skill_activations: Vec::new(),
         }
     }
 
