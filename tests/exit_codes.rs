@@ -10,25 +10,23 @@
 
 #![allow(clippy::expect_used)]
 
-use std::process::{Command, Stdio};
+mod support;
 
-fn get_binary_path() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_BIN_EXE_cake"))
-}
+use std::process::Stdio;
 
-/// Build a `Command` with an isolated `CAKE_DATA_DIR`.
-fn cake_cmd() -> Command {
-    let mut cmd = Command::new(get_binary_path());
-    let tmp = std::env::temp_dir().join(format!("cake_exit_test_{}", std::process::id()));
-    cmd.env("CAKE_DATA_DIR", tmp);
-    cmd
+use support::TestEnv;
+
+fn cake_env() -> TestEnv {
+    TestEnv::new("cake-exit-test")
 }
 
 // --- Exit code 0: success ---
 
 #[test]
 fn test_help_exits_zero() {
-    let output = cake_cmd()
+    let env = cake_env();
+    let output = env
+        .command()
         .arg("--help")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -40,7 +38,9 @@ fn test_help_exits_zero() {
 
 #[test]
 fn test_version_exits_zero() {
-    let output = cake_cmd()
+    let env = cake_env();
+    let output = env
+        .command()
         .arg("--version")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -54,8 +54,9 @@ fn test_version_exits_zero() {
 
 #[test]
 fn test_no_prompt_exits_three() {
-    let output = cake_cmd()
-        .env_remove("OPENCODE_ZEN_API_TOKEN")
+    let env = cake_env();
+    let output = env
+        .command()
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -67,7 +68,9 @@ fn test_no_prompt_exits_three() {
 
 #[test]
 fn test_invalid_flag_exits_three() {
-    let output = cake_cmd()
+    let env = cake_env();
+    let output = env
+        .command()
         .arg("--bogus-flag")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -79,10 +82,45 @@ fn test_invalid_flag_exits_three() {
 }
 
 #[test]
-fn test_missing_api_key_exits_three() {
-    let output = cake_cmd()
+fn test_no_model_configured_exits_three() {
+    let env = cake_env();
+    let output = env
+        .command()
         .arg("test prompt")
-        .env_remove("OPENCODE_ZEN_API_TOKEN")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to execute command");
+
+    let code = output.status.code().unwrap_or(-1);
+    assert_eq!(code, 3, "Missing model config should exit 3, got {code}");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("No model specified"),
+        "Error message should mention missing model config. Stderr: {stderr}"
+    );
+}
+
+#[test]
+fn test_missing_api_key_exits_three() {
+    let env = cake_env();
+    env.write_project_settings(
+        r#"
+default_model = "test"
+
+[[models]]
+name = "test"
+model = "glm-5.1"
+base_url = "https://example.com"
+api_key_env = "TEST_API_KEY"
+"#,
+    );
+
+    let output = env
+        .command()
+        .arg("test prompt")
+        .env_remove("TEST_API_KEY")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -93,18 +131,19 @@ fn test_missing_api_key_exits_three() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("OPENCODE_ZEN_API_TOKEN"),
-        "Error message should mention the env var. Stderr: {stderr}"
+        stderr.contains("TEST_API_KEY"),
+        "Error message should mention the configured env var. Stderr: {stderr}"
     );
 }
 
 #[test]
 fn test_unknown_model_exits_three() {
-    let output = cake_cmd()
+    let env = cake_env();
+    let output = env
+        .command()
         .arg("--model")
-        .arg("nonexistent_model")
+        .arg("nonexistent-model")
         .arg("test prompt")
-        .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -112,22 +151,33 @@ fn test_unknown_model_exits_three() {
 
     let code = output.status.code().unwrap_or(-1);
     assert_eq!(code, 3, "Unknown model should exit 3, got {code}");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Unknown model 'nonexistent-model'"),
+        "Error message should mention the unknown model. Stderr: {stderr}"
+    );
 }
 
 #[test]
 fn test_invalid_session_uuid_exits_three() {
-    let output = cake_cmd()
+    let env = cake_env();
+    let output = env
+        .command()
         .arg("--resume")
         .arg("not-a-uuid")
         .arg("test prompt")
-        .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
         .expect("Failed to execute command");
 
     let code = output.status.code().unwrap_or(-1);
-    // The API key error comes first, so this may exit 3 for that reason.
-    // But it should still be exit 3 (input error), not 1 or 2.
     assert_eq!(code, 3, "Invalid session UUID should exit 3, got {code}");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Failed to open session file"),
+        "Error should come from treating non-UUID resume values as paths. Stderr: {stderr}"
+    );
 }

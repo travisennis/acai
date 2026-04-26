@@ -90,7 +90,7 @@ pub struct LoadedSettings {
 pub struct ModelDefinition {
     /// Unique name for the model (lowercase alphanumeric + hyphens only)
     pub name: String,
-    /// Model identifier (e.g. "glm-5", "anthropic/claude-3-sonnet")
+    /// Model identifier (e.g. "glm-5.1", "anthropic/claude-3-sonnet")
     pub model: String,
     /// Base URL for the API endpoint (required)
     pub base_url: String,
@@ -774,7 +774,7 @@ default_model = "zen"
 
 [[models]]
 name = "zen"
-model = "glm-5"
+model = "glm-5.1"
 base_url = "https://opencode.ai/zen/go/v1/"
 api_key_env = "OPENCODE_ZEN_API_TOKEN"
 "#,
@@ -798,7 +798,7 @@ default_model = "nonexistent"
 
 [[models]]
 name = "zen"
-model = "glm-5"
+model = "glm-5.1"
 base_url = "https://example.com"
 api_key_env = "KEY"
 "#,
@@ -820,7 +820,7 @@ api_key_env = "KEY"
             r#"
 [[models]]
 name = "zen"
-model = "glm-5"
+model = "glm-5.1"
 base_url = "https://example.com"
 api_key_env = "KEY"
 "#,
@@ -881,7 +881,7 @@ directories = ["/global/dir1", "/global/dir2"]
 
 [[models]]
 name = "zen"
-model = "glm-5"
+model = "glm-5.1"
 base_url = "https://example.com"
 api_key_env = "KEY"
 "#,
@@ -921,7 +921,7 @@ directories = ["/global/dir"]
 
 [[models]]
 name = "zen"
-model = "glm-5"
+model = "glm-5.1"
 base_url = "https://example.com"
 api_key_env = "KEY"
 "#,
@@ -938,7 +938,7 @@ api_key_env = "KEY"
             r#"
 [[models]]
 name = "zen"
-model = "glm-5"
+model = "glm-5.1"
 base_url = "https://example.com"
 api_key_env = "KEY"
 "#,

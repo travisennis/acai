@@ -10,25 +10,22 @@
 
 #![allow(clippy::expect_used)]
 
-use std::process::{Command, Stdio};
+mod support;
 
-fn get_binary_path() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_BIN_EXE_cake"))
-}
+use std::process::Stdio;
 
-/// Build a `Command` with an isolated `CAKE_DATA_DIR` to avoid collisions
-/// when running inside a parent cake session.
-fn cake_cmd() -> Command {
-    let mut cmd = Command::new(get_binary_path());
-    let tmp = std::env::temp_dir().join(format!("cake_test_{}", std::process::id()));
-    cmd.env("CAKE_DATA_DIR", tmp);
-    cmd
+use support::TestEnv;
+
+fn cake_env() -> TestEnv {
+    TestEnv::new("cake-stdin-test")
 }
 
 #[test]
 fn test_help_shows_prompt_argument() {
     // Verify --help shows PROMPT in usage
-    let output = cake_cmd()
+    let env = cake_env();
+    let output = env
+        .command()
         .arg("--help")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -53,7 +50,9 @@ fn test_help_shows_prompt_argument() {
 #[test]
 fn test_version_works() {
     // Verify --version works
-    let output = cake_cmd()
+    let env = cake_env();
+    let output = env
+        .command()
         .arg("--version")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -71,11 +70,23 @@ fn test_version_works() {
 
 #[test]
 fn test_positional_prompt_parsing() {
-    // Verify that a positional prompt doesn't fail parsing
-    // It will fail on API key, but that's expected
-    let output = cake_cmd()
+    let env = cake_env();
+    env.write_project_settings(
+        r#"
+default_model = "test"
+
+[[models]]
+name = "test"
+model = "glm-5.1"
+base_url = "https://example.com"
+api_key_env = "POSITIONAL_PROMPT_TEST_KEY"
+"#,
+    );
+
+    let output = env
+        .command()
         .arg("test prompt here")
-        .env_remove("OPENCODE_ZEN_API_TOKEN")
+        .env_remove("POSITIONAL_PROMPT_TEST_KEY")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -83,21 +94,22 @@ fn test_positional_prompt_parsing() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    // Should NOT say "No input provided" - the prompt was parsed.
-    // Without an API key the binary will fail on the missing key instead.
     assert!(
         !stderr.contains("No input provided"),
         "Should parse positional prompt. Stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("POSITIONAL_PROMPT_TEST_KEY"),
+        "Prompt parsing test should advance to model resolution. Stderr: {stderr}"
     );
 }
 
 #[test]
 fn test_dash_prompt_parsing() {
-    // Verify that '-' as prompt is accepted
-    // It will fail on no stdin + API key, but that's expected
-    let output = cake_cmd()
+    let env = cake_env();
+    let output = env
+        .command()
         .arg("-")
-        .env_remove("OPENCODE_ZEN_API_TOKEN")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -105,20 +117,18 @@ fn test_dash_prompt_parsing() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    // When using '-' without stdin, should get specific error
     assert!(
-        stderr.contains("No input provided via stdin")
-            || stderr.contains("OPENCODE_ZEN_API_TOKEN")
-            || stderr.contains("config"),
-        "Should either fail on no stdin or proceed to API. Stderr: {stderr}"
+        stderr.contains("No input provided via stdin"),
+        "Should fail specifically on missing stdin. Stderr: {stderr}"
     );
 }
 
 #[test]
 fn test_no_prompt_no_stdin_error() {
     // Verify that running without any input produces a clear error
-    let output = cake_cmd()
-        .env_remove("OPENCODE_ZEN_API_TOKEN")
+    let env = cake_env();
+    let output = env
+        .command()
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -136,7 +146,9 @@ fn test_no_prompt_no_stdin_error() {
 #[test]
 fn test_no_session_flag_in_help() {
     // Verify --help mentions --no-session
-    let output = cake_cmd()
+    let env = cake_env();
+    let output = env
+        .command()
         .arg("--help")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -154,28 +166,31 @@ fn test_no_session_flag_in_help() {
 
 #[test]
 fn test_no_session_prevents_session_save() {
-    // Verify that --no-session does not create a session file.
-    // We use a temp directory as CAKE_DATA_DIR and run a prompt through
-    // with --no-session. No session JSON should be written.
-    let tmp_dir = std::env::temp_dir().join(format!("cake_test_no_session_{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&tmp_dir);
+    let env = cake_env();
+    env.write_project_settings(
+        r#"
+default_model = "test"
 
-    let output = Command::new(get_binary_path())
+[[models]]
+name = "test"
+model = "glm-5.1"
+base_url = "not-a-url"
+api_key_env = "NO_SESSION_TEST_KEY"
+"#,
+    );
+
+    let output = env
+        .command()
         .arg("--no-session")
         .arg("test prompt")
-        .env("CAKE_DATA_DIR", &tmp_dir)
-        .env_remove("OPENCODE_ZEN_API_TOKEN")
+        .env("NO_SESSION_TEST_KEY", "test-token")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
         .expect("Failed to execute command");
 
-    // The command will fail due to missing API key, but that's fine —
-    // we're checking that no session files were written.
-    // Sessions are stored under <data_dir>/sessions/<dir_hash>/<uuid>.jsonl
-    let sessions_dir = tmp_dir.join("sessions");
+    let sessions_dir = env.data_dir().join("sessions");
 
-    // Either sessions dir doesn't exist, or it has no files
     let no_sessions = if sessions_dir.exists() {
         std::fs::read_dir(&sessions_dir)
             .map(|mut d| d.next().is_none())
@@ -189,7 +204,4 @@ fn test_no_session_prevents_session_save() {
         "--no-session should not create session files. Stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-
-    // Clean up
-    let _ = std::fs::remove_dir_all(&tmp_dir);
 }

@@ -11,7 +11,7 @@ default_model = "zen"
 # Required: unique name for this model (lowercase, alphanumeric, hyphens only)
 name = "zen"
 # Required: model identifier
-model = "glm-5"
+model = "glm-5.1"
 # Required: base URL for the API endpoint
 base_url = "https://opencode.ai/zen/go/v1/"
 # Required: environment variable containing the API key

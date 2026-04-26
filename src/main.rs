@@ -194,7 +194,7 @@ impl CodingAssistant {
                           default_model = \"zen\"\n\n\
                           [[models]]\n\
                           name = \"zen\"\n\
-                          model = \"glm-5\"\n\
+                          model = \"glm-5.1\"\n\
                           base_url = \"https://opencode.ai/zen/go/v1/\"\n\
                           api_key_env = \"OPENCODE_ZEN_API_TOKEN\"\n\n\
                         Then run 'cake <prompt>' or 'cake --model zen <prompt>'."
@@ -945,7 +945,7 @@ mod tests {
             "zen".to_string(),
             ModelDefinition {
                 name: "zen".to_string(),
-                model: "glm-5".to_string(),
+                model: "glm-5.1".to_string(),
                 base_url: "https://opencode.ai/zen/go/v1/".to_string(),
                 api_key_env: "OPENCODE_ZEN_API_TOKEN".to_string(),
                 api_type: ApiType::ChatCompletions,
@@ -960,7 +960,7 @@ mod tests {
         );
 
         let config = args.resolve_model_config(&models, Some("zen")).unwrap();
-        assert_eq!(config.model, "glm-5");
+        assert_eq!(config.model, "glm-5.1");
     }
 
     #[test]
