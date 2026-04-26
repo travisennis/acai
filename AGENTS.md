@@ -125,4 +125,3 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Both can be overridden via `CAKE_DATA_DIR` environment variable
 - Project-level settings in `.cake/settings.toml`
 - Logs at `~/.cache/cake/cake.YYYY-MM-DD.log` (daily rotation, 7-day retention)
-- API key required via environment variable (default: `OPENCODE_ZEN_API_TOKEN`)

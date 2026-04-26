@@ -211,9 +211,6 @@ The Chat Completions API does not support reasoning items. Any `ConversationItem
 ## CLI Usage
 
 ```bash
-# Set API key (depends on your configured provider)
-export OPENCODE_ZEN_API_TOKEN=your_key_here
-
 # Basic usage - Chat Completions API is used when configured
 ./target/release/cake "Your prompt here"
 

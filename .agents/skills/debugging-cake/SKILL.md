@@ -374,7 +374,7 @@ cat /tmp/cake/sandbox_profiles/cake_sandbox_*.sb
 - **Sessions directory**: `~/.local/share/cake/sessions/` (session files)
 - **Data directory override**: Set `CAKE_DATA_DIR` to use a custom path for both cache and sessions
 - **Logs**: `~/.cache/cake/cake.YYYY-MM-DD.log` (or `$CAKE_DATA_DIR/cake.YYYY-MM-DD.log` if set, daily rotation)
-- **API key**: Required via environment variable (default: `OPENCODE_ZEN_API_TOKEN`)
+- **API key**: Required via environment variable (set via .cake/settings.toml or ~/.config/cake/settings.toml)
 
 ## Session Restoration and Continuation
 

@@ -167,7 +167,7 @@ top_p = 0.9
 name = "o4-mini"
 model = "openai/o4-mini"
 base_url = "https://api.openai.com/v1/"
-api_key_env = "OPENAPI_API_KEY"
+api_key_env = "OPENAI_API_KEY"
 api_type = "responses"
 reasoning_effort = "high"          # none|low|medium|high|xhigh
 reasoning_summary = "concise"      # concise|detailed|auto (Responses API only)
@@ -225,7 +225,7 @@ default_model = "zen"
 name = "zen"
 model = "glm-5.1"
 base_url = "https://opencode.ai/zen/go/v1/"
-api_key_env = "OPENCODE_ZEN_API_KEY"
+api_key_env = "OPENCODE_ZEN_API_TOKEN"
 ```
 
 If neither `--model` nor `default_model` is provided, cake exits with setup instructions.
