@@ -24,13 +24,13 @@ const CURRENT_FORMAT_VERSION: u32 = 3;
 /// use cake::config::Session;
 /// use std::path::PathBuf;
 ///
-/// let session = Session::new("uuid-here".to_string(), PathBuf::from("/project"));
+/// let session = Session::new(uuid::Uuid::new_v4(), PathBuf::from("/project"));
 /// assert!(session.records.is_empty());
 /// ```
 #[derive(Debug, Clone)]
 pub struct Session {
     /// Unique session identifier (UUID v4)
-    pub id: String,
+    pub id: uuid::Uuid,
     /// Working directory where session was created
     pub working_dir: PathBuf,
     /// Model used for the session
@@ -48,10 +48,11 @@ impl Session {
     /// use cake::config::Session;
     /// use std::path::PathBuf;
     ///
-    /// let session = Session::new("uuid".to_string(), PathBuf::from("/project"));
-    /// assert_eq!(session.id, "uuid");
+    /// let id = uuid::Uuid::new_v4();
+    /// let session = Session::new(id, PathBuf::from("/project"));
+    /// assert_eq!(session.id, id);
     /// ```
-    pub const fn new(id: String, working_dir: PathBuf) -> Self {
+    pub const fn new(id: uuid::Uuid, working_dir: PathBuf) -> Self {
         Self {
             id,
             working_dir,
@@ -147,7 +148,8 @@ impl Session {
                 model: m,
                 ..
             } => {
-                id = session_id.clone();
+                id = uuid::Uuid::parse_str(session_id)
+                    .with_context(|| format!("Invalid session UUID '{session_id}'"))?;
                 working_dir = working_directory.clone();
                 model = m.clone();
             },
@@ -219,7 +221,8 @@ impl Session {
                 path.display()
             )
         })?;
-        let id = header.session_id;
+        let id = uuid::Uuid::parse_str(&header.session_id)
+            .with_context(|| format!("Invalid session UUID '{}'", header.session_id))?;
         let working_dir = header.working_directory;
         let model = header.model;
         let mut records = Vec::new();
@@ -228,7 +231,7 @@ impl Session {
         let now = Utc::now();
         records.push(SessionRecord::Init {
             format_version: CURRENT_FORMAT_VERSION,
-            session_id: id.clone(),
+            session_id: id.to_string(),
             timestamp: now,
             working_directory: working_dir.clone(),
             model: model.clone(),
@@ -334,7 +337,7 @@ impl Session {
         if needs_init {
             let init = SessionRecord::Init {
                 format_version: CURRENT_FORMAT_VERSION,
-                session_id: self.id.clone(),
+                session_id: self.id.to_string(),
                 timestamp: Utc::now(),
                 working_directory: self.working_dir.clone(),
                 model: self.model.clone(),
@@ -371,11 +374,12 @@ mod tests {
 
     /// Helper to create a minimal v3 session for testing.
     fn make_test_session() -> Session {
-        let mut session = Session::new("test-uuid".to_string(), PathBuf::from("/work"));
+        let id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let mut session = Session::new(id, PathBuf::from("/work"));
         session.model = Some("test-model".to_string());
         session.records.push(SessionRecord::Init {
             format_version: 3,
-            session_id: "test-uuid".to_string(),
+            session_id: id.to_string(),
             timestamp: Utc::now(),
             working_directory: PathBuf::from("/work"),
             model: Some("test-model".to_string()),
@@ -386,8 +390,9 @@ mod tests {
 
     #[test]
     fn test_session_new_defaults() {
-        let session = Session::new("test-id".to_string(), PathBuf::from("/tmp/test"));
-        assert_eq!(session.id, "test-id");
+        let id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440001").unwrap();
+        let session = Session::new(id, PathBuf::from("/tmp/test"));
+        assert_eq!(session.id, id);
         assert_eq!(session.working_dir, PathBuf::from("/tmp/test"));
         assert!(session.records.is_empty());
         assert!(session.model.is_none());
@@ -449,7 +454,7 @@ mod tests {
         let init: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
         assert_eq!(init["type"], "init");
         assert_eq!(init["format_version"], 3);
-        assert_eq!(init["session_id"], "test-uuid");
+        assert_eq!(init["session_id"], "550e8400-e29b-41d4-a716-446655440000");
         assert_eq!(init["working_directory"], "/work");
         assert_eq!(init["model"], "test-model");
         assert!(init["tools"].is_array());
@@ -506,7 +511,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session.jsonl");
 
-        let session = Session::new("empty".to_string(), PathBuf::from("/tmp"));
+        let id = uuid::Uuid::new_v4();
+        let session = Session::new(id, PathBuf::from("/tmp"));
         // No Init record, no messages - save should produce empty file
         session.save(&path).unwrap();
 
@@ -520,10 +526,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session.jsonl");
 
-        let mut session = Session::new("no-model".to_string(), PathBuf::from("/tmp"));
+        let id = uuid::Uuid::new_v4();
+        let mut session = Session::new(id, PathBuf::from("/tmp"));
         session.records.push(SessionRecord::Init {
             format_version: 3,
-            session_id: "no-model".to_string(),
+            session_id: id.to_string(),
             timestamp: Utc::now(),
             working_directory: PathBuf::from("/tmp"),
             model: None,
@@ -553,16 +560,19 @@ mod tests {
     fn test_session_v2_backward_compat() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session.jsonl");
+        let test_uuid = "550e8400-e29b-41d4-a716-446655440002";
 
         // Manually create a v2 session file
-        let v2_content = r#"{"format_version":2,"session_id":"test-session","timestamp":"2026-04-04T15:51:54.474459Z","working_directory":"/tmp/test","model":"gpt-4","type":"session_start"}
-{"format_version":2,"session_id":"test-session","working_directory":"/tmp/test","model":"gpt-4","type":"message","role":"user","content":"Hello","id":null,"status":null}
-{"format_version":2,"session_id":"test-session","working_directory":"/tmp/test","model":"gpt-4","type":"message","role":"assistant","content":"Hi there","id":"msg-1","status":"completed"}"#;
+        let v2_content = format!(
+            r#"{{"format_version":2,"session_id":"{test_uuid}","timestamp":"2026-04-04T15:51:54.474459Z","working_directory":"/tmp/test","model":"gpt-4","type":"session_start"}}
+{{"format_version":2,"session_id":"{test_uuid}","working_directory":"/tmp/test","model":"gpt-4","type":"message","role":"user","content":"Hello","id":null,"status":null}}
+{{"format_version":2,"session_id":"{test_uuid}","working_directory":"/tmp/test","model":"gpt-4","type":"message","role":"assistant","content":"Hi there","id":"msg-1","status":"completed"}}"#
+        );
 
         fs::write(&path, v2_content).unwrap();
 
         let loaded = Session::load(&path).unwrap();
-        assert_eq!(loaded.id, "test-session");
+        assert_eq!(loaded.id.to_string(), test_uuid);
         assert_eq!(loaded.working_dir, PathBuf::from("/tmp/test"));
         assert_eq!(loaded.model, Some("gpt-4".to_string()));
         // Init (generated) + 2 messages = 3 records
@@ -571,7 +581,7 @@ mod tests {
         // Verify the Init record was generated
         assert!(matches!(
             &loaded.records[0],
-            SessionRecord::Init { session_id, .. } if session_id == "test-session"
+            SessionRecord::Init { session_id, .. } if session_id == test_uuid
         ));
 
         // Verify messages were parsed correctly
@@ -595,15 +605,18 @@ mod tests {
     fn test_session_v2_duplicate_timestamp_compat() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session.jsonl");
+        let test_uuid = "550e8400-e29b-41d4-a716-446655440003";
 
         // Simulate v2 file with duplicate timestamp fields
-        let v2_content = r#"{"format_version":2,"session_id":"test-session","timestamp":"2026-04-04T15:51:54.474459Z","working_directory":"/tmp/test","model":"gpt-4","type":"session_start"}
-{"format_version":2,"session_id":"test-session","timestamp":"2026-04-04T15:51:18.873738Z","working_directory":"/tmp/test","model":"gpt-4","type":"message","role":"user","content":"Hello","id":null,"status":null,"timestamp":"2026-04-04T15:51:18.873738+00:00"}"#;
+        let v2_content = format!(
+            r#"{{"format_version":2,"session_id":"{test_uuid}","timestamp":"2026-04-04T15:51:54.474459Z","working_directory":"/tmp/test","model":"gpt-4","type":"session_start"}}
+{{"format_version":2,"session_id":"{test_uuid}","timestamp":"2026-04-04T15:51:18.873738Z","working_directory":"/tmp/test","model":"gpt-4","type":"message","role":"user","content":"Hello","id":null,"status":null,"timestamp":"2026-04-04T15:51:18.873738+00:00"}}"#
+        );
 
         fs::write(&path, v2_content).unwrap();
 
         let loaded = Session::load(&path).unwrap();
-        assert_eq!(loaded.id, "test-session");
+        assert_eq!(loaded.id.to_string(), test_uuid);
         assert_eq!(loaded.records.len(), 2); // Init + 1 message
     }
 
@@ -628,7 +641,7 @@ mod tests {
             duration_ms: 1500,
             turn_count: 1,
             num_turns: 1,
-            session_id: "test-uuid".to_string(),
+            session_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
             result: Some("Done!".to_string()),
             error: None,
             usage: Usage::default(),

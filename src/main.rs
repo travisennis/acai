@@ -369,7 +369,7 @@ impl CodingAssistant {
             let prior_skills = Self::extract_activated_skills(&messages);
 
             let agent = Agent::new(resolved.clone(), &system_prompt)
-                .with_session_id(restored.id.clone())
+                .with_session_id(restored.id.to_string())
                 .with_history(messages)
                 .with_stream_records(restored.records)
                 .with_skill_locations(skill_locations)
@@ -406,7 +406,7 @@ impl CodingAssistant {
             let prior_skills = Self::extract_activated_skills(&messages);
 
             let agent = Agent::new(resolved.clone(), &system_prompt)
-                .with_session_id(restored.id.clone())
+                .with_session_id(restored.id.to_string())
                 .with_history(messages)
                 .with_stream_records(restored.records)
                 .with_skill_locations(skill_locations)
@@ -450,21 +450,29 @@ impl CodingAssistant {
                 .with_history(restored.messages())
                 .with_stream_records(restored.records)
                 .with_skill_locations(skill_locations);
-            let new_id = agent.session_id.clone();
-            info!(target: "cake", "New forked session: {new_id}");
-            let mut s = Session::new(new_id, current_dir);
-            s.model = Some(resolved.config.model);
-            Ok((agent, s))
+            #[allow(clippy::expect_used)]
+            {
+                let new_id =
+                    uuid::Uuid::parse_str(&agent.session_id).expect("agent generates valid UUIDs");
+                info!(target: "cake", "New forked session: {new_id}");
+                let mut s = Session::new(new_id, current_dir);
+                s.model = Some(resolved.config.model);
+                Ok((agent, s))
+            }
         } else {
             let resolved =
                 ResolvedModelConfig::resolve(self.resolve_model_config(models, default_model)?)?;
             let agent =
                 Agent::new(resolved.clone(), &system_prompt).with_skill_locations(skill_locations);
-            let new_id = agent.session_id.clone();
-            info!(target: "cake", "New session: {new_id}");
-            let mut s = Session::new(new_id, current_dir);
-            s.model = Some(resolved.config.model);
-            Ok((agent, s))
+            #[allow(clippy::expect_used)]
+            {
+                let new_id =
+                    uuid::Uuid::parse_str(&agent.session_id).expect("agent generates valid UUIDs");
+                info!(target: "cake", "New session: {new_id}");
+                let mut s = Session::new(new_id, current_dir);
+                s.model = Some(resolved.config.model);
+                Ok((agent, s))
+            }
         }
     }
 

@@ -123,21 +123,15 @@ impl DataDir {
     /// use std::path::PathBuf;
     ///
     /// let data_dir = DataDir::new()?;
-    /// let session = Session::new("uuid-here".to_string(), PathBuf::from("/project"));
+    /// let session = Session::new(uuid::Uuid::new_v4(), PathBuf::from("/project"));
     /// data_dir.save_session(&session)?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     ///
     /// # Errors
     ///
-    /// Returns an error if the session ID is not a valid UUID, or if the
-    /// session file cannot be written.
+    /// Returns an error if the session file cannot be written.
     pub fn save_session(&self, session: &Session) -> anyhow::Result<PathBuf> {
-        uuid::Uuid::parse_str(&session.id).map_err(|e| {
-            let id = &session.id;
-            anyhow!("Invalid session UUID '{id}': {e}")
-        })?;
-
         let session_path = self.sessions_dir().join(format!("{}.jsonl", session.id));
 
         tracing::info!(target: "cake", "Saving session {} to {}", session.id, session_path.display());
@@ -371,9 +365,9 @@ mod tests {
     #[test]
     fn save_and_load_session_round_trip() {
         let (dd, _tmp) = test_data_dir();
-        let session = Session::new(uuid::Uuid::new_v4().to_string(), PathBuf::from("/work"));
+        let session = Session::new(uuid::Uuid::new_v4(), PathBuf::from("/work"));
         dd.save_session(&session).unwrap();
-        let loaded = dd.load_session(&session.id).unwrap().unwrap();
+        let loaded = dd.load_session(&session.id.to_string()).unwrap().unwrap();
         assert_eq!(loaded.id, session.id);
         assert_eq!(loaded.working_dir, session.working_dir);
     }
@@ -381,7 +375,7 @@ mod tests {
     #[test]
     fn save_and_load_latest_session() {
         let (dd, _tmp) = test_data_dir();
-        let session = Session::new(uuid::Uuid::new_v4().to_string(), PathBuf::from("/work"));
+        let session = Session::new(uuid::Uuid::new_v4(), PathBuf::from("/work"));
         dd.save_session(&session).unwrap();
         let latest = dd
             .load_latest_session(&PathBuf::from("/work"))
@@ -404,21 +398,6 @@ mod tests {
             .load_latest_session(&PathBuf::from("/nonexistent"))
             .unwrap();
         assert!(result.is_none());
-    }
-
-    #[test]
-    fn save_session_invalid_uuid_errors() {
-        let (dd, _tmp) = test_data_dir();
-        let mut session = Session::new("valid".to_string(), PathBuf::from("/work"));
-        session.id = "not-a-uuid".to_string();
-        let result = dd.save_session(&session);
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid session UUID")
-        );
     }
 
     #[test]
@@ -446,15 +425,15 @@ mod tests {
         let (dd, _tmp) = test_data_dir();
         let working_dir = PathBuf::from("/work");
 
-        let session1 = Session::new(uuid::Uuid::new_v4().to_string(), working_dir.clone());
-        let session2 = Session::new(uuid::Uuid::new_v4().to_string(), working_dir.clone());
+        let session1 = Session::new(uuid::Uuid::new_v4(), working_dir.clone());
+        let session2 = Session::new(uuid::Uuid::new_v4(), working_dir.clone());
 
         dd.save_session(&session1).unwrap();
         dd.save_session(&session2).unwrap();
 
         // Both sessions should be loadable
-        let loaded1 = dd.load_session(&session1.id).unwrap().unwrap();
-        let loaded2 = dd.load_session(&session2.id).unwrap().unwrap();
+        let loaded1 = dd.load_session(&session1.id.to_string()).unwrap().unwrap();
+        let loaded2 = dd.load_session(&session2.id.to_string()).unwrap().unwrap();
 
         assert_eq!(loaded1.id, session1.id);
         assert_eq!(loaded2.id, session2.id);
@@ -468,8 +447,8 @@ mod tests {
     fn different_working_dirs_isolated() {
         let (dd, _tmp) = test_data_dir();
 
-        let session1 = Session::new(uuid::Uuid::new_v4().to_string(), PathBuf::from("/work1"));
-        let session2 = Session::new(uuid::Uuid::new_v4().to_string(), PathBuf::from("/work2"));
+        let session1 = Session::new(uuid::Uuid::new_v4(), PathBuf::from("/work1"));
+        let session2 = Session::new(uuid::Uuid::new_v4(), PathBuf::from("/work2"));
 
         dd.save_session(&session1).unwrap();
         dd.save_session(&session2).unwrap();
