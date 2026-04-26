@@ -259,13 +259,7 @@ impl Agent {
 
     /// Stream a conversation item as JSON via the streaming callback, if set.
     fn stream_item(&mut self, item: &ConversationItem) {
-        let record = SessionRecord::from_conversation_item(item);
-        if let Some(ref callback) = self.streaming_callback
-            && let Ok(json) = serde_json::to_string(&record.to_streaming_json())
-        {
-            callback(&json);
-        }
-        self.stream.push(record);
+        self.stream_record(SessionRecord::from_conversation_item(item));
     }
 
     /// Emit the init message with session info, cwd, and tools.
