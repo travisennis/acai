@@ -34,7 +34,7 @@ pub(super) struct TurnResult {
 
 /// Determines if an HTTP status code represents a transient error that should be retried
 const fn is_retryable_status(status: reqwest::StatusCode) -> bool {
-    matches!(status.as_u16(), 429 | 500 | 503)
+    matches!(status.as_u16(), 429 | 500 | 502 | 503 | 504)
 }
 
 // =============================================================================
@@ -976,9 +976,11 @@ mod tests {
         assert!(is_retryable_status(
             reqwest::StatusCode::INTERNAL_SERVER_ERROR
         ));
+        assert!(is_retryable_status(reqwest::StatusCode::BAD_GATEWAY));
         assert!(is_retryable_status(
             reqwest::StatusCode::SERVICE_UNAVAILABLE
         ));
+        assert!(is_retryable_status(reqwest::StatusCode::GATEWAY_TIMEOUT));
 
         assert!(!is_retryable_status(reqwest::StatusCode::BAD_REQUEST));
         assert!(!is_retryable_status(reqwest::StatusCode::UNAUTHORIZED));
@@ -1318,6 +1320,43 @@ mod error_tests {
     }
 
     #[tokio::test]
+    async fn test_502_bad_gateway_retries_and_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        // First request returns 502
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(502).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Bad gateway",
+                    "type": "bad_gateway"
+                }
+            })))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        // Second request succeeds
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_response()))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+            timestamp: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
     async fn test_503_service_unavailable_retries_and_succeeds() {
         let mock_server = MockServer::start().await;
 
@@ -1328,6 +1367,43 @@ mod error_tests {
                 "error": {
                     "message": "Service temporarily unavailable",
                     "type": "service_unavailable"
+                }
+            })))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        // Second request succeeds
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_response()))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+            timestamp: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_504_gateway_timeout_retries_and_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        // First request returns 504
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(504).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Gateway timeout",
+                    "type": "gateway_timeout"
                 }
             })))
             .up_to_n_times(1)
