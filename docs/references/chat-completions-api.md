@@ -186,7 +186,7 @@ To use the Chat Completions API, configure `ApiType::ChatCompletions` in your `M
 
 ```rust
 ModelConfig {
-    model: "glm-5".to_string(),
+    model: "glm-5.1".to_string(),
     api_type: ApiType::ChatCompletions,
     base_url: "https://opencode.ai/zen/go/v1".to_string(),
     api_key_env: "OPENCODE_ZEN_API_TOKEN".to_string(),

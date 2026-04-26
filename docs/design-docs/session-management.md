@@ -144,7 +144,7 @@ When resuming or forking, any trailing `Result` record from the previous run is 
 
 ### Model Enforcement
 
-When resuming or continuing a session, the stored model is compared against the resolved runtime model. If they differ, cake errors out with a clear message. If the session has no stored model (old sessions), the default model resolution path is used.
+When resuming or continuing a session, the stored model is compared against the resolved runtime model. If they differ, cake errors out with a clear message. If no `--model` is provided and the session has a stored model, cake uses that stored model as long as it is still configured in `settings.toml`. If the session has no stored model (old sessions), cake uses the configured `default_model`; if no `default_model` is configured, it exits with setup instructions.
 
 ### Atomic Writes
 

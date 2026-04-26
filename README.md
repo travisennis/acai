@@ -12,7 +12,7 @@ cake is a minimal coding harness for headless usage in the terminal. It's not a 
 - [Configuration](#configuration)
   - [Model Configuration](#model-configuration)
   - [Reasoning Configuration](#reasoning-configuration)
-  - [Default Configuration](#default-configuration)
+  - [Default Model](#default-model)
 - [Session Management](#session-management)
   - [Branching Conversations](#branching-conversations)
 - [Worktrees](#worktrees)
@@ -34,7 +34,7 @@ cake is a minimal coding harness for headless usage in the terminal. It's not a 
 
 - Send instructions to AI for code generation or documentation
 - Supports multiple AI providers via configurable API endpoints
-- Default model: GLM-5.1 via OpenCode
+- Models are user-configured via `settings.toml`
 - OS-level filesystem sandbox for Bash tool commands (macOS sandbox-exec, Linux Landlock)
 - Conversation session management with continue, resume, and fork capabilities
 - Git worktree integration for isolated development environments
@@ -120,17 +120,12 @@ EOF
 
 ## Configuration
 
-cake requires an API key for the AI provider. Set your API key as an environment variable:
-
-- `OPENCODE_ZEN_API_TOKEN`: Your OpenCode Zen API key (default)
-
-Or configure a different provider by setting the appropriate environment variable for your chosen endpoint.
+cake requires at least one model configured in `settings.toml`, plus an API key for that model's provider. Set the API key as the environment variable named by the model's `api_key_env` field.
 
 #### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `OPENCODE_ZEN_API_TOKEN` | API key (default provider) |
 | `CAKE_DATA_DIR` | Override cache and session directories (default: cache at `~/.cache/cake/`, sessions at `~/.local/share/cake/sessions/`) |
 | `CAKE_SANDBOX` | Set to `off` to disable filesystem sandboxing |
 
@@ -139,7 +134,7 @@ Or configure a different provider by setting the appropriate environment variabl
 Model settings can be configured via:
 
 1. **Settings TOML**: Define named models in `settings.toml` files
-2. **Environment variables**: Set your API key (e.g., `OPENCODE_ZEN_API_TOKEN`)
+2. **Environment variables**: Set the API key env var named by each model's `api_key_env`
 3. **CLI flags**: `--model` to select a named model, `--max-tokens` to override
 
 #### Settings TOML
@@ -151,9 +146,11 @@ Create a `settings.toml` file to define custom model configurations:
 
 ```toml
 # Example settings.toml
+default_model = "claude"           # Optional; enables running cake without --model
+
 [[models]]
 name = "claude"                    # Use with --model claude
-model = "anthropic/claude-3-sonnet"
+model = "anthropic/claude-4.6-sonnet"
 base_url = "https://openrouter.ai/api/v1/"
 api_key_env = "OPENROUTER_API_KEY"
 api_type = "responses"
@@ -163,12 +160,14 @@ temperature = 0.7
 name = "deepseek"
 model = "deepseek/deepseek-chat-v3"
 base_url = "https://openrouter.ai/api/v1/"
-api_key_env = "OPENROUTER_API_KEY"
+api_key_env = "DEEPSEEK_API_KEY"
 top_p = 0.9
 
 [[models]]
 name = "o4-mini"
 model = "openai/o4-mini"
+base_url = "https://api.openai.com/v1/"
+api_key_env = "OPENAPI_API_KEY"
 api_type = "responses"
 reasoning_effort = "high"          # none|low|medium|high|xhigh
 reasoning_summary = "concise"      # concise|detailed|auto (Responses API only)
@@ -186,7 +185,7 @@ reasoning_max_tokens = 8000        # Budget-style for Anthropic via OpenRouter
 # Use a named model from settings.toml
 cake --model claude "Your prompt here"
 
-# Without --model, uses default (GLM-5.1 via OpenCode)
+# Without --model, uses the configured default_model
 cake "Your prompt here"
 ```
 
@@ -215,15 +214,21 @@ cake --reasoning-budget 4000 "Analyze this code"
 cake --model claude --reasoning-effort medium "Explain this algorithm"
 ```
 
-#### Default Configuration
+#### Default Model
 
-When not using settings.toml, cake uses these defaults:
+cake does not include a built-in default model. To run `cake "prompt"` without `--model`, set `default_model` to the name of a configured model:
 
-- **Model**: `glm-5.1`
-- **API Endpoint**: `https://opencode.ai/zen/go/v1`
-- **API Key Env**: `OPENCODE_ZEN_API_TOKEN`
-- **Temperature**: 0.8
-- **Max Output Tokens**: 8000
+```toml
+default_model = "zen"
+
+[[models]]
+name = "zen"
+model = "glm-5.1"
+base_url = "https://opencode.ai/zen/go/v1/"
+api_key_env = "OPENCODE_ZEN_API_KEY"
+```
+
+If neither `--model` nor `default_model` is provided, cake exits with setup instructions.
 
 ### Session Management
 
@@ -398,7 +403,6 @@ fi
 ### Example
 
 ```bash
-export OPENCODE_ZEN_API_TOKEN=your_api_key_here
 cake --max-tokens 4000 "Explain what this code does"
 ```
 

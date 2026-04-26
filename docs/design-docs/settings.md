@@ -45,8 +45,8 @@ default_model = "zen"
 # Required: unique identifier for this model (lowercase alphanumeric + hyphens)
 name = "zen"
 
-# Required: model identifier (e.g., "glm-5", "anthropic/claude-3-sonnet")
-model = "glm-5"
+# Required: model identifier (e.g., "glm-5.1", "anthropic/claude-3-sonnet")
+model = "glm-5.1"
 
 # Required: API endpoint base URL
 base_url = "https://opencode.ai/zen/go/v1/"
@@ -191,7 +191,7 @@ Unknown models list available options:
 
 ```
 Unknown model 'nonexistent'. Available models: zen, claude, deepseek.
-- Use a model name from settings.toml, or omit --model to use the default.
+- Use a model name from settings.toml, or configure default_model and omit --model.
 ```
 
 ## Implementation
@@ -268,8 +268,8 @@ cake --model claude "Use claude"
 # Uses "deepseek" from global settings
 cake --model deepseek "Use deepseek"
 
-# Uses default_model from global settings (deepseek)
-cake "Use default model"
+# Uses configured default_model from global settings (deepseek)
+cake "Use configured default model"
 ```
 
 ## Future Considerations

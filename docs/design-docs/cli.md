@@ -76,7 +76,7 @@ pub struct CodingAssistant {
 Model-related settings (`model`, `temperature`, `top_p`, `api_type`, etc.) are configured via:
 
 1. **Settings TOML** (`settings.toml`): Named models can be defined in settings files (see below)
-2. **`ModelConfig` in `config::model`**: Default values for the built-in model
+2. **Settings `default_model`**: Optional model name used when `--model` is omitted
 3. **CLI flags**: `--model` to select a named model, `--max-tokens` for token override
 
 #### Settings TOML
@@ -89,9 +89,11 @@ cake supports loading model configurations from `settings.toml` files:
 Settings are merged with project settings overriding global settings for models with the same name. This allows you to define base configurations globally and override specific models per-project.
 
 ```toml
+default_model = "zen"             # Optional; enables running without --model
+
 [[models]]
 name = "zen"                    # Required: unique name (lowercase alphanumeric + hyphens)
-model = "glm-5"                 # Required: model identifier
+model = "glm-5.1"               # Required: model identifier
 base_url = "https://opencode.ai/zen/go/v1/"  # Optional
 api_key_env = "OPENCODE_ZEN_API_TOKEN"        # Optional
 api_type = "chat_completions"   # Optional: chat_completions or responses
@@ -117,7 +119,7 @@ Use `--model <name>` to select a named model from settings:
 cake --model claude "Your prompt here"
 ```
 
-If `--model` is not provided, cake uses the default `ModelConfig` (currently GLM-5 via OpenCode).
+If `--model` is not provided, cake uses the configured `default_model` from settings. If no `default_model` is configured, cake exits with setup instructions; there is no built-in default model.
 
 The struct implements the `CmdRunner` trait for execution:
 
