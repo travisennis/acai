@@ -641,53 +641,45 @@ fn resolve_assistant_message(items: &[ConversationItem]) -> Message {
 }
 
 #[cfg(test)]
+fn test_resolved_model_config(api_type: ApiType, base_url: &str) -> ResolvedModelConfig {
+    ResolvedModelConfig {
+        config: crate::config::model::ModelConfig {
+            model: "test-model".to_string(),
+            api_type,
+            base_url: base_url.to_string(),
+            api_key_env: "TEST_API_KEY".to_string(),
+            temperature: None,
+            top_p: None,
+            max_output_tokens: None,
+            reasoning_effort: None,
+            reasoning_summary: None,
+            reasoning_max_tokens: None,
+            providers: vec![],
+        },
+        api_key: "test-key".to_string(),
+    }
+}
+
+#[cfg(test)]
+fn test_agent_for(api_type: ApiType, base_url: &str) -> Agent {
+    let mut agent = Agent::new(
+        test_resolved_model_config(api_type, base_url),
+        "test system prompt",
+    );
+    agent.session_id = "test-session".to_string();
+    agent.tools = vec![];
+    agent
+}
+
+#[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::clients::types::{InputTokensDetails, OutputTokensDetails};
-    use crate::config::model::{ApiType, ModelConfig};
-
-    fn test_config() -> ResolvedModelConfig {
-        ResolvedModelConfig {
-            config: ModelConfig {
-                model: "test/model".to_string(),
-                api_type: ApiType::ChatCompletions,
-                base_url: "https://api.example.com".to_string(),
-                api_key_env: "MY_KEY".to_string(),
-                temperature: None,
-                top_p: None,
-                max_output_tokens: None,
-                reasoning_effort: None,
-                reasoning_summary: None,
-                reasoning_max_tokens: None,
-                providers: vec![],
-            },
-            api_key: "test-token".to_string(),
-        }
-    }
+    use crate::config::model::ApiType;
 
     fn test_agent() -> Agent {
-        let config = test_config();
-        Agent {
-            config,
-            history: vec![ConversationItem::Message {
-                role: Role::System,
-                content: "test system prompt".to_string(),
-                id: None,
-                status: None,
-                timestamp: None,
-            }],
-            tools: vec![],
-            streaming_callback: None,
-            progress_callback: None,
-            session_id: "test-session".to_string(),
-            total_usage: Usage::default(),
-            turn_count: 0,
-            client: reqwest::Client::new(),
-            stream: Vec::new(),
-            skill_locations: HashMap::new(),
-            activated_skills: Arc::new(Mutex::new(HashSet::new())),
-        }
+        test_agent_for(ApiType::ChatCompletions, "https://api.example.com")
     }
 
     #[test]
@@ -1003,76 +995,18 @@ mod tests {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod error_tests {
     use super::*;
-    use crate::config::model::{ApiType, ModelConfig};
+    use crate::config::model::ApiType;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     /// Create a test agent configured to use the Responses API with a mock server URL
     fn test_agent_with_url(base_url: &str) -> Agent {
-        let config = ResolvedModelConfig {
-            config: ModelConfig {
-                model: "test-model".to_string(),
-                api_type: ApiType::Responses,
-                base_url: base_url.to_string(),
-                api_key_env: "TEST_API_KEY".to_string(),
-                temperature: None,
-                top_p: None,
-                max_output_tokens: None,
-                reasoning_effort: None,
-                reasoning_summary: None,
-                reasoning_max_tokens: None,
-                providers: vec![],
-            },
-            api_key: "test-key".to_string(),
-        };
-        Agent {
-            config,
-            history: vec![],
-            tools: vec![],
-            streaming_callback: None,
-            progress_callback: None,
-            session_id: "test-session".to_string(),
-            total_usage: Usage::default(),
-            turn_count: 0,
-            client: reqwest::Client::new(),
-            stream: Vec::new(),
-            skill_locations: HashMap::new(),
-            activated_skills: Arc::new(Mutex::new(HashSet::new())),
-        }
+        test_agent_for(ApiType::Responses, base_url)
     }
 
     /// Create a test agent configured to use the Chat Completions API with a mock server URL
     fn test_agent_chat_completions(base_url: &str) -> Agent {
-        let config = ResolvedModelConfig {
-            config: ModelConfig {
-                model: "test-model".to_string(),
-                api_type: ApiType::ChatCompletions,
-                base_url: base_url.to_string(),
-                api_key_env: "TEST_API_KEY".to_string(),
-                temperature: None,
-                top_p: None,
-                max_output_tokens: None,
-                reasoning_effort: None,
-                reasoning_summary: None,
-                reasoning_max_tokens: None,
-                providers: vec![],
-            },
-            api_key: "test-key".to_string(),
-        };
-        Agent {
-            config,
-            history: vec![],
-            tools: vec![],
-            streaming_callback: None,
-            progress_callback: None,
-            session_id: "test-session".to_string(),
-            total_usage: Usage::default(),
-            turn_count: 0,
-            client: reqwest::Client::new(),
-            stream: Vec::new(),
-            skill_locations: HashMap::new(),
-            activated_skills: Arc::new(Mutex::new(HashSet::new())),
-        }
+        test_agent_for(ApiType::ChatCompletions, base_url)
     }
 
     /// Create a successful Responses API response
