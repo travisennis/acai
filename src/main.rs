@@ -357,7 +357,7 @@ impl CodingAssistant {
         let prior_skills = Self::extract_activated_skills(&messages);
 
         let agent = Agent::new(resolved.clone(), system_prompt)
-            .with_session_id(restored.id.to_string())
+            .with_session_id(restored.id)
             .with_history(messages)
             .with_stream_records(restored.records)
             .with_skill_locations(skill_locations.clone())
@@ -394,15 +394,11 @@ impl CodingAssistant {
     ) -> (Agent, Session) {
         let agent =
             Agent::new(resolved.clone(), system_prompt).with_skill_locations(skill_locations);
-        #[allow(clippy::expect_used)]
-        {
-            let new_id =
-                uuid::Uuid::parse_str(&agent.session_id).expect("agent generates valid UUIDs");
-            info!(target: "cake", "New session: {new_id}");
-            let mut session = Session::new(new_id, current_dir);
-            session.model = Some(resolved.config.model);
-            (agent, session)
-        }
+        let new_id = agent.session_id;
+        info!(target: "cake", "New session: {new_id}");
+        let mut session = Session::new(new_id, current_dir);
+        session.model = Some(resolved.config.model);
+        (agent, session)
     }
 
     /// Build the agent/session pair for a forked run using a fresh agent session id.
@@ -417,15 +413,11 @@ impl CodingAssistant {
             .with_history(restored.messages())
             .with_stream_records(restored.records)
             .with_skill_locations(skill_locations);
-        #[allow(clippy::expect_used)]
-        {
-            let new_id =
-                uuid::Uuid::parse_str(&agent.session_id).expect("agent generates valid UUIDs");
-            info!(target: "cake", "New forked session: {new_id}");
-            let mut session = Session::new(new_id, current_dir);
-            session.model = Some(resolved.config.model);
-            (agent, session)
-        }
+        let new_id = agent.session_id;
+        info!(target: "cake", "New forked session: {new_id}");
+        let mut session = Session::new(new_id, current_dir);
+        session.model = Some(resolved.config.model);
+        (agent, session)
     }
 
     fn build_client_and_session(
@@ -1255,14 +1247,14 @@ mod tests {
                 Err(err) => panic!("test config should resolve: {err}"),
             };
             let mut agent = Agent::new(resolved, "test system prompt");
-            agent.session_id = "session-123".to_string();
+            agent.session_id = uuid::uuid!("550e8400-e29b-41d4-a716-446655440000");
             agent.turn_count = 3;
             agent.total_usage.input_tokens = 1000;
             agent.total_usage.input_tokens_details.cached_tokens = 250;
             agent.total_usage.output_tokens = 500;
 
             let summary = format_done_summary(1500, &agent);
-            assert!(summary.contains("session session-123"));
+            assert!(summary.contains("session 550e8400-e29b-41d4-a716-446655440000"));
             assert!(summary.contains("1.5s"));
             assert!(summary.contains("3 turns"));
             assert!(summary.contains("1000 input tokens"));

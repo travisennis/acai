@@ -72,7 +72,7 @@ pub struct Agent {
     /// Callback for human-readable progress reporting
     progress_callback: Option<ProgressCallback>,
     /// Session ID for tracking
-    pub session_id: String,
+    pub session_id: uuid::Uuid,
     /// Accumulated usage across all API calls
     pub total_usage: Usage,
     /// Number of API calls made
@@ -111,7 +111,7 @@ impl Agent {
             tools: vec![bash_tool(), edit_tool(), read_tool(), write_tool()],
             streaming_callback: None,
             progress_callback: None,
-            session_id: uuid::Uuid::new_v4().to_string(),
+            session_id: uuid::Uuid::new_v4(),
             total_usage: Usage::default(),
             turn_count: 0,
             client: reqwest::Client::builder()
@@ -133,7 +133,7 @@ impl Agent {
     /// Sets the session ID for a restored session.
     ///
     /// Use this when continuing a previous session to preserve the session ID.
-    pub fn with_session_id(mut self, id: String) -> Self {
+    pub const fn with_session_id(mut self, id: uuid::Uuid) -> Self {
         self.session_id = id;
         self
     }
@@ -260,7 +260,7 @@ impl Agent {
 
         let record = SessionRecord::Init {
             format_version: 3,
-            session_id: self.session_id.clone(),
+            session_id: self.session_id.to_string(),
             timestamp: Utc::now(),
             working_directory: cwd,
             model: Some(self.config.config.model.clone()),
@@ -308,7 +308,7 @@ impl Agent {
             duration_ms,
             turn_count: self.turn_count,
             num_turns: self.turn_count,
-            session_id: self.session_id.clone(),
+            session_id: self.session_id.to_string(),
             result: result_text,
             error: error_message,
             usage: self.total_usage.clone(),
@@ -643,7 +643,7 @@ fn test_agent_for(api_type: ApiType, base_url: &str) -> Agent {
         test_resolved_model_config(api_type, base_url),
         "test system prompt",
     );
-    agent.session_id = "test-session".to_string();
+    agent.session_id = uuid::uuid!("550e8400-e29b-41d4-a716-446655440000");
     agent.tools = vec![];
     agent
 }
@@ -757,7 +757,7 @@ mod tests {
         drop(agent);
         let json: serde_json::Value = serde_json::from_str(&captured.lock().unwrap()).unwrap();
         assert_eq!(json["type"], "init");
-        assert_eq!(json["session_id"], "test-session");
+        assert_eq!(json["session_id"], "550e8400-e29b-41d4-a716-446655440000");
         assert_eq!(json["format_version"], 3);
     }
 
@@ -812,8 +812,9 @@ mod tests {
 
     #[test]
     fn builder_with_session_id() {
-        let agent = test_agent().with_session_id("custom-id".to_string());
-        assert_eq!(agent.session_id, "custom-id");
+        let id = uuid::uuid!("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+        let agent = test_agent().with_session_id(id);
+        assert_eq!(agent.session_id, id);
     }
 
     #[test]
