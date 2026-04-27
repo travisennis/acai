@@ -11,7 +11,8 @@ use tracing::debug;
 const BINARY_NULL_BYTE_THRESHOLD: usize = 8;
 
 /// Ratio of non-printable characters that indicates binary data (0.3 = 30%)
-const BINARY_RATIO_THRESHOLD: f64 = 0.3;
+const BINARY_RATIO_THRESHOLD_NUMERATOR: usize = 3;
+const BINARY_RATIO_THRESHOLD_DENOMINATOR: usize = 10;
 
 /// Maximum number of bytes the Bash tool will return inline.
 /// Output exceeding this limit is written to a temporary file and the agent
@@ -111,8 +112,6 @@ fn is_sandbox_initialization_failure(output: &str) -> bool {
 /// Returns true if the data contains:
 /// - Multiple null bytes (common in binary files)
 /// - A high ratio of non-printable characters (excluding common whitespace)
-// Precision loss acceptable: used only for display
-#[allow(clippy::cast_precision_loss)]
 fn is_binary_data(data: &[u8]) -> bool {
     if data.is_empty() {
         return false;
@@ -149,16 +148,26 @@ fn is_binary_data(data: &[u8]) -> bool {
     }
 
     // If more than 30% of the data is non-printable, it's likely binary
-    let ratio = non_printable_count as f64 / data.len() as f64;
-    ratio > BINARY_RATIO_THRESHOLD
+    non_printable_count * BINARY_RATIO_THRESHOLD_DENOMINATOR
+        > data.len() * BINARY_RATIO_THRESHOLD_NUMERATOR
+}
+
+/// Format bytes as KiB with one decimal place using integer rounding.
+fn format_kib_tenths(size_bytes: usize) -> String {
+    let tenths = (size_bytes * 10 + 512) / 1024;
+    format!("{}.{:01}", tenths / 10, tenths % 10)
+}
+
+/// Format milliseconds as seconds with one decimal place using integer rounding.
+fn format_seconds_tenths(elapsed_ms: u128) -> String {
+    let tenths = (elapsed_ms + 50) / 100;
+    format!("{}.{:01}", tenths / 10, tenths % 10)
 }
 
 /// Create a result message for binary output, saving the data to a temp file.
-// Precision loss acceptable: used only for display
-#[allow(clippy::cast_precision_loss)]
 fn handle_binary_output(data: &[u8], exit_code: i32, elapsed_ms: u128) -> String {
     let size_bytes = data.len();
-    let size_kb = size_bytes as f64 / 1024.0;
+    let size_kb = format_kib_tenths(size_bytes);
 
     // Try to detect MIME type using the `file` command if available
     let mime_type = detect_mime_type(data);
@@ -257,12 +266,10 @@ fn detect_mime_type(data: &[u8]) -> Option<String> {
 
 /// Format metadata footer with exit code and elapsed time
 /// Shows milliseconds for values under 1 second, seconds otherwise
-// Precision loss acceptable: used only for display
-#[allow(clippy::cast_precision_loss)]
 fn format_metadata_footer(exit_code: i32, elapsed_ms: u128) -> String {
     if elapsed_ms > 999 {
-        let elapsed_sec = elapsed_ms as f64 / 1000.0;
-        format!("[exit:{exit_code} | {elapsed_sec:.1}s]")
+        let elapsed_sec = format_seconds_tenths(elapsed_ms);
+        format!("[exit:{exit_code} | {elapsed_sec}s]")
     } else {
         format!("[exit:{exit_code} | {elapsed_ms}ms]")
     }
@@ -626,6 +633,24 @@ mod tests {
         assert_eq!(footer, "[exit:0 | 60.0s]");
     }
 
+    #[test]
+    fn format_seconds_tenths_rounds_to_nearest_tenth() {
+        assert_eq!(format_seconds_tenths(1000), "1.0");
+        assert_eq!(format_seconds_tenths(1049), "1.0");
+        assert_eq!(format_seconds_tenths(1050), "1.1");
+        assert_eq!(format_seconds_tenths(1234), "1.2");
+        assert_eq!(format_seconds_tenths(1499), "1.5");
+    }
+
+    #[test]
+    fn format_kib_tenths_rounds_to_nearest_tenth() {
+        assert_eq!(format_kib_tenths(0), "0.0");
+        assert_eq!(format_kib_tenths(51), "0.0");
+        assert_eq!(format_kib_tenths(52), "0.1");
+        assert_eq!(format_kib_tenths(1024), "1.0");
+        assert_eq!(format_kib_tenths(1536), "1.5");
+    }
+
     // ===========================================================================
     // Streaming Tests
     // ===========================================================================
@@ -779,6 +804,19 @@ mod tests {
             }
         }
         assert!(is_binary_data(&binary_data));
+    }
+
+    #[test]
+    fn test_is_binary_data_allows_exact_threshold() {
+        let mut data = Vec::new();
+        for i in 0..100 {
+            if i < 30 {
+                data.push(0x01);
+            } else {
+                data.push(b'A');
+            }
+        }
+        assert!(!is_binary_data(&data));
     }
 
     #[test]
