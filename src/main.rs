@@ -510,6 +510,27 @@ impl CodingAssistant {
         }
     }
 
+    /// Attach text-mode progress reporting to the agent and return its spinner.
+    fn with_text_progress(client: Agent) -> (Agent, ProgressBar) {
+        let spinner = ProgressBar::new_spinner();
+        #[allow(clippy::literal_string_with_formatting_args)]
+        let style = ProgressStyle::with_template("{spinner:.cyan} {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner());
+        spinner.set_style(style);
+        spinner.enable_steady_tick(Duration::from_millis(80));
+        spinner.set_message("Thinking...");
+
+        let spinner_clone = spinner.clone();
+        let client = client.with_progress_callback(move |item| {
+            let msg = format_spinner_message(item);
+            if let Some(msg) = msg {
+                spinner_clone.set_message(msg);
+            }
+        });
+
+        (client, spinner)
+    }
+
     /// Set up a worktree if `--worktree` was provided.
     fn setup_worktree(
         &self,
@@ -668,28 +689,14 @@ impl CmdRunner for CodingAssistant {
             });
         }
 
-        #[allow(clippy::useless_let_if_seq)]
-        let mut normal_spinner: Option<ProgressBar> = None;
-
-        if self.output_format == OutputFormat::Text {
-            let spinner = ProgressBar::new_spinner();
-            #[allow(clippy::literal_string_with_formatting_args)]
-            let style = ProgressStyle::with_template("{spinner:.cyan} {msg}")
-                .unwrap_or_else(|_| ProgressStyle::default_spinner());
-            spinner.set_style(style);
-            spinner.enable_steady_tick(Duration::from_millis(80));
-            spinner.set_message("Thinking...");
-
-            let spinner_clone = spinner.clone();
-            client = client.with_progress_callback(move |item| {
-                let msg = format_spinner_message(item);
-                if let Some(msg) = msg {
-                    spinner_clone.set_message(msg);
-                }
-            });
-
-            normal_spinner = Some(spinner);
-        }
+        let normal_spinner = match self.output_format {
+            OutputFormat::Text => {
+                let (updated_client, spinner) = Self::with_text_progress(client);
+                client = updated_client;
+                Some(spinner)
+            },
+            OutputFormat::StreamJson => None,
+        };
 
         let msg = Message {
             role: Role::User,
@@ -715,7 +722,7 @@ impl CmdRunner for CodingAssistant {
             },
         }
 
-        if let Some(spinner) = normal_spinner.take() {
+        if let Some(spinner) = normal_spinner {
             let summary = format_done_summary(duration_ms, &client);
             spinner.finish_with_message(format!("Done: {summary}"));
         }
