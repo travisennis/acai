@@ -208,29 +208,6 @@ impl Agent {
         std::mem::take(&mut self.stream)
     }
 
-    /// Drains and returns conversation history without the system message.
-    ///
-    /// This is used when saving sessions to disk, as the system prompt is
-    /// regenerated on load rather than stored. Takes `&mut self` to drain
-    /// the internal history, avoiding a deep clone of potentially large
-    /// items (e.g. tool outputs with 50KB+ strings).
-    ///
-    /// Prefer `drain_stream()` for the new unified session format.
-    #[allow(dead_code)]
-    #[deprecated(note = "Use drain_stream() instead for the unified session format")]
-    pub fn drain_history_without_system(&mut self) -> Vec<ConversationItem> {
-        let skip = usize::from(self.history.first().is_some_and(|item| {
-            matches!(
-                item,
-                ConversationItem::Message {
-                    role: Role::System,
-                    ..
-                }
-            )
-        }));
-        self.history.drain(skip..).collect()
-    }
-
     /// Enables streaming JSON output for each message.
     ///
     /// The callback receives a JSON string for each message, tool call, and result.
@@ -782,77 +759,6 @@ mod tests {
         assert_eq!(json["type"], "init");
         assert_eq!(json["session_id"], "test-session");
         assert_eq!(json["format_version"], 3);
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn drain_history_without_system_excludes_system_message() {
-        let mut agent = test_agent();
-        // test_agent already provides a system message at index 0.
-        // Push a non-system message to verify we get back only non-system items.
-        agent.history.push(ConversationItem::Message {
-            role: Role::User,
-            content: "user message".to_string(),
-            id: None,
-            status: None,
-            timestamp: None,
-        });
-        let history = agent.drain_history_without_system();
-        assert_eq!(history.len(), 1);
-        assert!(matches!(
-            &history[0],
-            ConversationItem::Message {
-                role: Role::User,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn drain_history_without_system_no_system_message() {
-        let mut agent = test_agent();
-        agent.history.push(ConversationItem::Message {
-            role: Role::User,
-            content: "user message".to_string(),
-            id: None,
-            status: None,
-            timestamp: None,
-        });
-        let history = agent.drain_history_without_system();
-        assert_eq!(history.len(), 1);
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn drain_history_without_system_empty_history() {
-        let mut agent = test_agent();
-        let history = agent.drain_history_without_system();
-        assert!(history.is_empty());
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn drain_history_without_system_drains_the_internal_vec() {
-        let mut agent = test_agent();
-        agent.history.push(ConversationItem::Message {
-            role: Role::User,
-            content: "user message".to_string(),
-            id: None,
-            status: None,
-            timestamp: None,
-        });
-        let history = agent.drain_history_without_system();
-        assert_eq!(history.len(), 1);
-        // After draining, the internal history should only contain the system message
-        assert_eq!(agent.history.len(), 1);
-        assert!(matches!(
-            &agent.history[0],
-            ConversationItem::Message {
-                role: Role::System,
-                ..
-            }
-        ));
     }
 
     #[test]
