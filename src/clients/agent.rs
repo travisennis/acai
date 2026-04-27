@@ -271,9 +271,7 @@ impl Agent {
     }
 
     /// Accumulate usage from an API turn
-    /// Note: clippy suggests `const fn` but this provides no benefit for runtime-only code.
-    #[allow(clippy::missing_const_for_fn)]
-    fn accumulate_usage(&mut self, turn_usage: Option<&Usage>) {
+    const fn accumulate_usage(&mut self, turn_usage: Option<&Usage>) {
         if let Some(usage) = turn_usage {
             self.total_usage.input_tokens += usage.input_tokens;
             self.total_usage.input_tokens_details.cached_tokens +=
