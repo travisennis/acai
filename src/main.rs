@@ -337,7 +337,97 @@ impl CodingAssistant {
         activated
     }
 
-    #[allow(clippy::too_many_lines)]
+    /// Build a map of skill file paths to skill names for activation deduplication.
+    fn skill_locations(skill_catalog: &SkillCatalog) -> HashMap<PathBuf, String> {
+        skill_catalog
+            .skills
+            .iter()
+            .map(|s| (s.location.clone(), s.name.clone()))
+            .collect()
+    }
+
+    /// Convert a restored session into the agent/session pair used for a continued run.
+    fn restored_client_and_session(
+        restored: Session,
+        resolved: ResolvedModelConfig,
+        system_prompt: &str,
+        skill_locations: &HashMap<PathBuf, String>,
+    ) -> (Agent, Session) {
+        let messages = restored.messages();
+        let prior_skills = Self::extract_activated_skills(&messages);
+
+        let agent = Agent::new(resolved.clone(), system_prompt)
+            .with_session_id(restored.id.to_string())
+            .with_history(messages)
+            .with_stream_records(restored.records)
+            .with_skill_locations(skill_locations.clone())
+            .with_activated_skills(prior_skills);
+        let mut session = Session::new(restored.id, restored.working_dir);
+        session.model = Some(resolved.config.model);
+        (agent, session)
+    }
+
+    /// Validate that a session loaded from a file path belongs to the current directory.
+    fn ensure_session_directory_matches(
+        restored: &Session,
+        current_dir: &std::path::Path,
+        flag: &str,
+    ) -> anyhow::Result<()> {
+        if restored.working_dir == current_dir {
+            return Ok(());
+        }
+
+        anyhow::bail!(
+            "Working directory mismatch: session was created in '{}' but current directory is '{}'. \
+             Run the command from the original directory, or use {flag} with a UUID to skip this check.",
+            restored.working_dir.display(),
+            current_dir.display()
+        );
+    }
+
+    /// Build the agent/session pair for a new run using the agent-generated session id.
+    fn new_client_and_session(
+        resolved: ResolvedModelConfig,
+        current_dir: PathBuf,
+        system_prompt: &str,
+        skill_locations: HashMap<PathBuf, String>,
+    ) -> (Agent, Session) {
+        let agent =
+            Agent::new(resolved.clone(), system_prompt).with_skill_locations(skill_locations);
+        #[allow(clippy::expect_used)]
+        {
+            let new_id =
+                uuid::Uuid::parse_str(&agent.session_id).expect("agent generates valid UUIDs");
+            info!(target: "cake", "New session: {new_id}");
+            let mut session = Session::new(new_id, current_dir);
+            session.model = Some(resolved.config.model);
+            (agent, session)
+        }
+    }
+
+    /// Build the agent/session pair for a forked run using a fresh agent session id.
+    fn forked_client_and_session(
+        restored: Session,
+        resolved: ResolvedModelConfig,
+        current_dir: PathBuf,
+        system_prompt: &str,
+        skill_locations: HashMap<PathBuf, String>,
+    ) -> (Agent, Session) {
+        let agent = Agent::new(resolved.clone(), system_prompt)
+            .with_history(restored.messages())
+            .with_stream_records(restored.records)
+            .with_skill_locations(skill_locations);
+        #[allow(clippy::expect_used)]
+        {
+            let new_id =
+                uuid::Uuid::parse_str(&agent.session_id).expect("agent generates valid UUIDs");
+            info!(target: "cake", "New forked session: {new_id}");
+            let mut session = Session::new(new_id, current_dir);
+            session.model = Some(resolved.config.model);
+            (agent, session)
+        }
+    }
+
     fn build_client_and_session(
         &self,
         data_dir: &DataDir,
@@ -348,13 +438,7 @@ impl CodingAssistant {
         skill_catalog: &SkillCatalog,
     ) -> anyhow::Result<(Agent, Session)> {
         let system_prompt = build_system_prompt(&current_dir, agents_files, skill_catalog);
-
-        // Build skill location map for deduplication
-        let skill_locations: std::collections::HashMap<PathBuf, String> = skill_catalog
-            .skills
-            .iter()
-            .map(|s| (s.location.clone(), s.name.clone()))
-            .collect();
+        let skill_locations = Self::skill_locations(skill_catalog);
 
         if self.continue_session {
             info!(target: "cake", "Continuing latest session for directory: {}", current_dir.display());
@@ -362,21 +446,14 @@ impl CodingAssistant {
                 .load_latest_session(&current_dir)?
                 .ok_or_else(|| anyhow::anyhow!("No previous session found for this directory"))?;
             info!(target: "cake", "Continuing session: {}", restored.id);
-
             let resolved =
                 self.resolve_model_for_session(models, default_model, restored.model.as_deref())?;
-            let messages = restored.messages();
-            let prior_skills = Self::extract_activated_skills(&messages);
-
-            let agent = Agent::new(resolved.clone(), &system_prompt)
-                .with_session_id(restored.id.to_string())
-                .with_history(messages)
-                .with_stream_records(restored.records)
-                .with_skill_locations(skill_locations)
-                .with_activated_skills(prior_skills);
-            let mut s = Session::new(restored.id, restored.working_dir);
-            s.model = Some(resolved.config.model);
-            Ok((agent, s))
+            Ok(Self::restored_client_and_session(
+                restored,
+                resolved,
+                &system_prompt,
+                &skill_locations,
+            ))
         } else if let Some(ref arg) = self.resume {
             let restored = if looks_like_uuid(arg) {
                 data_dir
@@ -389,31 +466,17 @@ impl CodingAssistant {
             info!(target: "cake", "Resumed session: {}", restored.id);
 
             if !looks_like_uuid(arg) {
-                let restored_dir = &restored.working_dir;
-                if restored_dir != &current_dir {
-                    anyhow::bail!(
-                        "Working directory mismatch: session was created in '{}' but current directory is '{}'. \
-                         Run the command from the original directory, or use --resume with a UUID to skip this check.",
-                        restored_dir.display(),
-                        current_dir.display()
-                    );
-                }
+                Self::ensure_session_directory_matches(&restored, &current_dir, "--resume")?;
             }
 
             let resolved =
                 self.resolve_model_for_session(models, default_model, restored.model.as_deref())?;
-            let messages = restored.messages();
-            let prior_skills = Self::extract_activated_skills(&messages);
-
-            let agent = Agent::new(resolved.clone(), &system_prompt)
-                .with_session_id(restored.id.to_string())
-                .with_history(messages)
-                .with_stream_records(restored.records)
-                .with_skill_locations(skill_locations)
-                .with_activated_skills(prior_skills);
-            let mut s = Session::new(restored.id, restored.working_dir);
-            s.model = Some(resolved.config.model);
-            Ok((agent, s))
+            Ok(Self::restored_client_and_session(
+                restored,
+                resolved,
+                &system_prompt,
+                &skill_locations,
+            ))
         } else if let Some(ref fork_id) = self.fork {
             info!(target: "cake", "Forking session");
             let restored = if fork_id.is_empty() {
@@ -430,49 +493,28 @@ impl CodingAssistant {
             };
 
             if !fork_id.is_empty() && !looks_like_uuid(fork_id) {
-                let restored_dir = &restored.working_dir;
-                if restored_dir != &current_dir {
-                    anyhow::bail!(
-                        "Working directory mismatch: session was created in '{}' but current directory is '{}'. \
-                         Run the command from the original directory, or use --fork with a UUID to skip this check.",
-                        restored_dir.display(),
-                        current_dir.display()
-                    );
-                }
+                Self::ensure_session_directory_matches(&restored, &current_dir, "--fork")?;
             }
 
             info!(target: "cake", "Forking from session: {}", restored.id);
-
             let resolved =
                 self.resolve_model_for_session(models, default_model, restored.model.as_deref())?;
-
-            let agent = Agent::new(resolved.clone(), &system_prompt)
-                .with_history(restored.messages())
-                .with_stream_records(restored.records)
-                .with_skill_locations(skill_locations);
-            #[allow(clippy::expect_used)]
-            {
-                let new_id =
-                    uuid::Uuid::parse_str(&agent.session_id).expect("agent generates valid UUIDs");
-                info!(target: "cake", "New forked session: {new_id}");
-                let mut s = Session::new(new_id, current_dir);
-                s.model = Some(resolved.config.model);
-                Ok((agent, s))
-            }
+            Ok(Self::forked_client_and_session(
+                restored,
+                resolved,
+                current_dir,
+                &system_prompt,
+                skill_locations,
+            ))
         } else {
             let resolved =
                 ResolvedModelConfig::resolve(self.resolve_model_config(models, default_model)?)?;
-            let agent =
-                Agent::new(resolved.clone(), &system_prompt).with_skill_locations(skill_locations);
-            #[allow(clippy::expect_used)]
-            {
-                let new_id =
-                    uuid::Uuid::parse_str(&agent.session_id).expect("agent generates valid UUIDs");
-                info!(target: "cake", "New session: {new_id}");
-                let mut s = Session::new(new_id, current_dir);
-                s.model = Some(resolved.config.model);
-                Ok((agent, s))
-            }
+            Ok(Self::new_client_and_session(
+                resolved,
+                current_dir,
+                &system_prompt,
+                skill_locations,
+            ))
         }
     }
 
