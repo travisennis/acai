@@ -758,17 +758,21 @@ impl CmdRunner for CodingAssistant {
     }
 }
 
+/// Format milliseconds as seconds with one decimal place using integer rounding.
+fn format_seconds_tenths(duration_ms: u64) -> String {
+    let tenths = (duration_ms + 50) / 100;
+    format!("{}.{:01}", tenths / 10, tenths % 10)
+}
+
 /// Format a completion summary with elapsed time, turns, and token usage.
 fn format_done_summary(duration_ms: u64, client: &Agent) -> String {
-    // Precision loss acceptable: used only for display
-    #[allow(clippy::cast_precision_loss)]
-    let secs = duration_ms as f64 / 1000.0;
+    let secs = format_seconds_tenths(duration_ms);
     let turns = client.turn_count;
     let input_tokens = client.total_usage.input_tokens;
     let output_tokens = client.total_usage.output_tokens;
     let cached_reads_tokens = client.total_usage.input_tokens_details.cached_tokens;
     format!(
-        "session {}, {secs:.1}s, {turns} turns, {input_tokens} input tokens, {cached_reads_tokens} cached reads, {output_tokens} output tokens",
+        "session {}, {secs}s, {turns} turns, {input_tokens} input tokens, {cached_reads_tokens} cached reads, {output_tokens} output tokens",
         client.session_id
     )
 }
@@ -1231,6 +1235,17 @@ mod tests {
             timestamp: None,
         };
         assert!(format_spinner_message(&item).is_none());
+    }
+
+    #[test]
+    fn test_format_seconds_tenths() {
+        assert_eq!(format_seconds_tenths(0), "0.0");
+        assert_eq!(format_seconds_tenths(49), "0.0");
+        assert_eq!(format_seconds_tenths(50), "0.1");
+        assert_eq!(format_seconds_tenths(1049), "1.0");
+        assert_eq!(format_seconds_tenths(1050), "1.1");
+        assert_eq!(format_seconds_tenths(1499), "1.5");
+        assert_eq!(format_seconds_tenths(1500), "1.5");
     }
 
     #[test]
