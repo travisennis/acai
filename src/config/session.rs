@@ -215,6 +215,12 @@ impl Session {
             model: Option<String>,
         }
 
+        #[derive(Deserialize)]
+        struct V2Line {
+            #[serde(flatten)]
+            item: ConversationItem,
+        }
+
         let header: V2Header = serde_json::from_str(first_line.trim()).with_context(|| {
             format!(
                 "Failed to parse v2 header of session file: {}",
@@ -237,14 +243,6 @@ impl Session {
             model: model.clone(),
             tools: vec![], // v2 didn't store tools; leave empty
         });
-
-        // Parse v2 session lines
-        #[allow(clippy::items_after_statements)]
-        #[derive(Deserialize)]
-        struct V2Line {
-            #[serde(flatten)]
-            item: ConversationItem,
-        }
 
         for (line_num, line) in lines {
             let line = line.with_context(|| {
