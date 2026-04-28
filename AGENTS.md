@@ -57,18 +57,6 @@ just ci
 
 ---
 
-## Debugging the App
-
-When asked to debug the app, read the `debugging-cake` skill in `.agents/skills/debugging-cake/SKILL.md`
-
----
-
-## Evaluating the App
-
-When asked to evaluate the app, read the `evaluating-cake` skill in `.agents/skills/evaluating-cake/SKILL.md`
-
----
-
 ## Commit Conventions
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/). Commit messages are validated by a `commit-msg` hook.
