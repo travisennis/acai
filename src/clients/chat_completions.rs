@@ -9,6 +9,7 @@ use crate::clients::chat_types::{
     ChatFunction, ChatFunctionCallRef, ChatMessage, ChatRequest, ChatResponse, ChatTool,
     ChatToolCallRef,
 };
+use crate::clients::retry::RequestOverrides;
 use crate::clients::tools::Tool;
 use crate::clients::types::{ConversationItem, InputTokensDetails, OutputTokensDetails, Usage};
 
@@ -26,6 +27,7 @@ pub(super) async fn send_request(
     config: &ResolvedModelConfig,
     history: &[ConversationItem],
     tools: &[Tool],
+    overrides: &RequestOverrides,
 ) -> anyhow::Result<reqwest::Response> {
     let mut messages = build_messages(history);
     if requires_reasoning_content_tool_call_fallback(&config.config.model) {
@@ -38,7 +40,9 @@ pub(super) async fn send_request(
         messages,
         temperature: config.config.temperature,
         top_p: config.config.top_p,
-        max_completion_tokens: config.config.max_output_tokens,
+        max_completion_tokens: overrides
+            .max_output_tokens
+            .or(config.config.max_output_tokens),
         tools: if chat_tools.is_empty() {
             None
         } else {

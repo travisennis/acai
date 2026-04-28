@@ -9,6 +9,7 @@ use tracing::debug;
 
 use crate::clients::chat_completions;
 use crate::clients::responses;
+use crate::clients::retry::{self, HttpFailure, RequestOverrides, RetryStatus};
 use crate::clients::tools::{Tool, bash_tool, edit_tool, execute_tool, read_tool, write_tool};
 use crate::clients::types::{ConversationItem, ResultSubtype, SessionRecord, Usage};
 use crate::config::model::{ApiType, ResolvedModelConfig};
@@ -19,11 +20,8 @@ type StreamingCallback = Box<dyn Fn(&str) + Send + Sync>;
 
 /// Callback type for progress reporting (receives conversation items as they occur)
 type ProgressCallback = Box<dyn Fn(&ConversationItem) + Send + Sync>;
-
-/// Maximum number of retries for transient API errors
-const MAX_RETRIES: u32 = 3;
-/// Initial delay in seconds for exponential backoff
-const INITIAL_DELAY_SECS: u64 = 1;
+/// Callback type for retry wait reporting
+type RetryCallback = Box<dyn Fn(&RetryStatus) + Send + Sync>;
 
 /// Result of a single API turn (one request/response cycle).
 #[derive(Debug)]
@@ -32,25 +30,16 @@ pub(super) struct TurnResult {
     pub(super) usage: Option<Usage>,
 }
 
-/// Determines if an HTTP status code represents a transient error that should be retried
-const fn is_retryable_status(status: reqwest::StatusCode) -> bool {
-    matches!(status.as_u16(), 429 | 500 | 502 | 503 | 504)
-}
+fn build_http_client(disable_connection_reuse: bool) -> reqwest::Client {
+    let mut builder = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_mins(5));
 
-/// Calculate the exponential backoff delay for a given attempt number (1-based).
-const fn retry_delay(attempt: u32) -> Duration {
-    Duration::from_secs(INITIAL_DELAY_SECS * 2_u64.pow(attempt.saturating_sub(1)))
-}
-
-/// Increment the attempt counter and decide whether to continue retrying.
-/// Returns `Some(delay)` if another retry is allowed, `None` if max retries exceeded.
-const fn check_retry(attempt: &mut u32) -> Option<Duration> {
-    *attempt += 1;
-    if *attempt > MAX_RETRIES {
-        None
-    } else {
-        Some(retry_delay(*attempt))
+    if disable_connection_reuse {
+        builder = builder.pool_max_idle_per_host(0);
     }
+
+    builder.build().unwrap_or_default()
 }
 
 // =============================================================================
@@ -71,6 +60,8 @@ pub struct Agent {
     streaming_callback: Option<StreamingCallback>,
     /// Callback for human-readable progress reporting
     progress_callback: Option<ProgressCallback>,
+    /// Callback for retry wait reporting
+    retry_callback: Option<RetryCallback>,
     /// Session ID for tracking
     pub session_id: uuid::Uuid,
     /// Accumulated usage across all API calls
@@ -111,14 +102,11 @@ impl Agent {
             tools: vec![bash_tool(), edit_tool(), read_tool(), write_tool()],
             streaming_callback: None,
             progress_callback: None,
+            retry_callback: None,
             session_id: uuid::Uuid::new_v4(),
             total_usage: Usage::default(),
             turn_count: 0,
-            client: reqwest::Client::builder()
-                .connect_timeout(std::time::Duration::from_secs(10))
-                .timeout(std::time::Duration::from_mins(5))
-                .build()
-                .unwrap_or_default(),
+            client: build_http_client(false),
             stream: Vec::new(),
             skill_locations: HashMap::new(),
             activated_skills: Arc::new(Mutex::new(HashSet::new())),
@@ -229,10 +217,26 @@ impl Agent {
         self
     }
 
+    /// Enables retry wait reporting.
+    pub fn with_retry_callback(
+        mut self,
+        callback: impl Fn(&RetryStatus) + Send + Sync + 'static,
+    ) -> Self {
+        self.retry_callback = Some(Box::new(callback));
+        self
+    }
+
     /// Report a conversation item via the progress callback, if set.
     fn report_progress(&self, item: &ConversationItem) {
         if let Some(ref callback) = self.progress_callback {
             callback(item);
+        }
+    }
+
+    /// Report a retry status via the retry callback, if set.
+    fn report_retry(&self, status: &RetryStatus) {
+        if let Some(ref callback) = self.retry_callback {
+            callback(status);
         }
     }
 
@@ -439,13 +443,26 @@ impl Agent {
     }
 
     /// Execute a single API turn with retry logic.
-    async fn complete_turn(&self) -> anyhow::Result<TurnResult> {
-        let mut attempt = 0;
-        let response = loop {
+    async fn complete_turn(&mut self) -> anyhow::Result<TurnResult> {
+        let mut attempt = 1;
+        let mut request_overrides = RequestOverrides {
+            max_output_tokens: self.config.config.max_output_tokens,
+            reasoning_max_tokens: self.config.config.reasoning_max_tokens,
+            context_overflow_retry_used: false,
+        };
+        let mut disable_connection_reuse = false;
+
+        loop {
             let request_result = match self.config.config.api_type {
                 ApiType::Responses => {
-                    responses::send_request(&self.client, &self.config, &self.history, &self.tools)
-                        .await
+                    responses::send_request(
+                        &self.client,
+                        &self.config,
+                        &self.history,
+                        &self.tools,
+                        &request_overrides,
+                    )
+                    .await
                 },
                 ApiType::ChatCompletions => {
                     chat_completions::send_request(
@@ -453,77 +470,96 @@ impl Agent {
                         &self.config,
                         &self.history,
                         &self.tools,
+                        &request_overrides,
                     )
                     .await
                 },
             };
 
             match request_result {
-                Ok(resp) => {
-                    let status = resp.status();
-                    if status.is_success() || !is_retryable_status(status) {
-                        break resp;
+                Ok(response) => {
+                    if response.status().is_success() {
+                        if disable_connection_reuse {
+                            self.client = build_http_client(false);
+                        }
+
+                        return match self.config.config.api_type {
+                            ApiType::Responses => responses::parse_response(response).await,
+                            ApiType::ChatCompletions => {
+                                chat_completions::parse_response(response).await
+                            },
+                        };
                     }
 
-                    let Some(delay) = check_retry(&mut attempt) else {
-                        break resp;
+                    let failure = HttpFailure {
+                        status: response.status().as_u16(),
+                        headers: response.headers().clone(),
+                        body: response.text().await?,
                     };
 
-                    debug!(
-                        target: "cake",
-                        "API request failed with status {status}, retrying in {}s (attempt {attempt}/{MAX_RETRIES})",
-                        delay.as_secs()
-                    );
-
-                    sleep(delay).await;
-                },
-                Err(e) => {
-                    // Retry on connection errors and timeouts
-                    let is_network_error = e
-                        .downcast_ref::<reqwest::Error>()
-                        .is_some_and(|req_err| req_err.is_connect() || req_err.is_timeout());
-
-                    if is_network_error {
-                        let Some(delay) = check_retry(&mut attempt) else {
-                            return Err(e);
-                        };
-
-                        debug!(
-                            target: "cake",
-                            "API request failed with network error: {e}, retrying in {}s (attempt {attempt}/{MAX_RETRIES})",
-                            delay.as_secs()
-                        );
-
-                        sleep(delay).await;
-                        continue;
+                    match retry::classify_http_failure(
+                        &failure,
+                        attempt,
+                        self.session_id,
+                        &request_overrides,
+                    ) {
+                        retry::RetryDecision::Retry { status } => {
+                            self.wait_for_retry(&status).await;
+                            attempt += 1;
+                        },
+                        retry::RetryDecision::RetryWithOverrides { status, overrides } => {
+                            request_overrides = overrides;
+                            self.wait_for_retry(&status).await;
+                            attempt += 1;
+                        },
+                        retry::RetryDecision::DoNotRetry => {
+                            return Err(api_error_from_failure(
+                                &self.config.config.model,
+                                &failure,
+                            )
+                            .into());
+                        },
                     }
-                    return Err(e);
+                },
+                Err(error) => {
+                    match retry::classify_transport_error(&error, attempt, self.session_id) {
+                        retry::RetryDecision::Retry { status } => {
+                            if retry::should_disable_connection_reuse(&error)
+                                && !disable_connection_reuse
+                            {
+                                self.client = build_http_client(true);
+                                disable_connection_reuse = true;
+                            }
+
+                            self.wait_for_retry(&status).await;
+                            attempt += 1;
+                        },
+                        retry::RetryDecision::RetryWithOverrides { status, overrides } => {
+                            request_overrides = overrides;
+                            self.wait_for_retry(&status).await;
+                            attempt += 1;
+                        },
+                        retry::RetryDecision::DoNotRetry => return Err(error),
+                    }
                 },
             }
-        };
+        }
+    }
 
-        if response.status().is_success() {
-            match self.config.config.api_type {
-                ApiType::Responses => responses::parse_response(response).await,
-                ApiType::ChatCompletions => chat_completions::parse_response(response).await,
-            }
-        } else {
-            let status = response.status().as_u16();
-            let model = &self.config.config.model;
-            let error_text = response.text().await?;
-            debug!(target: "cake", "{error_text}");
+    async fn wait_for_retry(&self, status: &RetryStatus) {
+        self.report_retry(status);
+        debug!(
+            target: "cake",
+            reason = ?status.reason,
+            detail = %status.detail,
+            delay_ms = status.delay.as_millis(),
+            attempt = status.attempt,
+            max_attempts = status.max_retries,
+            "Retrying API request"
+        );
 
-            let body = serde_json::from_str::<serde_json::Value>(&error_text).map_or_else(
-                |_err| format!("{model}\n\n{error_text}"),
-                |resp_json| {
-                    serde_json::to_string_pretty(&resp_json).map_or_else(
-                        |_| format!("{model}\n\n{error_text}"),
-                        |formatted| format!("{model}\n\n{formatted}"),
-                    )
-                },
-            );
-
-            Err(crate::exit_code::ApiError { status, body }.into())
+        if !status.delay.is_zero() {
+            sleep(status.delay).await;
         }
     }
 }
@@ -612,6 +648,27 @@ fn resolve_assistant_message(items: &[ConversationItem]) -> Message {
         role: Role::Assistant,
         content,
     }
+}
+
+fn api_error_from_failure(model: &str, failure: &HttpFailure) -> crate::exit_code::ApiError {
+    debug!(target: "cake", "{}", failure.body);
+
+    crate::exit_code::ApiError {
+        status: failure.status,
+        body: format_api_error_body(model, &failure.body),
+    }
+}
+
+fn format_api_error_body(model: &str, error_text: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(error_text).map_or_else(
+        |_err| format!("{model}\n\n{error_text}"),
+        |resp_json| {
+            serde_json::to_string_pretty(&resp_json).map_or_else(
+                |_| format!("{model}\n\n{error_text}"),
+                |formatted| format!("{model}\n\n{formatted}"),
+            )
+        },
+    )
 }
 
 #[cfg(test)]
@@ -872,26 +929,6 @@ mod tests {
         assert_eq!(messages[0]["call_id"], "call-1");
         assert_eq!(messages[0]["output"], "hello world");
     }
-
-    #[test]
-    fn is_retryable_status_correctly_identifies_transient_errors() {
-        assert!(is_retryable_status(reqwest::StatusCode::TOO_MANY_REQUESTS));
-        assert!(is_retryable_status(
-            reqwest::StatusCode::INTERNAL_SERVER_ERROR
-        ));
-        assert!(is_retryable_status(reqwest::StatusCode::BAD_GATEWAY));
-        assert!(is_retryable_status(
-            reqwest::StatusCode::SERVICE_UNAVAILABLE
-        ));
-        assert!(is_retryable_status(reqwest::StatusCode::GATEWAY_TIMEOUT));
-
-        assert!(!is_retryable_status(reqwest::StatusCode::BAD_REQUEST));
-        assert!(!is_retryable_status(reqwest::StatusCode::UNAUTHORIZED));
-        assert!(!is_retryable_status(reqwest::StatusCode::FORBIDDEN));
-        assert!(!is_retryable_status(reqwest::StatusCode::NOT_FOUND));
-        assert!(!is_retryable_status(reqwest::StatusCode::OK));
-        assert!(!is_retryable_status(reqwest::StatusCode::CREATED));
-    }
 }
 
 /// Error handling tests using wiremock for HTTP mocking
@@ -900,7 +937,10 @@ mod tests {
 mod error_tests {
     use super::*;
     use crate::config::model::ApiType;
-    use wiremock::matchers::{method, path};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    use wiremock::matchers::{body_partial_json, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     /// Create a test agent configured to use the Responses API with a mock server URL
@@ -1128,6 +1168,62 @@ mod error_tests {
     }
 
     #[tokio::test]
+    async fn test_429_retry_after_header_is_honored() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .insert_header("Retry-After", "1")
+                    .set_body_json(serde_json::json!({
+                        "error": {
+                            "message": "Rate limit exceeded",
+                            "type": "rate_limit_error"
+                        }
+                    })),
+            )
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_response()))
+            .mount(&mock_server)
+            .await;
+
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let captured_clone = Arc::clone(&captured);
+        let mut agent =
+            test_agent_with_url(&mock_server.uri()).with_retry_callback(move |status| {
+                captured_clone.lock().unwrap().push(status.clone());
+            });
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+            timestamp: None,
+        });
+
+        let start = Instant::now();
+        let result = agent.complete_turn().await;
+        let elapsed = start.elapsed();
+
+        assert!(result.is_ok());
+        assert!(elapsed >= Duration::from_millis(900));
+        let status = {
+            let statuses = captured.lock().unwrap();
+            assert_eq!(statuses.len(), 1);
+            statuses[0].clone()
+        };
+        assert_eq!(status.delay, Duration::from_secs(1));
+        assert_eq!(status.detail, "429 rate limit");
+        assert_eq!(status.attempt, 2);
+    }
+
+    #[tokio::test]
     async fn test_500_internal_server_error_retries_and_succeeds() {
         let mock_server = MockServer::start().await;
 
@@ -1239,6 +1335,115 @@ mod error_tests {
     }
 
     #[tokio::test]
+    async fn test_503_x_should_retry_false_returns_error() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(
+                ResponseTemplate::new(503)
+                    .insert_header("x-should-retry", "false")
+                    .set_body_json(serde_json::json!({
+                        "error": {
+                            "message": "Service temporarily unavailable",
+                            "type": "server_error"
+                        }
+                    })),
+            )
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_response()))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+            timestamp: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_529_overloaded_retries_and_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(529).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Provider overloaded",
+                    "type": "server_error"
+                }
+            })))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_response()))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+            timestamp: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_overloaded_error_body_retries_and_succeeds() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(500).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "provider overloaded",
+                    "type": "overloaded_error"
+                }
+            })))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_response()))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+            timestamp: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
     async fn test_504_gateway_timeout_retries_and_succeeds() {
         let mock_server = MockServer::start().await;
 
@@ -1304,6 +1509,55 @@ mod error_tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("test-model"));
+    }
+
+    #[tokio::test]
+    async fn test_context_overflow_reduces_max_output_tokens_once() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .and(body_partial_json(serde_json::json!({
+                "max_output_tokens": 5000,
+                "reasoning": {
+                    "max_tokens": 4000
+                }
+            })))
+            .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                "error": {
+                    "message": "input length and max_tokens exceed context limit: 12000 + 5000 > 16384",
+                    "type": "invalid_request_error"
+                }
+            })))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .and(body_partial_json(serde_json::json!({
+                "max_output_tokens": 3360,
+                "reasoning": {
+                    "max_tokens": 3359
+                }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_response()))
+            .mount(&mock_server)
+            .await;
+
+        let mut agent = test_agent_with_url(&mock_server.uri());
+        agent.config.config.max_output_tokens = Some(5000);
+        agent.config.config.reasoning_max_tokens = Some(4000);
+        agent.history.push(ConversationItem::Message {
+            role: Role::User,
+            content: "test".to_string(),
+            id: None,
+            status: None,
+            timestamp: None,
+        });
+
+        let result = agent.complete_turn().await;
+        assert!(result.is_ok());
     }
 
     // =========================================================================

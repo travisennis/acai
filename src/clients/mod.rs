@@ -13,6 +13,7 @@ mod agent;
 mod chat_completions;
 mod chat_types;
 mod responses;
+pub mod retry;
 mod tools;
 pub mod types;
 

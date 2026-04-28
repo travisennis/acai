@@ -521,11 +521,15 @@ impl CodingAssistant {
         spinner.set_message("Thinking...");
 
         let spinner_clone = spinner.clone();
+        let retry_spinner = spinner.clone();
         let client = client.with_progress_callback(move |item| {
             let msg = format_spinner_message(item);
             if let Some(msg) = msg {
                 spinner_clone.set_message(msg);
             }
+        });
+        let client = client.with_retry_callback(move |status| {
+            retry_spinner.set_message(format_retry_message(status));
         });
 
         (client, spinner)
@@ -764,6 +768,11 @@ fn format_seconds_tenths(duration_ms: u64) -> String {
     format!("{}.{:01}", tenths / 10, tenths % 10)
 }
 
+fn format_duration_tenths(duration: Duration) -> String {
+    let duration_ms = duration.as_millis().try_into().unwrap_or(u64::MAX);
+    format_seconds_tenths(duration_ms)
+}
+
 /// Format a completion summary with elapsed time, turns, and token usage.
 fn format_done_summary(duration_ms: u64, client: &Agent) -> String {
     let secs = format_seconds_tenths(duration_ms);
@@ -794,6 +803,21 @@ fn format_spinner_message(item: &ConversationItem) -> Option<String> {
         },
         _ => None,
     }
+}
+
+fn format_retry_message(status: &crate::clients::retry::RetryStatus) -> String {
+    if status.reason == crate::clients::retry::RetryReason::ContextOverflow {
+        return format!(
+            "Retrying once with {} after context overflow",
+            status.detail
+        );
+    }
+
+    let delay = format_duration_tenths(status.delay);
+    format!(
+        "Retrying in {delay}s after {} (attempt {}/{})",
+        status.detail, status.attempt, status.max_retries
+    )
 }
 
 fn main() -> std::process::ExitCode {
@@ -1246,6 +1270,38 @@ mod tests {
         assert_eq!(format_seconds_tenths(1050), "1.1");
         assert_eq!(format_seconds_tenths(1499), "1.5");
         assert_eq!(format_seconds_tenths(1500), "1.5");
+    }
+
+    #[test]
+    fn test_format_retry_message_http_retry() {
+        let status = crate::clients::retry::RetryStatus {
+            attempt: 2,
+            max_retries: 5,
+            delay: Duration::from_millis(1_250),
+            reason: crate::clients::retry::RetryReason::RateLimit,
+            detail: "429 rate limit".to_string(),
+        };
+
+        assert_eq!(
+            format_retry_message(&status),
+            "Retrying in 1.3s after 429 rate limit (attempt 2/5)"
+        );
+    }
+
+    #[test]
+    fn test_format_retry_message_context_overflow() {
+        let status = crate::clients::retry::RetryStatus {
+            attempt: 2,
+            max_retries: 5,
+            delay: Duration::ZERO,
+            reason: crate::clients::retry::RetryReason::ContextOverflow,
+            detail: "max_output_tokens=3584".to_string(),
+        };
+
+        assert_eq!(
+            format_retry_message(&status),
+            "Retrying once with max_output_tokens=3584 after context overflow"
+        );
     }
 
     #[test]

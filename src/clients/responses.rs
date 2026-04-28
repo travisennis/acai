@@ -4,6 +4,7 @@ use crate::config::model::ResolvedModelConfig;
 use crate::models::Role;
 
 use crate::clients::agent::TurnResult;
+use crate::clients::retry::RequestOverrides;
 use crate::clients::tools::Tool;
 use crate::clients::types::{
     ApiResponse, ApiUsage, ConversationItem, InputTokensDetails, OutputTokensDetails,
@@ -24,6 +25,7 @@ pub(super) async fn send_request(
     config: &ResolvedModelConfig,
     history: &[ConversationItem],
     tools: &[Tool],
+    overrides: &RequestOverrides,
 ) -> anyhow::Result<reqwest::Response> {
     let provider_config = if config.config.providers.is_empty()
         || (config.config.providers.len() == 1 && config.config.providers[0] == "all")
@@ -35,13 +37,20 @@ pub(super) async fn send_request(
         })
     };
 
+    let max_output_tokens = overrides
+        .max_output_tokens
+        .or(config.config.max_output_tokens);
+    let reasoning_max_tokens = overrides
+        .reasoning_max_tokens
+        .or(config.config.reasoning_max_tokens);
+
     let reasoning = (config.config.reasoning_effort.is_some()
         || config.config.reasoning_summary.is_some()
-        || config.config.reasoning_max_tokens.is_some())
+        || reasoning_max_tokens.is_some())
     .then(|| ReasoningConfig {
         effort: config.config.reasoning_effort.clone(),
         summary: config.config.reasoning_summary.clone(),
-        max_tokens: config.config.reasoning_max_tokens,
+        max_tokens: reasoning_max_tokens,
     });
 
     let (instructions, non_system_history) = extract_instructions(history);
@@ -52,7 +61,7 @@ pub(super) async fn send_request(
         instructions,
         temperature: config.config.temperature,
         top_p: config.config.top_p,
-        max_output_tokens: config.config.max_output_tokens,
+        max_output_tokens,
         tools: Some(tools.to_vec()),
         tool_choice: Some("auto".to_string()),
         provider: provider_config,
