@@ -13,7 +13,7 @@ hooks = [
     id = "clippy",
     name = "cargo clippy",
     language = "system",
-    entry = "cargo clippy --all-targets -- -D warnings",
+    entry = "cargo clippy --all-targets --all-features -- -D warnings",
     files = "\\.rs$",
     pass_filenames = false,
   },

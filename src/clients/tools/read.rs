@@ -105,7 +105,7 @@ fn read_directory(path: &Path) -> Result<super::ToolResult, String> {
         .filter_map(std::result::Result::ok)
         .map(|entry| {
             let name = entry.file_name().to_string_lossy().to_string();
-            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+            let is_dir = entry.file_type().is_ok_and(|ft| ft.is_dir());
             if is_dir { format!("{name}/") } else { name }
         })
         .collect();

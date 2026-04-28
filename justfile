@@ -26,6 +26,16 @@ clippy:
 clippy-strict:
     cargo clippy --all-targets --all-features -- -D warnings
 
+# Verify Rust toolchain pins stay synchronized
+rust-version-check:
+    sh scripts/check-rust-toolchain.sh
+
+# Clippy against the Linux target so local macOS checks cover CI-only cfg paths
+clippy-linux:
+    @rustup target list --installed | grep -qx 'x86_64-unknown-linux-gnu' || { echo "ERROR: missing Rust target x86_64-unknown-linux-gnu. Run: rustup target add x86_64-unknown-linux-gnu"; exit 1; }
+    @which x86_64-linux-gnu-gcc > /dev/null || { echo "ERROR: missing x86_64-linux-gnu-gcc cross compiler required by aws-lc-sys"; exit 1; }
+    cargo clippy --target x86_64-unknown-linux-gnu --all-targets --all-features -- -D warnings
+
 # Run tests
 test:
     cargo test --quiet
@@ -37,7 +47,7 @@ lint-imports:
     @echo "Import lint passed!"
 
 # Run all checks (use in CI)
-ci: fmt-check clippy-strict test lint-imports
+ci: rust-version-check fmt-check clippy-strict test lint-imports
     echo "All checks passed!"
 
 # Recreate full CI pipeline locally (matches GitHub Actions)

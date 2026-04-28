@@ -249,6 +249,8 @@ pub(super) trait SandboxStrategy: Send + Sync {
 ///
 /// If sandboxing is expected on a supported platform but cannot be enforced,
 /// return an error instead of silently falling back to unsandboxed execution.
+// Linux detection is infallible, but macOS detection can fail closed.
+#[allow(clippy::unnecessary_wraps)]
 pub(super) fn detect_platform() -> Result<Option<Box<dyn SandboxStrategy>>, String> {
     #[cfg(target_os = "macos")]
     {
@@ -306,20 +308,7 @@ pub(super) fn is_sandbox_disabled() -> bool {
 }
 
 /// Check whether this process can enforce the platform sandbox.
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 pub(super) fn can_enforce_platform_sandbox() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        std::path::Path::new("/usr/bin/sandbox-exec").exists() && MacOsSandbox::can_apply_profile()
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        true
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    {
-        false
-    }
+    std::path::Path::new("/usr/bin/sandbox-exec").exists() && MacOsSandbox::can_apply_profile()
 }

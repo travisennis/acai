@@ -116,7 +116,7 @@ impl Agent {
             turn_count: 0,
             client: reqwest::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(10))
-                .timeout(std::time::Duration::from_secs(300))
+                .timeout(std::time::Duration::from_mins(5))
                 .build()
                 .unwrap_or_default(),
             stream: Vec::new(),
@@ -559,8 +559,7 @@ async fn execute_tool_with_skill_dedup(
 
     let already_active = activated_skills
         .lock()
-        .map(|guard| guard.contains(skill_name))
-        .unwrap_or(false);
+        .is_ok_and(|guard| guard.contains(skill_name));
     if already_active {
         tracing::info!("Skill '{skill_name}' already activated, skipping re-read");
         return format!(

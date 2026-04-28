@@ -47,6 +47,9 @@ just update-dependencies
 
 # Full CI check
 just ci
+
+# Verify Rust toolchain pins are synchronized
+just rust-version-check
 ```
 ---
 
@@ -54,6 +57,15 @@ just ci
 
 - Run the `Full CI check` command when you complete a task to make sure the code is correct.
 - Do not commit or push code unless explicitly asked to.
+
+## Updating Rust Version
+
+The project Rust toolchain is pinned in `rust-toolchain.toml`. When changing it:
+- Update `rust-toolchain.toml`.
+- Update matching project-toolchain pins in `.github/workflows/ci.yml`, `.github/workflows/release.yml`, and non-MSRV Rust jobs in `.github/workflows/scheduled.yml`.
+- Leave the scheduled `MSRV Compatibility` job pinned to the supported minimum Rust version unless intentionally changing MSRV.
+- Run `just rust-version-check` to verify pins are synchronized.
+- Run `just ci` before finishing the change.
 
 ---
 

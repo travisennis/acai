@@ -192,9 +192,7 @@ api_key_env = "NO_SESSION_TEST_KEY"
     let sessions_dir = env.data_dir().join("sessions");
 
     let no_sessions = if sessions_dir.exists() {
-        std::fs::read_dir(&sessions_dir)
-            .map(|mut d| d.next().is_none())
-            .unwrap_or(true)
+        std::fs::read_dir(&sessions_dir).map_or(true, |mut d| d.next().is_none())
     } else {
         true
     };
