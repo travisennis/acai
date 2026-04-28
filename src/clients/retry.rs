@@ -85,6 +85,10 @@ pub fn classify_http_failure(
     }
 
     let x_should_retry = parse_x_should_retry(&failure.headers);
+    if x_should_retry == Some(false) {
+        return RetryDecision::DoNotRetry;
+    }
+
     let is_overloaded = has_overloaded_marker(&failure.body);
 
     match failure.status {
@@ -125,10 +129,6 @@ pub fn classify_http_failure(
             ),
         },
         500 | 502 | 503 | 504 => {
-            if x_should_retry == Some(false) && !is_overloaded {
-                return RetryDecision::DoNotRetry;
-            }
-
             let reason = if is_overloaded {
                 RetryReason::Overloaded
             } else {
@@ -496,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn x_should_retry_false_does_not_block_overloaded_error() {
+    fn x_should_retry_false_blocks_overloaded_error() {
         let mut headers = HeaderMap::new();
         headers.insert(X_SHOULD_RETRY, HeaderValue::from_static("false"));
         let failure = HttpFailure {
@@ -506,13 +506,10 @@ mod tests {
                 .to_string(),
         };
 
-        match classify_http_failure(&failure, 1, session_id(), &RequestOverrides::default()) {
-            RetryDecision::Retry { status } => {
-                assert_eq!(status.reason, RetryReason::Overloaded);
-                assert_eq!(status.detail, "overloaded provider");
-            },
-            other => panic!("expected overloaded retry, got {other:?}"),
-        }
+        assert_eq!(
+            classify_http_failure(&failure, 1, session_id(), &RequestOverrides::default()),
+            RetryDecision::DoNotRetry
+        );
     }
 
     #[test]

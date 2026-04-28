@@ -10,6 +10,7 @@ See the [../adr/](../adr/) directory for architectural decision records (ADRs).
 
 | Document | Description |
 |----------|-------------|
+| [api-retry-strategy.md](api-retry-strategy.md) | API retry classification, backoff, and verification strategy |
 | [cli.md](cli.md) | CLI design and command structure |
 | [conversation-types.md](conversation-types.md) | Conversation type system and patterns |
 | [logging.md](logging.md) | Logging architecture and implementation |
