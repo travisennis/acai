@@ -114,7 +114,7 @@ refactor(tools): extract path validation into shared function
 
 ## ExecPlans
 
-When writing complex features or significant refactors, use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
+When writing complex features or significant refactors, use an ExecPlan (as described in .agents/PLANS.md) from design to implementation.
 
 ---
 
