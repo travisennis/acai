@@ -1,0 +1,53 @@
+---
+source: src/clients/chat_completions.rs
+expression: "serde_json::to_value(&request).unwrap()"
+---
+{
+  "max_completion_tokens": 1024,
+  "messages": [
+    {
+      "content": "List files",
+      "role": "user"
+    },
+    {
+      "content": null,
+      "reasoning_content": " ",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"cmd\":\"ls\"}",
+            "name": "bash"
+          },
+          "id": "call-1",
+          "type": "function"
+        }
+      ]
+    }
+  ],
+  "model": "moonshot/kimi-k2.6",
+  "reasoning_effort": "high",
+  "temperature": 0.20000000298023224,
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "function": {
+        "description": "Run a shell command",
+        "name": "bash",
+        "parameters": {
+          "properties": {
+            "cmd": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "cmd"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "function"
+    }
+  ],
+  "top_p": 0.8999999761581421
+}

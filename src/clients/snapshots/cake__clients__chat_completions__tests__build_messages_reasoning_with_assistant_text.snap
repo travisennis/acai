@@ -1,0 +1,15 @@
+---
+source: src/clients/chat_completions.rs
+expression: msgs
+---
+[
+  {
+    "role": "user",
+    "content": "think"
+  },
+  {
+    "role": "assistant",
+    "content": "done",
+    "reasoning_content": "internal reasoning"
+  }
+]

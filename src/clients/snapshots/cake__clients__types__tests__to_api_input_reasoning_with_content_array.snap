@@ -1,0 +1,20 @@
+---
+source: src/clients/types.rs
+expression: item.to_api_input()
+---
+{
+  "content": [
+    {
+      "text": "deep analysis",
+      "type": "reasoning_text"
+    }
+  ],
+  "id": "r-1",
+  "summary": [
+    {
+      "text": "thinking...",
+      "type": "summary_text"
+    }
+  ],
+  "type": "reasoning"
+}

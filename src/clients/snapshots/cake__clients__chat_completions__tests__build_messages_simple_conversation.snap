@@ -1,0 +1,14 @@
+---
+source: src/clients/chat_completions.rs
+expression: msgs
+---
+[
+  {
+    "role": "system",
+    "content": "You are helpful."
+  },
+  {
+    "role": "user",
+    "content": "Hello"
+  }
+]

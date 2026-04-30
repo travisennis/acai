@@ -882,4 +882,165 @@ mod tests {
         let expected = r#"{"only":["OpenAI"]}"#;
         assert_eq!(json, expected);
     }
+
+    #[test]
+    fn snapshot_user_message() {
+        let item = ConversationItem::Message {
+            role: Role::User,
+            content: "Hello".to_string(),
+            id: None,
+            status: None,
+            timestamp: None,
+        };
+        insta::assert_json_snapshot!("to_api_input_user_message", item.to_api_input());
+    }
+
+    #[test]
+    fn snapshot_assistant_message_with_id_and_status() {
+        let item = ConversationItem::Message {
+            role: Role::Assistant,
+            content: "Hi there".to_string(),
+            id: Some("msg-1".to_string()),
+            status: Some("completed".to_string()),
+            timestamp: None,
+        };
+        insta::assert_json_snapshot!(
+            "to_api_input_assistant_message_with_id_and_status",
+            item.to_api_input()
+        );
+    }
+
+    #[test]
+    fn snapshot_system_message() {
+        let item = ConversationItem::Message {
+            role: Role::System,
+            content: "You are cake".to_string(),
+            id: None,
+            status: None,
+            timestamp: None,
+        };
+        insta::assert_json_snapshot!("to_api_input_system_message", item.to_api_input());
+    }
+
+    #[test]
+    fn snapshot_function_call() {
+        let item = ConversationItem::FunctionCall {
+            id: "fc-1".to_string(),
+            call_id: "call-1".to_string(),
+            name: "bash".to_string(),
+            arguments: r#"{"cmd":"ls"}"#.to_string(),
+            timestamp: None,
+        };
+        insta::assert_json_snapshot!("to_api_input_function_call", item.to_api_input());
+    }
+
+    #[test]
+    fn snapshot_function_call_output() {
+        let item = ConversationItem::FunctionCallOutput {
+            call_id: "call-1".to_string(),
+            output: "file.txt\nother.txt".to_string(),
+            timestamp: None,
+        };
+        insta::assert_json_snapshot!("to_api_input_function_call_output", item.to_api_input());
+    }
+
+    #[test]
+    fn snapshot_reasoning_with_summary() {
+        let item = ConversationItem::Reasoning {
+            id: "r-1".to_string(),
+            summary: vec!["thinking...".to_string()],
+            encrypted_content: None,
+            content: None,
+            timestamp: None,
+        };
+        insta::assert_json_snapshot!("to_api_input_reasoning_with_summary", item.to_api_input());
+    }
+
+    #[test]
+    fn snapshot_reasoning_with_encrypted_content() {
+        let item = ConversationItem::Reasoning {
+            id: "r-1".to_string(),
+            summary: vec!["thinking...".to_string()],
+            encrypted_content: Some("gAAAAABencrypted...".to_string()),
+            content: None,
+            timestamp: None,
+        };
+        insta::assert_json_snapshot!(
+            "to_api_input_reasoning_with_encrypted_content",
+            item.to_api_input()
+        );
+    }
+
+    #[test]
+    fn snapshot_reasoning_with_content_array() {
+        let item = ConversationItem::Reasoning {
+            id: "r-1".to_string(),
+            summary: vec!["thinking...".to_string()],
+            encrypted_content: None,
+            content: Some(vec![ReasoningContent {
+                content_type: "reasoning_text".to_string(),
+                text: Some("deep analysis".to_string()),
+            }]),
+            timestamp: None,
+        };
+        insta::assert_json_snapshot!(
+            "to_api_input_reasoning_with_content_array",
+            item.to_api_input()
+        );
+    }
+
+    #[test]
+    fn snapshot_to_streaming_json_message_with_id_and_status() {
+        let item = ConversationItem::Message {
+            role: Role::Assistant,
+            content: "Response".to_string(),
+            id: Some("msg-123".to_string()),
+            status: Some("completed".to_string()),
+            timestamp: None,
+        };
+        insta::assert_json_snapshot!(
+            "to_streaming_json_message_with_id_and_status",
+            item.to_streaming_json()
+        );
+    }
+
+    #[test]
+    fn snapshot_to_streaming_json_reasoning_plain_summary() {
+        let item = ConversationItem::Reasoning {
+            id: "r-1".to_string(),
+            summary: vec!["step 1".to_string(), "step 2".to_string()],
+            encrypted_content: None,
+            content: None,
+            timestamp: None,
+        };
+        insta::assert_json_snapshot!(
+            "to_streaming_json_reasoning_plain_summary",
+            item.to_streaming_json()
+        );
+    }
+
+    #[test]
+    fn snapshot_to_streaming_json_function_call() {
+        let item = ConversationItem::FunctionCall {
+            id: "fc-1".to_string(),
+            call_id: "call-1".to_string(),
+            name: "bash".to_string(),
+            arguments: r#"{"cmd":"ls"}"#.to_string(),
+            timestamp: None,
+        };
+        insta::assert_json_snapshot!("to_streaming_json_function_call", item.to_streaming_json());
+    }
+
+    #[test]
+    fn snapshot_to_streaming_json_function_call_output() {
+        let item = ConversationItem::FunctionCallOutput {
+            call_id: "call-1".to_string(),
+            output: "result".to_string(),
+            timestamp: None,
+        };
+        insta::assert_json_snapshot!(
+            "to_streaming_json_function_call_output",
+            item.to_streaming_json()
+        );
+    }
 }

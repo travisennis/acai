@@ -1,0 +1,65 @@
+---
+source: src/clients/responses.rs
+expression: "serde_json::to_value(&request).unwrap()"
+---
+{
+  "input": [
+    {
+      "content": [
+        {
+          "text": "List files",
+          "type": "input_text"
+        }
+      ],
+      "role": "user",
+      "type": "message"
+    },
+    {
+      "arguments": "{\"cmd\":\"ls\"}",
+      "call_id": "call-1",
+      "id": "fc-1",
+      "name": "bash",
+      "type": "function_call"
+    },
+    {
+      "call_id": "call-1",
+      "output": "Cargo.toml\nsrc",
+      "type": "function_call_output"
+    }
+  ],
+  "instructions": "You are cake.",
+  "max_output_tokens": 2048,
+  "model": "openai/gpt-5",
+  "provider": {
+    "only": [
+      "OpenAI",
+      "Anthropic"
+    ]
+  },
+  "reasoning": {
+    "effort": "medium",
+    "max_tokens": 512,
+    "summary": "auto"
+  },
+  "temperature": 0.30000001192092896,
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "description": "Run a shell command",
+      "name": "bash",
+      "parameters": {
+        "properties": {
+          "cmd": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cmd"
+        ],
+        "type": "object"
+      },
+      "type": "function"
+    }
+  ],
+  "top_p": 0.949999988079071
+}

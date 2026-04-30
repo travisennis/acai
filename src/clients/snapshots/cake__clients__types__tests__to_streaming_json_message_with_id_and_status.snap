@@ -1,0 +1,11 @@
+---
+source: src/clients/types.rs
+expression: item.to_streaming_json()
+---
+{
+  "content": "Response",
+  "id": "msg-123",
+  "role": "assistant",
+  "status": "completed",
+  "type": "message"
+}

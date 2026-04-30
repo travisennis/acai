@@ -1,0 +1,24 @@
+---
+source: src/clients/responses.rs
+expression: "serde_json::to_value(&request).unwrap()"
+---
+{
+  "input": [
+    {
+      "content": [
+        {
+          "text": "Hello",
+          "type": "input_text"
+        }
+      ],
+      "role": "user",
+      "type": "message"
+    }
+  ],
+  "max_output_tokens": null,
+  "model": "openai/gpt-4.1",
+  "temperature": null,
+  "tool_choice": null,
+  "tools": null,
+  "top_p": null
+}

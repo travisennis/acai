@@ -1,0 +1,9 @@
+---
+source: src/clients/types.rs
+expression: item.to_api_input()
+---
+{
+  "call_id": "call-1",
+  "output": "file.txt\nother.txt",
+  "type": "function_call_output"
+}

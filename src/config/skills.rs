@@ -705,6 +705,20 @@ name: something
     }
 
     #[test]
+    fn snapshot_skill_catalog_single_skill_xml() {
+        let mut catalog = SkillCatalog::empty();
+        catalog.skills.push(Skill {
+            name: "debugging".to_string(),
+            description: "How to debug Rust programs".to_string(),
+            location: PathBuf::from("/project/.agents/skills/debugging/SKILL.md"),
+            base_directory: PathBuf::from("/project/.agents/skills/debugging"),
+            scope: SkillScope::Project,
+        });
+
+        insta::assert_snapshot!("skill_catalog_single_skill_xml", catalog.to_prompt_xml());
+    }
+
+    #[test]
     fn catalog_to_prompt_xml_empty() {
         let catalog = SkillCatalog::empty();
         assert_eq!(catalog.to_prompt_xml(), "");

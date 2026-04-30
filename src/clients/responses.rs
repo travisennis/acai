@@ -618,6 +618,102 @@ mod tests {
         assert!(config.is_none());
     }
 
+    #[test]
+    fn snapshot_responses_request_minimal() {
+        let history = vec![ConversationItem::Message {
+            role: Role::User,
+            content: "Hello".to_string(),
+            id: None,
+            status: None,
+            timestamp: None,
+        }];
+        let request = Request {
+            model: "openai/gpt-4.1",
+            input: build_input(&history),
+            instructions: None,
+            temperature: None,
+            top_p: None,
+            max_output_tokens: None,
+            tools: None,
+            tool_choice: None,
+            provider: None,
+            reasoning: None,
+        };
+
+        insta::assert_json_snapshot!(
+            "responses_request_minimal",
+            serde_json::to_value(&request).unwrap()
+        );
+    }
+
+    #[test]
+    fn snapshot_responses_request_with_tools_provider_and_reasoning() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::System,
+                content: "You are cake.".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Message {
+                role: Role::User,
+                content: "List files".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::FunctionCall {
+                id: "fc-1".to_string(),
+                call_id: "call-1".to_string(),
+                name: "bash".to_string(),
+                arguments: r#"{"cmd":"ls"}"#.to_string(),
+                timestamp: None,
+            },
+            ConversationItem::FunctionCallOutput {
+                call_id: "call-1".to_string(),
+                output: "Cargo.toml\nsrc".to_string(),
+                timestamp: None,
+            },
+        ];
+        let tools = vec![Tool {
+            type_: "function".to_string(),
+            name: "bash".to_string(),
+            description: "Run a shell command".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "cmd": { "type": "string" }
+                },
+                "required": ["cmd"]
+            }),
+        }];
+        let (instructions, non_system_history) = extract_instructions(&history);
+        let request = Request {
+            model: "openai/gpt-5",
+            input: build_input(non_system_history),
+            instructions,
+            temperature: Some(0.3),
+            top_p: Some(0.95),
+            max_output_tokens: Some(2048),
+            tools: Some(tools),
+            tool_choice: Some("auto".to_string()),
+            provider: Some(ProviderConfig {
+                only: vec!["OpenAI".to_string(), "Anthropic".to_string()],
+            }),
+            reasoning: Some(ReasoningConfig {
+                effort: Some("medium".to_string()),
+                summary: Some("auto".to_string()),
+                max_tokens: Some(512),
+            }),
+        };
+
+        insta::assert_json_snapshot!(
+            "responses_request_with_tools_provider_and_reasoning",
+            serde_json::to_value(&request).unwrap()
+        );
+    }
+
     // =========================================================================
     // Malformed Response Tests
     // =========================================================================

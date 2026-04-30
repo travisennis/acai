@@ -1,0 +1,29 @@
+---
+source: src/clients/chat_completions.rs
+expression: msgs
+---
+[
+  {
+    "role": "user",
+    "content": "do stuff"
+  },
+  {
+    "role": "assistant",
+    "content": "Let me check that.",
+    "tool_calls": [
+      {
+        "id": "call-1",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"cmd\":\"ls\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "content": "files",
+    "tool_call_id": "call-1"
+  }
+]

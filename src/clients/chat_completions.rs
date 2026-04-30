@@ -846,6 +846,244 @@ mod tests {
         assert!(msgs.is_empty());
     }
 
+    #[test]
+    fn snapshot_simple_conversation() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::System,
+                content: "You are helpful.".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Message {
+                role: Role::User,
+                content: "Hello".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+        ];
+        let msgs = build_messages(&history);
+        insta::assert_json_snapshot!("build_messages_simple_conversation", msgs);
+    }
+
+    #[test]
+    fn snapshot_grouped_function_calls() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::User,
+                content: "do stuff".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::FunctionCall {
+                id: "fc-1".to_string(),
+                call_id: "call-1".to_string(),
+                name: "bash".to_string(),
+                arguments: r#"{"cmd":"ls"}"#.to_string(),
+                timestamp: None,
+            },
+            ConversationItem::FunctionCall {
+                id: "fc-2".to_string(),
+                call_id: "call-2".to_string(),
+                name: "read".to_string(),
+                arguments: r#"{"path":"foo.txt"}"#.to_string(),
+                timestamp: None,
+            },
+            ConversationItem::FunctionCallOutput {
+                call_id: "call-1".to_string(),
+                output: "file.txt".to_string(),
+                timestamp: None,
+            },
+            ConversationItem::FunctionCallOutput {
+                call_id: "call-2".to_string(),
+                output: "contents".to_string(),
+                timestamp: None,
+            },
+        ];
+        let msgs = build_messages(&history);
+        insta::assert_json_snapshot!("build_messages_grouped_function_calls", msgs);
+    }
+
+    #[test]
+    fn snapshot_reasoning_with_assistant_text() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::User,
+                content: "think".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Reasoning {
+                id: "r-1".to_string(),
+                summary: vec!["thinking...".to_string()],
+                encrypted_content: None,
+                content: Some(vec![ReasoningContent {
+                    content_type: "reasoning_text".to_string(),
+                    text: Some("internal reasoning".to_string()),
+                }]),
+                timestamp: None,
+            },
+            ConversationItem::Message {
+                role: Role::Assistant,
+                content: "done".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+        ];
+        let msgs = build_messages(&history);
+        insta::assert_json_snapshot!("build_messages_reasoning_with_assistant_text", msgs);
+    }
+
+    #[test]
+    fn snapshot_reasoning_with_tool_calls() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::User,
+                content: "do stuff".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Reasoning {
+                id: "r-1".to_string(),
+                summary: vec!["thinking...".to_string()],
+                encrypted_content: None,
+                content: Some(vec![ReasoningContent {
+                    content_type: "reasoning_text".to_string(),
+                    text: Some("preserved reasoning".to_string()),
+                }]),
+                timestamp: None,
+            },
+            ConversationItem::FunctionCall {
+                id: "fc-1".to_string(),
+                call_id: "call-1".to_string(),
+                name: "bash".to_string(),
+                arguments: r#"{"cmd":"ls"}"#.to_string(),
+                timestamp: None,
+            },
+        ];
+        let msgs = build_messages(&history);
+        insta::assert_json_snapshot!("build_messages_reasoning_with_tool_calls", msgs);
+    }
+
+    #[test]
+    fn snapshot_assistant_text_with_tool_calls() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::User,
+                content: "do stuff".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::FunctionCall {
+                id: "fc-1".to_string(),
+                call_id: "call-1".to_string(),
+                name: "bash".to_string(),
+                arguments: r#"{"cmd":"ls"}"#.to_string(),
+                timestamp: None,
+            },
+            ConversationItem::Message {
+                role: Role::Assistant,
+                content: "Let me check that.".to_string(),
+                id: Some("msg-1".to_string()),
+                status: Some("completed".to_string()),
+                timestamp: None,
+            },
+            ConversationItem::FunctionCallOutput {
+                call_id: "call-1".to_string(),
+                output: "files".to_string(),
+                timestamp: None,
+            },
+        ];
+        let msgs = build_messages(&history);
+        insta::assert_json_snapshot!("build_messages_assistant_text_with_tool_calls", msgs);
+    }
+
+    #[test]
+    fn snapshot_empty_history() {
+        let msgs = build_messages(&[]);
+        insta::assert_json_snapshot!("build_messages_empty_history", msgs);
+    }
+
+    #[test]
+    fn snapshot_reasoning_placeholder_injection() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::User,
+                content: "do stuff".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::FunctionCall {
+                id: "fc-1".to_string(),
+                call_id: "call-1".to_string(),
+                name: "bash".to_string(),
+                arguments: r#"{"cmd":"ls"}"#.to_string(),
+                timestamp: None,
+            },
+        ];
+
+        let mut msgs = build_messages(&history);
+        inject_reasoning_placeholders(&mut msgs);
+        insta::assert_json_snapshot!("build_messages_with_reasoning_placeholder", msgs);
+    }
+
+    #[test]
+    fn snapshot_chat_request_kimi_tool_calls() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::User,
+                content: "List files".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::FunctionCall {
+                id: "fc-1".to_string(),
+                call_id: "call-1".to_string(),
+                name: "bash".to_string(),
+                arguments: r#"{"cmd":"ls"}"#.to_string(),
+                timestamp: None,
+            },
+        ];
+        let mut messages = build_messages(&history);
+        inject_reasoning_placeholders(&mut messages);
+        let tools = vec![Tool {
+            type_: "function".to_string(),
+            name: "bash".to_string(),
+            description: "Run a shell command".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "cmd": { "type": "string" }
+                },
+                "required": ["cmd"]
+            }),
+        }];
+        let request = ChatRequest {
+            model: "moonshot/kimi-k2.6",
+            messages,
+            temperature: Some(0.2),
+            top_p: Some(0.9),
+            max_completion_tokens: Some(1024),
+            tools: Some(convert_tools(&tools)),
+            tool_choice: Some("auto".to_string()),
+            reasoning_effort: Some("high".to_string()),
+        };
+
+        insta::assert_json_snapshot!(
+            "chat_request_kimi_tool_calls",
+            serde_json::to_value(&request).unwrap()
+        );
+    }
+
     // =========================================================================
     // Malformed Response Tests
     // =========================================================================

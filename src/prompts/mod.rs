@@ -108,6 +108,14 @@ mod tests {
     use crate::config::skills::{Skill, SkillScope};
     use std::path::PathBuf;
 
+    fn assert_prompt_snapshot(name: &str, prompt: &str) {
+        insta::with_settings!({
+            filters => vec![(r"Today's date: \d{4}-\d{2}-\d{2}", "Today's date: [DATE]")]
+        }, {
+            insta::assert_snapshot!(name, prompt);
+        });
+    }
+
     #[test]
     fn empty_agents_files() {
         let prompt = build_system_prompt(Path::new("/tmp"), &[], &SkillCatalog::empty());
@@ -215,5 +223,69 @@ mod tests {
         let agents_pos = prompt.find("## Additional Context:").unwrap();
         let skills_pos = prompt.find("## Skills").unwrap();
         assert!(agents_pos < skills_pos);
+    }
+
+    #[test]
+    fn snapshot_empty_prompt() {
+        let prompt = build_system_prompt(Path::new("/tmp"), &[], &SkillCatalog::empty());
+        assert_prompt_snapshot("prompt_empty", &prompt);
+    }
+
+    #[test]
+    fn snapshot_with_project_agents() {
+        let files = vec![AgentsFile {
+            path: "./AGENTS.md".to_string(),
+            content: "You are a Rust expert. Follow all project conventions.".to_string(),
+        }];
+        let prompt = build_system_prompt(Path::new("/project"), &files, &SkillCatalog::empty());
+        assert_prompt_snapshot("prompt_with_project_agents", &prompt);
+    }
+
+    #[test]
+    fn snapshot_with_user_and_project_agents() {
+        let files = vec![
+            AgentsFile {
+                path: "~/.cake/AGENTS.md".to_string(),
+                content: "User-level global instructions.".to_string(),
+            },
+            AgentsFile {
+                path: "./AGENTS.md".to_string(),
+                content: "Project-level overrides.".to_string(),
+            },
+        ];
+        let prompt = build_system_prompt(Path::new("/project"), &files, &SkillCatalog::empty());
+        assert_prompt_snapshot("prompt_with_user_and_project_agents", &prompt);
+    }
+
+    #[test]
+    fn snapshot_with_skill_catalog() {
+        let mut catalog = SkillCatalog::empty();
+        catalog.skills.push(Skill {
+            name: "debugging".to_string(),
+            description: "How to debug Rust programs".to_string(),
+            location: PathBuf::from("/project/.agents/skills/debugging/SKILL.md"),
+            base_directory: PathBuf::from("/project/.agents/skills/debugging"),
+            scope: SkillScope::Project,
+        });
+        let prompt = build_system_prompt(Path::new("/project"), &[], &catalog);
+        assert_prompt_snapshot("prompt_with_skill_catalog", &prompt);
+    }
+
+    #[test]
+    fn snapshot_with_agents_and_skills() {
+        let files = vec![AgentsFile {
+            path: "./AGENTS.md".to_string(),
+            content: "Project instructions for all contributors.".to_string(),
+        }];
+        let mut catalog = SkillCatalog::empty();
+        catalog.skills.push(Skill {
+            name: "debugging".to_string(),
+            description: "How to debug Rust programs".to_string(),
+            location: PathBuf::from("/project/.agents/skills/debugging/SKILL.md"),
+            base_directory: PathBuf::from("/project/.agents/skills/debugging"),
+            scope: SkillScope::Project,
+        });
+        let prompt = build_system_prompt(Path::new("/project"), &files, &catalog);
+        assert_prompt_snapshot("prompt_with_agents_and_skills", &prompt);
     }
 }

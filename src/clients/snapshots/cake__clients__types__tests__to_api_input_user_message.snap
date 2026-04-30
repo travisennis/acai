@@ -1,0 +1,14 @@
+---
+source: src/clients/types.rs
+expression: item.to_api_input()
+---
+{
+  "content": [
+    {
+      "text": "Hello",
+      "type": "input_text"
+    }
+  ],
+  "role": "user",
+  "type": "message"
+}

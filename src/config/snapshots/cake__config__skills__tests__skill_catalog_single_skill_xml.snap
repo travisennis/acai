@@ -1,0 +1,11 @@
+---
+source: src/config/skills.rs
+expression: catalog.to_prompt_xml()
+---
+<available_skills>
+  <skill>
+    <name>debugging</name>
+    <description>How to debug Rust programs</description>
+    <location>/project/.agents/skills/debugging/SKILL.md</location>
+  </skill>
+</available_skills>

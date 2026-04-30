@@ -1,0 +1,5 @@
+---
+source: src/clients/chat_completions.rs
+expression: msgs
+---
+[]
