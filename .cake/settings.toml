@@ -3,3 +3,7 @@ directories = [
     "/Users/travisennis/.local/share/cake",
     "/Users/travisennis/.config/cake",
 ]
+
+[skills]
+only = ["debugging-cake", "evaluating-cake", "simplifying-code"]
+ 
