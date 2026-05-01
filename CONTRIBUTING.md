@@ -171,6 +171,15 @@ cargo run --release -- "Your prompt here"
 ./target/release/cake --help
 ```
 
+## Updating Rust Version
+
+The project Rust toolchain is pinned in `rust-toolchain.toml`. When changing it:
+- Update `rust-toolchain.toml`.
+- Update matching project-toolchain pins in `.github/workflows/ci.yml`, `.github/workflows/release.yml`, and non-MSRV Rust jobs in `.github/workflows/scheduled.yml`.
+- Leave the scheduled `MSRV Compatibility` job pinned to the supported minimum Rust version unless intentionally changing MSRV.
+- Run `just rust-version-check` to verify pins are synchronized.
+- Run `just ci` before finishing the change.
+
 ## Git Workflow
 
 - **Never commit directly to the master branch** — verify current branch with `git branch` before committing
