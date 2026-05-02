@@ -179,6 +179,9 @@ base_url = "https://openrouter.ai/api/v1/"
 api_key_env = "OPENROUTER_API_KEY"
 api_type = "responses"
 reasoning_max_tokens = 8000        # Budget-style for Anthropic via OpenRouter
+
+[skills]
+path = "~/my-skills:/shared/team-skills"
 ```
 
 ```bash

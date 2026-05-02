@@ -56,10 +56,11 @@ The markdown body contains the actual instructions. It is lazy-loaded (read from
 
 ## Discovery
 
-Skills are discovered from two locations, in this precedence order:
+Skills are discovered from these locations, in precedence order:
 
 1. **Project-level**: `{working_dir}/.agents/skills/`
-2. **User-level**: `~/.agents/skills/`
+2. **Configured paths**: directories listed in `skills.path`
+3. **User-level**: `~/.agents/skills/`
 
 ### Discovery Rules
 
@@ -68,7 +69,8 @@ Skills are discovered from two locations, in this precedence order:
 - Maximum scan depth: 4 levels
 - Maximum directories scanned: 2000
 - Name collisions within the same scope: first found wins
-- Project skills override user skills with the same name
+- Project skills override configured and user skills with the same name
+- Configured skills override user skills with the same name
 - Malformed skills produce diagnostics (logged as warnings/errors) but do not block other skills
 
 ### Example Discovery Output
@@ -161,12 +163,14 @@ Add a `[skills]` section to `settings.toml`:
 [skills]
 disabled = false
 only = ["debugging-cake", "evaluating-cake"]
+path = "~/my-skills:/shared/team-skills"
 ```
 
 | Field | Description |
 |-------|-------------|
 | `disabled` | If `true`, disable all skills by default |
 | `only` | List of skill names to load (empty = all) |
+| `path` | Additional directories containing skills. Use colon-separated paths, semicolon on Windows, and `~` for the home directory |
 
 ### Precedence
 

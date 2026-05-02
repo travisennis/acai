@@ -145,12 +145,14 @@ The `[skills]` section controls skill discovery and filtering:
 [skills]
 disabled = false       # Set to true to disable all skills
 only = []              # List of skill names to load (empty = all)
+path = ""              # Additional skill roots; colon-separated, semicolon on Windows
 ```
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `disabled` | `false` | If `true`, no skills are discovered or shown in the system prompt |
 | `only` | `[]` | If non-empty, only skills with these names are loaded |
+| `path` | `""` | Additional directories containing skills. Supports platform-separated paths and `~` for the home directory, for example `~/my-skills:/shared/team-skills` |
 
 ### Precedence
 

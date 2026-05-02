@@ -17,6 +17,9 @@ pub struct SkillSettings {
     /// Optional list of skill names to load (empty = all)
     #[serde(default)]
     pub only: Vec<String>,
+    /// Additional skill directories, separated by the platform path separator.
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 /// Partial skill settings used by profiles.
@@ -28,6 +31,9 @@ pub struct SkillSettingsOverlay {
     /// If set, overrides the skill allowlist.
     #[serde(default)]
     pub only: Option<Vec<String>>,
+    /// If set, overrides additional skill directories.
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 impl SkillSettings {
@@ -37,6 +43,9 @@ impl SkillSettings {
         }
         if let Some(only) = overlay.only {
             self.only = only;
+        }
+        if overlay.path.is_some() {
+            self.path = overlay.path;
         }
     }
 }
@@ -1114,6 +1123,99 @@ api_key_env = "PROJECT_KEY"
         .unwrap();
 
         assert_eq!(loaded.skills.only, vec!["global-skill"]);
+    }
+
+    #[test]
+    fn test_skills_path_loads_from_settings() {
+        let dir = create_project_settings(
+            r#"
+[skills]
+path = "~/my-skills:/shared/team-skills"
+
+[[models]]
+name = "zen"
+model = "glm-5.1"
+base_url = "https://example.com"
+api_key_env = "KEY"
+"#,
+        );
+
+        let home = create_home_dir();
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(dir.path()))
+        })
+        .unwrap();
+
+        assert_eq!(
+            loaded.skills.path,
+            Some("~/my-skills:/shared/team-skills".to_string())
+        );
+    }
+
+    #[test]
+    fn test_project_skills_overrides_global_skills_path() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+[skills]
+path = "/global/skills"
+
+[[models]]
+name = "global-model"
+model = "global/model"
+base_url = "https://global.example.com"
+api_key_env = "GLOBAL_KEY"
+"#,
+        );
+
+        let project_dir = create_project_settings(
+            r#"
+[skills]
+path = "/project/skills"
+
+[[models]]
+name = "project-model"
+model = "project/model"
+base_url = "https://project.example.com"
+api_key_env = "PROJECT_KEY"
+"#,
+        );
+
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(project_dir.path()))
+        })
+        .unwrap();
+
+        assert_eq!(loaded.skills.path, Some("/project/skills".to_string()));
+    }
+
+    #[test]
+    fn test_profile_skills_path_overrides_top_level() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+[skills]
+path = "/base/skills"
+
+[[models]]
+name = "base"
+model = "base/model"
+base_url = "https://example.com"
+api_key_env = "KEY"
+
+[profiles.expanded.skills]
+path = "/profile/skills"
+"#,
+        );
+
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load_with_profile(None, Some("expanded"))
+        })
+        .unwrap();
+
+        assert_eq!(loaded.skills.path, Some("/profile/skills".to_string()));
     }
 
     #[test]

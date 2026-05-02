@@ -27,4 +27,7 @@ pub use session::Session;
 #[doc(inline)]
 pub use settings::{ModelDefinition, SettingsLoader};
 #[doc(inline)]
-pub use skills::{DiagnosticLevel, SkillCatalog, discover_skills};
+pub use skills::{
+    DiagnosticLevel, SkillCatalog, discover_skills, discover_skills_with_paths,
+    parse_skill_path_list,
+};

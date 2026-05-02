@@ -1,7 +1,8 @@
 //! Skill discovery, parsing, and catalog management for cake.
 //!
 //! Skills provide specialized instructions for specific tasks. They are discovered
-//! from `.agents/skills/` directories at both project and user levels.
+//! from `.agents/skills/` directories at both project and user levels, plus
+//! optional configured skill directories.
 //!
 //! Each skill is defined by a `SKILL.md` file with YAML frontmatter containing
 //! metadata (name, description) and markdown body content.
@@ -15,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 /// A discovered skill with parsed metadata.
 ///
-/// Skills are loaded from `SKILL.md` files found in `.agents/skills/` subdirectories.
+/// Skills are loaded from `SKILL.md` files found in skill root subdirectories.
 /// The body content is lazy-loaded at activation time to minimize memory usage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Skill {
@@ -36,6 +37,8 @@ pub struct Skill {
 pub enum SkillScope {
     /// Skill discovered from the project's `.agents/skills/` directory
     Project,
+    /// Skill discovered from a directory configured in settings.toml
+    Configured,
     /// Skill discovered from the user's `~/.agents/skills/` directory
     User,
 }
@@ -353,10 +356,21 @@ const MAX_DIRS: usize = 2000;
 ///
 /// Returns a `SkillCatalog` with discovered skills and any diagnostics.
 pub fn discover_skills(working_dir: &Path) -> SkillCatalog {
+    discover_skills_with_paths(working_dir, &[])
+}
+
+/// Discover skills from default locations plus configured skill roots.
+///
+/// Precedence is project skills, configured skills in path order, then user
+/// skills. Lower-precedence skills with duplicate names are skipped.
+pub fn discover_skills_with_paths(
+    working_dir: &Path,
+    configured_skill_dirs: &[PathBuf],
+) -> SkillCatalog {
     let mut catalog = SkillCatalog::empty();
     let mut scanned_dirs = 0;
 
-    // Scan paths: project first, then user
+    // Scan paths: project first, configured paths next, then user.
     let project_skills_dir = working_dir.join(".agents").join("skills");
     let user_skills_dir = dirs::home_dir().map(|h| h.join(".agents").join("skills"));
 
@@ -372,6 +386,44 @@ pub fn discover_skills(working_dir: &Path) -> SkillCatalog {
             0,
         );
     }
+
+    let mut configured_skill_names = HashSet::new();
+    for configured_dir in configured_skill_dirs {
+        if configured_dir.exists() && configured_dir.is_dir() {
+            scan_directory(
+                configured_dir,
+                SkillScope::Configured,
+                &mut catalog,
+                &mut configured_skill_names,
+                &mut scanned_dirs,
+                0,
+            );
+        } else {
+            catalog.diagnostics.push(SkillDiagnostic {
+                level: DiagnosticLevel::Warning,
+                message: "Configured skill directory does not exist or is not a directory"
+                    .to_string(),
+                file: configured_dir.clone(),
+            });
+        }
+    }
+
+    // Filter out configured skills that collide with project skills.
+    catalog.skills.retain(|s| {
+        if s.scope == SkillScope::Configured && project_skill_names.contains(&s.name) {
+            catalog.diagnostics.push(SkillDiagnostic {
+                level: DiagnosticLevel::Warning,
+                message: format!(
+                    "Configured skill '{}' shadowed by project skill with same name",
+                    s.name
+                ),
+                file: s.location.clone(),
+            });
+            false
+        } else {
+            true
+        }
+    });
 
     // Then collect user skills (skip if name collision with project)
     if let Some(ref user_dir) = user_skills_dir
@@ -390,11 +442,14 @@ pub fn discover_skills(working_dir: &Path) -> SkillCatalog {
 
         // Filter out user skills that collide with project skills
         catalog.skills.retain(|s| {
-            if s.scope == SkillScope::User && project_skill_names.contains(&s.name) {
+            if s.scope == SkillScope::User
+                && (project_skill_names.contains(&s.name)
+                    || configured_skill_names.contains(&s.name))
+            {
                 catalog.diagnostics.push(SkillDiagnostic {
                     level: DiagnosticLevel::Warning,
                     message: format!(
-                        "User skill '{}' shadowed by project skill with same name",
+                        "User skill '{}' shadowed by higher-precedence skill",
                         s.name
                     ),
                     file: s.location.clone(),
@@ -407,6 +462,37 @@ pub fn discover_skills(working_dir: &Path) -> SkillCatalog {
     }
 
     catalog
+}
+
+/// Parse a platform-separated skill path string and expand `~` to the home directory.
+pub fn parse_skill_path_list(path_list: &str) -> Vec<PathBuf> {
+    std::env::split_paths(path_list)
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(expand_home)
+        .collect()
+}
+
+fn expand_home(path: PathBuf) -> PathBuf {
+    let Some(path_str) = path.to_str() else {
+        return path;
+    };
+
+    if path_str == "~" {
+        if let Some(home_dir) = dirs::home_dir() {
+            return home_dir;
+        }
+        return path;
+    }
+
+    if let Some(rest) = path_str
+        .strip_prefix("~/")
+        .or_else(|| path_str.strip_prefix("~\\"))
+        && let Some(home_dir) = dirs::home_dir()
+    {
+        return home_dir.join(rest);
+    }
+
+    path
 }
 
 /// Recursively scan a directory for SKILL.md files.
@@ -760,6 +846,57 @@ name: something
         let names: Vec<_> = project_skills.iter().map(|s| s.name.clone()).collect();
         assert!(names.contains(&"skill-a".to_string()));
         assert!(names.contains(&"skill-b".to_string()));
+    }
+
+    #[test]
+    fn discover_skills_finds_configured_skills() {
+        let tmp = TempDir::new().unwrap();
+        let configured_dir = TempDir::new().unwrap();
+        create_skill_file(configured_dir.path(), "team-skill", "Team skill");
+
+        let catalog =
+            discover_skills_with_paths(tmp.path(), &[configured_dir.path().to_path_buf()]);
+
+        assert_eq!(catalog.skills.len(), 1);
+        assert_eq!(catalog.skills[0].name, "team-skill");
+        assert_eq!(catalog.skills[0].scope, SkillScope::Configured);
+    }
+
+    #[test]
+    fn discover_skills_project_shadows_configured_skills() {
+        let tmp = TempDir::new().unwrap();
+        let agents_dir = tmp.path().join(".agents").join("skills");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        create_skill_file(&agents_dir, "shared-skill", "Project skill");
+
+        let configured_dir = TempDir::new().unwrap();
+        create_skill_file(configured_dir.path(), "shared-skill", "Configured skill");
+
+        let catalog =
+            discover_skills_with_paths(tmp.path(), &[configured_dir.path().to_path_buf()]);
+
+        assert_eq!(catalog.skills.len(), 1);
+        assert_eq!(catalog.skills[0].scope, SkillScope::Project);
+        assert!(
+            catalog
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("shadowed by project skill"))
+        );
+    }
+
+    #[test]
+    fn parse_skill_path_list_splits_paths_and_expands_home() {
+        let home = TempDir::new().unwrap();
+        temp_env::with_var("HOME", Some(home.path()), || {
+            let separator = if cfg!(windows) { ";" } else { ":" };
+            let paths =
+                parse_skill_path_list(&format!("~/my-skills{separator}/shared/team-skills"));
+
+            assert_eq!(paths.len(), 2);
+            assert_eq!(paths[0], home.path().join("my-skills"));
+            assert_eq!(paths[1], PathBuf::from("/shared/team-skills"));
+        });
     }
 
     #[test]

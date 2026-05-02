@@ -19,8 +19,8 @@ use std::path::PathBuf;
 
 use crate::config::{
     AgentsFile, DataDir, DiagnosticLevel, ModelConfig, ModelDefinition, ResolvedModelConfig,
-    Session, SettingsLoader, SkillCatalog, discover_skills, load_session_from_path,
-    looks_like_uuid, worktree,
+    Session, SettingsLoader, SkillCatalog, discover_skills, discover_skills_with_paths,
+    load_session_from_path, looks_like_uuid, parse_skill_path_list, worktree,
 };
 use crate::models::{Message, Role};
 use crate::prompts::build_system_prompt;
@@ -622,7 +622,17 @@ impl CmdRunner for CodingAssistant {
             &loaded.skills,
         );
 
-        let mut skill_catalog = discover_skills(&current_dir);
+        let configured_skill_dirs = loaded
+            .skills
+            .path
+            .as_deref()
+            .map(parse_skill_path_list)
+            .unwrap_or_default();
+        let mut skill_catalog = if configured_skill_dirs.is_empty() {
+            discover_skills(&current_dir)
+        } else {
+            discover_skills_with_paths(&current_dir, &configured_skill_dirs)
+        };
         skill_catalog = skill_config.apply(skill_catalog);
 
         // Set up skill directories for path validation
