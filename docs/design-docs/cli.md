@@ -57,6 +57,10 @@ pub struct CodingAssistant {
     #[arg(long)]
     pub model: Option<String>,
 
+    /// Apply a named behavior profile from settings.toml
+    #[arg(long, value_name = "NAME")]
+    pub profile: Option<String>,
+
     /// Override reasoning effort level (none, low, medium, high, xhigh)
     #[arg(long, value_name = "EFFORT")]
     pub reasoning_effort: Option<String>,
@@ -77,7 +81,8 @@ Model-related settings (`model`, `temperature`, `top_p`, `api_type`, etc.) are c
 
 1. **Settings TOML** (`settings.toml`): Named models can be defined in settings files (see below)
 2. **Settings `default_model`**: Optional model name used when `--model` is omitted
-3. **CLI flags**: `--model` to select a named model, `--max-tokens` for token override
+3. **Settings profiles**: Optional behavior overlays selected with `--profile`
+4. **CLI flags**: `--model` to select a named model, `--max-tokens` for token override
 
 #### Settings TOML
 
@@ -110,6 +115,12 @@ api_key_env = "OPENROUTER_API_KEY"
 api_type = "responses"
 temperature = 0.7
 top_p = 0.9
+
+[profiles.review]
+default_model = "claude"
+
+[profiles.review.skills]
+only = ["debugging-cake", "evaluating-cake"]
 ```
 
 Use `--model <name>` to select a named model from settings:
@@ -117,9 +128,14 @@ Use `--model <name>` to select a named model from settings:
 ```bash
 # Use the "claude" model from settings.toml
 cake --model claude "Your prompt here"
+
+# Apply behavior settings from [profiles.review]
+cake --profile review "Your prompt here"
 ```
 
 If `--model` is not provided, cake uses the configured `default_model` from settings. If no `default_model` is configured, cake exits with setup instructions; there is no built-in default model.
+
+Profiles can override `default_model`, skill settings, and persistent settings `directories`. Model provider configs are always top-level `[[models]]` entries and are not supported inside profiles.
 
 The struct implements the `CmdRunner` trait for execution:
 

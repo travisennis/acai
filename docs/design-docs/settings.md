@@ -10,6 +10,7 @@ cake supports loading configuration from `settings.toml` files, enabling:
 - **Project-level settings**: Per-project `.cake/settings.toml`
 - **Global settings**: System-wide `~/.config/cake/settings.toml`
 - **Merge semantics**: Project settings override global settings for conflicting model names
+- **Profiles**: Named behavior overlays selected with `--profile`
 
 ## File Locations
 
@@ -30,6 +31,7 @@ Settings are merged with the following rules:
 2. **Project settings overlay**: `./.cake/settings.toml` is loaded and added to the map
 3. **Project overrides global**: If the same model name exists in both, project wins
 4. **No in-file duplicates**: A single file cannot define the same model name twice (error)
+5. **Profiles overlay behavior**: selected profiles can override `default_model`, `skills`, and `directories`, but cannot define models
 
 This allows you to:
 - Define base models globally
@@ -91,7 +93,49 @@ top_p = 0.9
 [skills]
 disabled = false
 only = ["debugging-cake", "evaluating-cake"]
+
+# Profiles are selected with --profile <name>
+[profiles.fast]
+default_model = "zen"
+
+[profiles.review.skills]
+only = ["debugging-cake", "evaluating-cake"]
+
+[profiles.expanded]
+directories = ["../shared-libs"]
 ```
+
+## Profiles
+
+Profiles are named overlays for quickly changing agent behavior:
+
+```toml
+[profiles.fast]
+default_model = "deepseek"
+
+[profiles.review.skills]
+only = ["review", "debugging-cake"]
+```
+
+Supported profile fields:
+
+| Field | Description |
+|-------|-------------|
+| `default_model` | Model name to use when `--model` is omitted |
+| `[profiles.<name>.skills]` | Partial skill settings overlay |
+| `directories` | Additional persistent read-write directories |
+
+Model provider configs are not allowed inside profiles. Keep all model definitions in top-level `[[models]]` entries.
+
+Profile precedence when `--profile <name>` is selected:
+
+1. CLI flags: `--model`, `--skills`, `--no-skills`, reasoning overrides, `--add-dir`
+2. Project selected profile
+3. Global selected profile
+4. Project top-level settings
+5. Global top-level settings
+
+Profile names use the same format as model names: lowercase letters, numbers, and hyphens.
 
 ## Skill Configuration
 
@@ -167,6 +211,9 @@ cake --model claude "Your prompt here"
 
 # Select "deepseek" model
 cake --model deepseek "Your prompt here"
+
+# Apply the "review" profile
+cake --profile review "Your prompt here"
 ```
 
 ### Behavior

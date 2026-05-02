@@ -187,9 +187,29 @@ cake --model claude "Your prompt here"
 
 # Without --model, uses the configured default_model
 cake "Your prompt here"
+
+# Apply a behavior profile from settings.toml
+cake --profile review "Your prompt here"
 ```
 
 See `.cake/settings.toml` for a complete example.
+
+#### Profiles
+
+Profiles are named behavior overlays in `settings.toml`. They can change `default_model`, skill filtering, and persistent read-write directories without redefining model provider configs.
+
+```toml
+[profiles.fast]
+default_model = "deepseek"
+
+[profiles.review.skills]
+only = ["debugging-cake", "evaluating-cake"]
+
+[profiles.expanded]
+directories = ["../shared-libs"]
+```
+
+When `--profile <name>` is passed, cake applies top-level global settings, top-level project settings, then the selected global and project profile. CLI flags such as `--model`, `--skills`, and `--no-skills` still win.
 
 #### Reasoning Configuration
 
@@ -391,6 +411,7 @@ fi
 - `--max-tokens` - Set maximum tokens in response
 - `--output-format` - Output format: `text` (default) or `stream-json`
 - `--model <NAME>` - Select a named model from settings.toml
+- `--profile <NAME>` - Apply a named behavior profile from settings.toml
 - `--continue` - Continue the most recent session for the current directory
 - `--resume <UUID_OR_PATH>` - Resume a specific session by UUID or file path
 - `--fork [UUID_OR_PATH]` - Fork a session (copy history into new session), optionally specify UUID or file path

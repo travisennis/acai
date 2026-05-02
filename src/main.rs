@@ -80,6 +80,10 @@ struct CodingAssistant {
     #[arg(long)]
     pub model: Option<String>,
 
+    /// Apply a named behavior profile from settings.toml
+    #[arg(long, value_name = "NAME")]
+    pub profile: Option<String>,
+
     /// Override reasoning effort level (none, low, medium, high, xhigh)
     #[arg(long, value_name = "EFFORT")]
     pub reasoning_effort: Option<String>,
@@ -603,16 +607,19 @@ impl CmdRunner for CodingAssistant {
             .map_err(|e| anyhow::anyhow!("Failed to get current directory: {e}"))?;
 
         // Load settings from TOML files
-        let loaded = SettingsLoader::load(Some(&current_dir))?;
+        let loaded = if let Some(profile) = self.profile.as_deref() {
+            SettingsLoader::load_with_profile(Some(&current_dir), Some(profile))?
+        } else {
+            SettingsLoader::load(Some(&current_dir))?
+        };
 
         let agents_files = data_dir.read_agents_files(&current_dir);
 
         // Load skill settings and discover skills
-        let skill_settings = SettingsLoader::load_skill_settings(Some(&current_dir));
         let skill_config = SettingsLoader::resolve_skill_config(
             self.no_skills,
             self.skills.as_deref(),
-            &skill_settings,
+            &loaded.skills,
         );
 
         let mut skill_catalog = discover_skills(&current_dir);
@@ -933,6 +940,13 @@ mod tests {
     }
 
     #[test]
+    fn test_cli_parsing_profile_flag() {
+        let args = CodingAssistant::parse_from(["cake", "--profile", "review", "test prompt"]);
+        assert_eq!(args.profile, Some("review".to_string()));
+        assert_eq!(args.prompt, Some("test prompt".to_string()));
+    }
+
+    #[test]
     fn test_cli_parsing_no_session() {
         let args = CodingAssistant::parse_from(["cake", "--no-session", "test prompt"]);
         assert!(args.no_session);
@@ -1087,6 +1101,51 @@ mod tests {
         assert_eq!(config.api_type, ApiType::Responses);
         assert_eq!(config.temperature, Some(0.7));
         assert_eq!(config.top_p, Some(0.9));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_resolve_model_config_model_flag_overrides_default_model() {
+        let args = CodingAssistant::parse_from(["cake", "--model", "claude", "test"]);
+
+        let mut models = HashMap::new();
+        models.insert(
+            "zen".to_string(),
+            ModelDefinition {
+                name: "zen".to_string(),
+                model: "glm-5.1".to_string(),
+                base_url: "https://example.com".to_string(),
+                api_key_env: "KEY".to_string(),
+                api_type: ApiType::ChatCompletions,
+                temperature: None,
+                top_p: None,
+                max_output_tokens: None,
+                reasoning_effort: None,
+                reasoning_summary: None,
+                reasoning_max_tokens: None,
+                providers: vec![],
+            },
+        );
+        models.insert(
+            "claude".to_string(),
+            ModelDefinition {
+                name: "claude".to_string(),
+                model: "anthropic/claude-3-sonnet".to_string(),
+                base_url: "https://openrouter.ai/api/v1/".to_string(),
+                api_key_env: "OPENROUTER_API_KEY".to_string(),
+                api_type: ApiType::Responses,
+                temperature: None,
+                top_p: None,
+                max_output_tokens: None,
+                reasoning_effort: None,
+                reasoning_summary: None,
+                reasoning_max_tokens: None,
+                providers: vec![],
+            },
+        );
+
+        let config = args.resolve_model_config(&models, Some("zen")).unwrap();
+        assert_eq!(config.model, "anthropic/claude-3-sonnet");
     }
 
     #[test]

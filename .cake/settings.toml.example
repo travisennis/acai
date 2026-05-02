@@ -27,6 +27,15 @@ api_key_env = "OPENCODE_ZEN_API_TOKEN"
 # Optional: provider routing hints
 # providers = []
 
+# Optional behavior profiles. Select with: cake --profile fast "..."
+# Profiles can override default_model, skills, and directories.
+# Model configs must stay in top-level [[models]] sections.
+[profiles.fast]
+default_model = "zen"
+
+[profiles.review.skills]
+only = ["debugging-cake", "evaluating-cake"]
+
 [[models]]
 name = "claude"
 model = "anthropic/claude-3-sonnet"

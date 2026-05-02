@@ -19,6 +19,45 @@ pub struct SkillSettings {
     pub only: Vec<String>,
 }
 
+/// Partial skill settings used by profiles.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SkillSettingsOverlay {
+    /// If set, overrides whether skills are disabled.
+    #[serde(default)]
+    pub disabled: Option<bool>,
+    /// If set, overrides the skill allowlist.
+    #[serde(default)]
+    pub only: Option<Vec<String>>,
+}
+
+impl SkillSettings {
+    fn apply_overlay(&mut self, overlay: SkillSettingsOverlay) {
+        if let Some(disabled) = overlay.disabled {
+            self.disabled = disabled;
+        }
+        if let Some(only) = overlay.only {
+            self.only = only;
+        }
+    }
+}
+
+/// Profile-specific behavior settings.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProfileSettings {
+    /// Name of the model to use when `--model` is not specified.
+    #[serde(default)]
+    pub default_model: Option<String>,
+    /// Skill configuration overlay.
+    #[serde(default)]
+    pub skills: SkillSettingsOverlay,
+    /// Additional directories for read-write access.
+    #[serde(default)]
+    pub directories: Vec<String>,
+    /// Model definitions are intentionally not supported in profiles.
+    #[serde(default)]
+    pub models: Option<Vec<ModelDefinition>>,
+}
+
 /// Root settings structure loaded from settings.toml.
 ///
 /// Contains a list of model definitions, an optional default model name,
@@ -48,11 +87,14 @@ pub struct Settings {
     pub models: Vec<ModelDefinition>,
     /// Skill configuration
     #[serde(default)]
-    pub skills: SkillSettings,
+    pub skills: Option<SkillSettings>,
     /// Additional directories for read-write access.
     /// Merged from global and project settings.
     #[serde(default)]
     pub directories: Vec<String>,
+    /// Named behavior profiles.
+    #[serde(default)]
+    pub profiles: HashMap<String, ProfileSettings>,
 }
 
 /// Result of loading and merging settings from all sources.
@@ -68,6 +110,8 @@ pub struct LoadedSettings {
     pub default_model: Option<String>,
     /// Additional directories for read-write access (global + project merged)
     pub directories: Vec<String>,
+    /// Effective skill settings (global + project + selected profile)
+    pub skills: SkillSettings,
 }
 
 /// Definition of a named model in settings.toml.
@@ -215,6 +259,15 @@ pub enum SettingsError {
     #[error("Duplicate model name '{name}' in settings")]
     DuplicateModelName { name: String },
 
+    #[error("Invalid profile name '{name}': {reason}")]
+    InvalidProfileName { name: String, reason: String },
+
+    #[error("Profile '{name}' defines models, but model configs are only supported at top level")]
+    ProfileModelsUnsupported { name: String },
+
+    #[error("Unknown profile '{name}'{available}. Define [profiles.{name}] in settings.toml.")]
+    UnknownProfile { name: String, available: String },
+
     #[error(
         "Default model '{name}' not found in models list. \
          Define a [[models]] entry with name = \"{name}\", \
@@ -262,31 +315,6 @@ impl SettingsLoader {
         let content = std::fs::read_to_string(path)?;
         let settings: Settings = toml::from_str(&content)?;
         Ok(Some(settings))
-    }
-
-    /// Load skill settings from global and project TOML files.
-    ///
-    /// Project settings override global settings.
-    pub fn load_skill_settings(project_dir: Option<&Path>) -> SkillSettings {
-        let mut settings = SkillSettings::default();
-
-        // Load global settings first
-        if let Some(home_dir) = dirs::home_dir() {
-            let global_path = home_dir.join(".config").join("cake").join("settings.toml");
-            if let Ok(Some(loaded)) = Self::load_file(&global_path) {
-                settings = loaded.skills;
-            }
-        }
-
-        // Load project settings last (override global)
-        if let Some(project_dir) = project_dir {
-            let project_path = project_dir.join(".cake").join("settings.toml");
-            if let Ok(Some(loaded)) = Self::load_file(&project_path) {
-                settings = loaded.skills;
-            }
-        }
-
-        settings
     }
 
     /// Resolve skill configuration from CLI flags and settings.
@@ -358,19 +386,33 @@ impl SettingsLoader {
     /// if duplicate model names are found within the same file,
     /// or if `default_model` references a model that doesn't exist.
     pub fn load(project_dir: Option<&Path>) -> Result<LoadedSettings, SettingsError> {
+        Self::load_with_profile(project_dir, None)
+    }
+
+    /// Loads and merges settings, applying the selected profile if provided.
+    pub fn load_with_profile(
+        project_dir: Option<&Path>,
+        profile: Option<&str>,
+    ) -> Result<LoadedSettings, SettingsError> {
         let mut models: HashMap<String, ModelDefinition> = HashMap::new();
         let mut default_model: Option<String> = None;
         let mut directories: HashSet<String> = HashSet::new();
+        let mut skills = SkillSettings::default();
+        let mut profiles: HashMap<String, Vec<ProfileSettings>> = HashMap::new();
 
         // Load global settings first.
         if let Some(home_dir) = dirs::home_dir() {
             let global_path = home_dir.join(".config").join("cake").join("settings.toml");
             if let Some(settings) = Self::load_file(&global_path)? {
-                Self::add_models_to_map(&mut models, settings.models)?;
-                default_model = settings.default_model;
-                for dir in settings.directories {
-                    directories.insert(dir);
-                }
+                Self::validate_profiles(&settings.profiles)?;
+                Self::merge_settings(
+                    settings,
+                    &mut models,
+                    &mut default_model,
+                    &mut directories,
+                    &mut skills,
+                    &mut profiles,
+                )?;
             }
         }
 
@@ -378,38 +420,48 @@ impl SettingsLoader {
         if let Some(project_dir) = project_dir {
             let project_path = project_dir.join(".cake").join("settings.toml");
             if let Some(settings) = Self::load_file(&project_path)? {
-                Self::add_models_to_map(&mut models, settings.models)?;
-                if settings.default_model.is_some() {
-                    default_model = settings.default_model;
-                }
-                for dir in settings.directories {
-                    directories.insert(dir);
-                }
+                Self::validate_profiles(&settings.profiles)?;
+                Self::merge_settings(
+                    settings,
+                    &mut models,
+                    &mut default_model,
+                    &mut directories,
+                    &mut skills,
+                    &mut profiles,
+                )?;
             }
         }
 
-        // If project set default_model to None explicitly, respect that.
-        // We handle this by checking project settings file directly for the field.
-        if let Some(project_dir) = project_dir {
-            let project_path = project_dir.join(".cake").join("settings.toml");
-            if let Ok(Some(settings)) = Self::load_file(&project_path) {
-                // Did the project file contain a default_model key at all?
-                // Serde treats missing key as None, but we need to distinguish
-                // "not set" from "explicitly set to an empty/default".
-                // Read raw to check.
-                if let Ok(content) = std::fs::read_to_string(&project_path) {
-                    let raw: toml::Value = toml::from_str(&content)
-                        .unwrap_or_else(|_| toml::Value::Table(toml::Table::new()));
-                    if let Some(table) = raw.as_table()
-                        && table.contains_key("default_model")
-                    {
-                        // Project file explicitly mentions default_model.
-                        // If the parsed value is None, they explicitly cleared it.
-                        if settings.default_model.is_none() {
-                            default_model = None;
-                        }
-                    }
+        if let Some(name) = profile {
+            if let Err(e) = ModelDefinition::validate_name(name) {
+                return Err(SettingsError::InvalidProfileName {
+                    name: name.to_string(),
+                    reason: e.to_string(),
+                });
+            }
+
+            let Some(overlays) = profiles.get(name) else {
+                let mut available: Vec<_> = profiles.keys().cloned().collect();
+                available.sort();
+                let available = if available.is_empty() {
+                    String::new()
+                } else {
+                    format!(". Available profiles: {}", available.join(", "))
+                };
+                return Err(SettingsError::UnknownProfile {
+                    name: name.to_string(),
+                    available,
+                });
+            };
+
+            for overlay in overlays {
+                if let Some(ref profile_default) = overlay.default_model {
+                    default_model = Some(profile_default.clone());
                 }
+                for dir in &overlay.directories {
+                    directories.insert(dir.clone());
+                }
+                skills.apply_overlay(overlay.skills.clone());
             }
         }
 
@@ -424,7 +476,47 @@ impl SettingsLoader {
             models,
             default_model,
             directories: directories.into_iter().collect(),
+            skills,
         })
+    }
+
+    fn merge_settings(
+        settings: Settings,
+        models: &mut HashMap<String, ModelDefinition>,
+        default_model: &mut Option<String>,
+        directories: &mut HashSet<String>,
+        skills: &mut SkillSettings,
+        profiles: &mut HashMap<String, Vec<ProfileSettings>>,
+    ) -> Result<(), SettingsError> {
+        Self::add_models_to_map(models, settings.models)?;
+        if settings.default_model.is_some() {
+            *default_model = settings.default_model;
+        }
+        for dir in settings.directories {
+            directories.insert(dir);
+        }
+        if let Some(settings_skills) = settings.skills {
+            *skills = settings_skills;
+        }
+        for (name, profile) in settings.profiles {
+            profiles.entry(name).or_default().push(profile);
+        }
+        Ok(())
+    }
+
+    fn validate_profiles(profiles: &HashMap<String, ProfileSettings>) -> Result<(), SettingsError> {
+        for (name, profile) in profiles {
+            if let Err(e) = ModelDefinition::validate_name(name) {
+                return Err(SettingsError::InvalidProfileName {
+                    name: name.clone(),
+                    reason: e.to_string(),
+                });
+            }
+            if profile.models.is_some() {
+                return Err(SettingsError::ProfileModelsUnsupported { name: name.clone() });
+            }
+        }
+        Ok(())
     }
 
     /// Add models from a settings file to the map.
@@ -987,5 +1079,345 @@ api_key_env = "PROJECT_KEY"
 
         // Project didn't set default_model, so global persists
         assert_eq!(loaded.default_model, Some("global-model".to_string()));
+    }
+
+    #[test]
+    fn test_project_without_skills_preserves_global_skills() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+[skills]
+only = ["global-skill"]
+
+[[models]]
+name = "global-model"
+model = "global/model"
+base_url = "https://global.example.com"
+api_key_env = "GLOBAL_KEY"
+"#,
+        );
+
+        let project_dir = create_project_settings(
+            r#"
+[[models]]
+name = "project-model"
+model = "project/model"
+base_url = "https://project.example.com"
+api_key_env = "PROJECT_KEY"
+"#,
+        );
+
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load(Some(project_dir.path()))
+        })
+        .unwrap();
+
+        assert_eq!(loaded.skills.only, vec!["global-skill"]);
+    }
+
+    #[test]
+    fn test_global_profile_applies_when_selected() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+default_model = "base"
+
+[[models]]
+name = "base"
+model = "base/model"
+base_url = "https://example.com"
+api_key_env = "KEY"
+
+[[models]]
+name = "fast"
+model = "fast/model"
+base_url = "https://example.com"
+api_key_env = "KEY"
+
+[profiles.fast]
+default_model = "fast"
+directories = ["/profile/dir"]
+
+[profiles.fast.skills]
+only = ["debugging-cake"]
+"#,
+        );
+
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load_with_profile(None, Some("fast"))
+        })
+        .unwrap();
+
+        assert_eq!(loaded.default_model, Some("fast".to_string()));
+        assert!(loaded.directories.contains(&"/profile/dir".to_string()));
+        assert_eq!(loaded.skills.only, vec!["debugging-cake"]);
+    }
+
+    #[test]
+    fn test_project_profile_overrides_global_profile() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+default_model = "base"
+
+[[models]]
+name = "base"
+model = "base/model"
+base_url = "https://global.example.com"
+api_key_env = "KEY"
+
+[[models]]
+name = "global-fast"
+model = "global-fast/model"
+base_url = "https://global.example.com"
+api_key_env = "KEY"
+
+[profiles.fast]
+default_model = "global-fast"
+directories = ["/global/profile"]
+
+[profiles.fast.skills]
+disabled = true
+"#,
+        );
+        let project_dir = create_project_settings(
+            r#"
+[[models]]
+name = "project-fast"
+model = "project-fast/model"
+base_url = "https://project.example.com"
+api_key_env = "KEY"
+
+[profiles.fast]
+default_model = "project-fast"
+directories = ["/project/profile"]
+
+[profiles.fast.skills]
+only = ["review"]
+"#,
+        );
+
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load_with_profile(Some(project_dir.path()), Some("fast"))
+        })
+        .unwrap();
+
+        assert_eq!(loaded.default_model, Some("project-fast".to_string()));
+        assert!(loaded.directories.contains(&"/global/profile".to_string()));
+        assert!(loaded.directories.contains(&"/project/profile".to_string()));
+        assert!(loaded.skills.disabled);
+        assert_eq!(loaded.skills.only, vec!["review"]);
+    }
+
+    #[test]
+    fn test_profile_omitted_fields_preserve_top_level_settings() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+default_model = "base"
+directories = ["/base/dir"]
+
+[skills]
+only = ["base-skill"]
+
+[[models]]
+name = "base"
+model = "base/model"
+base_url = "https://example.com"
+api_key_env = "KEY"
+
+[profiles.review]
+"#,
+        );
+
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load_with_profile(None, Some("review"))
+        })
+        .unwrap();
+
+        assert_eq!(loaded.default_model, Some("base".to_string()));
+        assert!(loaded.directories.contains(&"/base/dir".to_string()));
+        assert_eq!(loaded.skills.only, vec!["base-skill"]);
+    }
+
+    #[test]
+    fn test_profile_directories_merge_and_deduplicate() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+directories = ["/shared", "/global"]
+
+[[models]]
+name = "base"
+model = "base/model"
+base_url = "https://example.com"
+api_key_env = "KEY"
+
+[profiles.expanded]
+directories = ["/shared", "/profile"]
+"#,
+        );
+        let project_dir = create_project_settings(
+            r#"
+directories = ["/project"]
+
+[profiles.expanded]
+directories = ["/profile", "/project-profile"]
+"#,
+        );
+
+        let loaded = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load_with_profile(Some(project_dir.path()), Some("expanded"))
+        })
+        .unwrap();
+
+        assert_eq!(loaded.directories.len(), 5);
+        assert!(loaded.directories.contains(&"/shared".to_string()));
+        assert!(loaded.directories.contains(&"/global".to_string()));
+        assert!(loaded.directories.contains(&"/project".to_string()));
+        assert!(loaded.directories.contains(&"/profile".to_string()));
+        assert!(loaded.directories.contains(&"/project-profile".to_string()));
+    }
+
+    #[test]
+    fn test_unknown_profile_errors_with_available_names() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+[[models]]
+name = "base"
+model = "base/model"
+base_url = "https://example.com"
+api_key_env = "KEY"
+
+[profiles.fast]
+"#,
+        );
+
+        let result = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load_with_profile(None, Some("missing"))
+        });
+
+        assert!(matches!(
+            result,
+            Err(SettingsError::UnknownProfile { name, available })
+                if name == "missing" && available.contains("fast")
+        ));
+    }
+
+    #[test]
+    fn test_invalid_profile_name_errors() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+[[models]]
+name = "base"
+model = "base/model"
+base_url = "https://example.com"
+api_key_env = "KEY"
+
+[profiles."Bad_Profile"]
+"#,
+        );
+
+        let result = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load_with_profile(None, Some("Bad_Profile"))
+        });
+
+        assert!(matches!(
+            result,
+            Err(SettingsError::InvalidProfileName { name, .. }) if name == "Bad_Profile"
+        ));
+    }
+
+    #[test]
+    fn test_profile_default_model_not_found_errors() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+[[models]]
+name = "base"
+model = "base/model"
+base_url = "https://example.com"
+api_key_env = "KEY"
+
+[profiles.fast]
+default_model = "missing"
+"#,
+        );
+
+        let result = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load_with_profile(None, Some("fast"))
+        });
+
+        assert!(matches!(
+            result,
+            Err(SettingsError::DefaultModelNotFound { name }) if name == "missing"
+        ));
+    }
+
+    #[test]
+    fn test_models_inside_profile_are_rejected() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+[[models]]
+name = "base"
+model = "base/model"
+base_url = "https://example.com"
+api_key_env = "KEY"
+
+[[profiles.fast.models]]
+name = "nested"
+model = "nested/model"
+base_url = "https://example.com"
+api_key_env = "KEY"
+"#,
+        );
+
+        let result = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load_with_profile(None, Some("fast"))
+        });
+
+        assert!(matches!(
+            result,
+            Err(SettingsError::ProfileModelsUnsupported { name }) if name == "fast"
+        ));
+    }
+
+    #[test]
+    fn test_empty_models_key_inside_profile_is_rejected() {
+        let home = create_home_dir();
+        write_global_settings(
+            home.path(),
+            r#"
+[[models]]
+name = "base"
+model = "base/model"
+base_url = "https://example.com"
+api_key_env = "KEY"
+
+[profiles.fast]
+models = []
+"#,
+        );
+
+        let result = with_var("HOME", Some(home.path()), || {
+            SettingsLoader::load_with_profile(None, Some("fast"))
+        });
+
+        assert!(matches!(
+            result,
+            Err(SettingsError::ProfileModelsUnsupported { name }) if name == "fast"
+        ));
     }
 }
