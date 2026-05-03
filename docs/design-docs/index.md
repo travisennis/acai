@@ -17,10 +17,10 @@ See the [../adr/](../adr/) directory for architectural decision records (ADRs).
 | [models.md](models.md) | Role and Message types |
 | [prompts.md](prompts.md) | Prompt engineering and templating |
 | [sandbox.md](sandbox.md) | Sandbox environment design |
-| [session-management.md](session-management.md) | Session lifecycle and state management |
+| [session-management.md](session-management.md) | Session lifecycle, storage, and persisted JSONL schema |
 | [settings.md](settings.md) | Settings TOML configuration |
 | [skills.md](skills.md) | Agent skills discovery and activation |
-| [streaming-json-output.md](streaming-json-output.md) | Streaming JSON output format |
+| [streaming-json-output.md](streaming-json-output.md) | Live stream-json output schema |
 | [tools.md](tools.md) | Tool system architecture |
 
 ## Purpose

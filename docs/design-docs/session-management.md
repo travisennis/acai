@@ -46,10 +46,12 @@ Sessions are stored as flat files under `~/.local/share/cake/sessions/`:
 
 ## File Format
 
-Session files use format version 4. The first line is exactly one `session_meta` record. Each invocation appends one `task_start`, the live conversation records for that task, and one `task_complete`.
+Session files use format version 4. They are newline-delimited JSON. Each line is one `SessionRecord` serialized with a top-level `type` discriminator.
+
+The first non-empty line must be exactly one `session_meta` record. Every saved invocation appends one `task_start`, the live conversation records emitted during that invocation, and one `task_complete`.
 
 ```json
-{"type":"session_meta","format_version":4,"session_id":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2026-05-03T12:00:00Z","working_directory":"/Users/user/project","model":"anthropic/claude-3.5-sonnet","tools":["Bash","Read","Edit","Write"],"cake_version":"0.1.0"}
+{"type":"session_meta","format_version":4,"session_id":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2026-05-03T12:00:00Z","working_directory":"/Users/user/project","model":"anthropic/claude-3.5-sonnet","tools":["bash","read","edit","write"],"cake_version":"0.1.0"}
 {"type":"task_start","session_id":"550e8400-e29b-41d4-a716-446655440000","task_id":"2b15f29d-8c42-4c53-9bdf-35c8f2390d3e","timestamp":"2026-05-03T12:00:01Z"}
 {"type":"message","role":"user","content":"List files"}
 {"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":"{\"command\":\"ls\"}"}
@@ -59,6 +61,123 @@ Session files use format version 4. The first line is exactly one `session_meta`
 ```
 
 Conversation records are `message`, `function_call`, `function_call_output`, and `reasoning`. Only those records are restored into model context. `session_meta`, `task_start`, and `task_complete` remain in the file but are skipped when reconstructing conversation history.
+
+## Schema
+
+All timestamps are UTC RFC 3339 strings. `session_id` and `task_id` are UUID strings. Optional fields are omitted when absent.
+
+### `session_meta`
+
+`session_meta` appears once, as the first record in the file.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | yes | Always `session_meta` |
+| `format_version` | number | yes | Current value is `4` |
+| `session_id` | string | yes | Stable session UUID; also used as the `{uuid}.jsonl` filename |
+| `timestamp` | string | yes | Session creation time |
+| `working_directory` | string | yes | Directory where the session was created |
+| `model` | string | no | Resolved model identifier used for the session |
+| `tools` | array of strings | yes | Enabled tool names at session creation |
+| `cake_version` | string | no | Package version that created the file |
+
+### `task_start`
+
+`task_start` marks one CLI invocation inside the session.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | yes | Always `task_start` |
+| `session_id` | string | yes | Session UUID |
+| `task_id` | string | yes | UUID for this invocation |
+| `timestamp` | string | yes | Task start time |
+
+### `message`
+
+`message` stores system, user, assistant, or tool text.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | yes | Always `message` |
+| `role` | string | yes | One of `system`, `user`, `assistant`, or `tool` |
+| `content` | string | yes | Plain text message content |
+| `id` | string | no | Provider message id, normally present for assistant messages from the Responses API |
+| `status` | string | no | Provider status such as `completed` or `incomplete` |
+| `timestamp` | string | no | Item creation time |
+
+### `function_call`
+
+`function_call` stores a model request to execute a tool.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | yes | Always `function_call` |
+| `id` | string | yes | Provider function-call item id |
+| `call_id` | string | yes | Correlation id used by the matching output |
+| `name` | string | yes | Tool name, for example `bash`, `read`, `edit`, or `write` |
+| `arguments` | string | yes | JSON-encoded tool argument string exactly as received from the model |
+| `timestamp` | string | no | Item creation time |
+
+### `function_call_output`
+
+`function_call_output` stores the result of a tool execution.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | yes | Always `function_call_output` |
+| `call_id` | string | yes | Matches the preceding `function_call.call_id` |
+| `output` | string | yes | Tool output or tool error text returned to the model |
+| `timestamp` | string | no | Item creation time |
+
+### `reasoning`
+
+`reasoning` preserves reasoning-model output needed for future API turns.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | yes | Always `reasoning` |
+| `id` | string | yes | Provider reasoning item id |
+| `summary` | array of strings | yes | Human-readable reasoning summaries |
+| `encrypted_content` | string | no | Opaque provider content that must be echoed back for some reasoning models |
+| `content` | array of objects | no | Provider reasoning content array, preserved for round-tripping |
+| `timestamp` | string | no | Item creation time |
+
+Each `content` item has:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | yes | Provider content item type, for example `reasoning_text` |
+| `text` | string | no | Text for content item types that carry text |
+
+### `task_complete`
+
+`task_complete` records the outcome and aggregate usage for one invocation.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | yes | Always `task_complete` |
+| `subtype` | string | yes | One of `success`, `error_during_execution`, or `error_max_turns` |
+| `success` | boolean | yes | `true` for successful completion |
+| `is_error` | boolean | yes | Inverse of `success` in current code |
+| `duration_ms` | number | yes | Wall-clock task duration in milliseconds |
+| `turn_count` | number | yes | Number of API turns with usage accumulated |
+| `num_turns` | number | yes | Alias of `turn_count` retained for consumer compatibility |
+| `session_id` | string | yes | Session UUID |
+| `task_id` | string | yes | Task UUID from the matching `task_start` |
+| `result` | string | no | Final assistant text on success |
+| `error` | string | no | Error message on failure |
+| `usage` | object | yes | Aggregate token usage for the task |
+| `permission_denials` | array of strings | no | Tool permission denial messages when present |
+
+`usage` has this shape:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `input_tokens` | number | yes | Total input tokens |
+| `input_tokens_details.cached_tokens` | number | yes | Cached input tokens |
+| `output_tokens` | number | yes | Total output tokens |
+| `output_tokens_details.reasoning_tokens` | number | yes | Reasoning output tokens |
+| `total_tokens` | number | yes | Provider-reported total tokens |
 
 ## Append Semantics
 
@@ -73,6 +192,10 @@ Another cake invocation is currently writing to session <id>. Wait for it to fin
 ## Compatibility
 
 Version 4 is a breaking schema change. Legacy v2 files and old v3 files using `session_start`, `init`, or `result` do not load. A first record that is not `session_meta` is treated as a legacy or unsupported file. A `session_meta.format_version` other than `4` fails with an explicit unsupported-version error.
+
+Forking creates a new v4 session file with a new `session_meta`. It seeds only conversation records from the parent; parent `session_meta`, `task_start`, and `task_complete` records are not copied.
+
+Stream-json output uses the same task and conversation record shapes as v4 session files, but omits `session_meta` and includes only the current task. A redirected stream-json file is not a valid session file and cannot be resumed by path.
 
 ## Implementation Details
 

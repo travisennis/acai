@@ -264,21 +264,19 @@ cake "Remember the number 42"
 # Continue the most recent session in the current directory
 cake --continue "What number did I tell you?"
 
-# Resume a specific session by UUID or file path
+# Resume a specific session by UUID
 cake --resume 550e8400-e29b-41d4-a716-446655440000 "Continue our conversation"
-cake --resume ./saved_session.jsonl "Continue from a saved stream"
 
 # Fork the latest session (creates new session with same history)
 cake --fork "Let's discuss something different"
 
-# Fork a specific session by UUID or file path
+# Fork a specific session by UUID
 cake --fork 550e8400-e29b-41d4-a716-446655440000 "New branch of conversation"
-cake --fork ./saved_session.jsonl "Fork from a saved stream"
 ```
 
 Sessions are saved to `~/.local/share/cake/sessions/` (or `$CAKE_DATA_DIR/sessions/` if set) as flat `{uuid}.jsonl` files. Each file includes full conversation history with metadata. Sessions are saved on both success and error for crash recovery.
 
-The `--output-format stream-json` output uses the same JSONL schema as session files, so you can redirect stream-json output to a file and later resume from it with `--resume <path>`.
+The `--output-format stream-json` output is a live task stream, not a resumable session file. It never emits session metadata; use the persisted session UUID with `--resume <uuid>`.
 
 For more details, see [Session Management](docs/design-docs/session-management.md).
 
@@ -288,7 +286,7 @@ Think of session management as branches of thought:
 
 - **`--continue`** is your "keep going" — great for multi-step tasks where cake needs to iterate.
 - **`--fork`** is your "what if?" — try a different approach without losing the original thread.
-- **`--resume <UUID_OR_PATH>`** is your "go back to that idea from Tuesday."
+- **`--resume <UUID>`** is your "go back to that idea from Tuesday."
 - **`--no-session`** is for throwaway questions that don't pollute your session history.
 
 ### Worktrees
@@ -416,8 +414,8 @@ fi
 - `--model <NAME>` - Select a named model from settings.toml
 - `--profile <NAME>` - Apply a named behavior profile from settings.toml
 - `--continue` - Continue the most recent session for the current directory
-- `--resume <UUID_OR_PATH>` - Resume a specific session by UUID or file path
-- `--fork [UUID_OR_PATH]` - Fork a session (copy history into new session), optionally specify UUID or file path
+- `--resume <UUID>` - Resume a specific session by UUID
+- `--fork [UUID]` - Fork a session (copy history into new session), optionally specify a UUID
 - `--no-session` - Do not save the session to disk
 - `--worktree` (`-w`) - Run in an isolated git worktree (optionally provide a name)
 - `--reasoning-effort <EFFORT>` - Override reasoning effort level (none, low, medium, high, xhigh)

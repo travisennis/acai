@@ -18,10 +18,10 @@ This design provides a **single source of truth** for conversation history, simp
 
 ```rust
 pub enum ConversationItem {
-    Message { role, content, id, status },
-    FunctionCall { id, call_id, name, arguments },
-    FunctionCallOutput { call_id, output },
-    Reasoning { id, summary, encrypted_content, content },
+    Message { role, content, id, status, timestamp },
+    FunctionCall { id, call_id, name, arguments, timestamp },
+    FunctionCallOutput { call_id, output, timestamp },
+    Reasoning { id, summary, encrypted_content, content, timestamp },
 }
 ```
 
@@ -35,6 +35,7 @@ ConversationItem::Message {
     content: String,      // The message text
     id: Option<String>,   // Required for assistant messages
     status: Option<String>, // "completed" or "incomplete"
+    timestamp: Option<String>, // RFC 3339 creation time
 }
 ```
 
@@ -52,6 +53,7 @@ ConversationItem::FunctionCall {
     call_id: String,    // Reference ID for output
     name: String,       // Tool name (Bash, Read, Edit, Write)
     arguments: String,  // JSON arguments for the tool
+    timestamp: Option<String>,
 }
 ```
 
@@ -63,6 +65,7 @@ Represents the result of a tool execution:
 ConversationItem::FunctionCallOutput {
     call_id: String,  // Matches the FunctionCall's call_id
     output: String,   // Tool result or error message
+    timestamp: Option<String>,
 }
 ```
 
@@ -76,6 +79,7 @@ ConversationItem::Reasoning {
     summary: Vec<String>,                    // Human-readable summary
     encrypted_content: Option<String>,       // Opaque encrypted content for round-tripping
     content: Option<Vec<ReasoningContent>>,  // Original content array for Chat Completions providers
+    timestamp: Option<String>,
 }
 ```
 
@@ -139,6 +143,17 @@ pub struct OutputTokensDetails {
 ```
 
 These track token consumption across the conversation, including cached tokens and reasoning tokens.
+
+## Persisted and Streamed Records
+
+`SessionRecord` is the persisted JSONL schema for files in `~/.local/share/cake/sessions/`. It wraps conversation items with `session_meta`, `task_start`, and `task_complete` records.
+
+`StreamRecord` is the `--output-format stream-json` schema for the current task. It has the same task and conversation records as `SessionRecord`, but intentionally excludes `session_meta`.
+
+The detailed field-level contracts are documented in:
+
+- [session-management.md](./session-management.md)
+- [streaming-json-output.md](./streaming-json-output.md)
 
 ## Internal Types
 

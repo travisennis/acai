@@ -127,12 +127,12 @@ let client = Responses::new(model, system_prompt)
 ```
 
 Streamed messages include:
-- `init`: Session info, working directory, and available tools
+- `task_start`: Session and task ids for the current invocation
 - `message`: User and assistant messages
 - `function_call`: Tool invocations
 - `function_call_output`: Tool results
 - `reasoning`: Model reasoning
-- `result`: Final status with duration and usage stats
+- `task_complete`: Final status with duration and usage stats
 
 ## CLI Usage
 
