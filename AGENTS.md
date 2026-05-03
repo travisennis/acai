@@ -56,7 +56,7 @@ just rust-version-check
 
 ## Agent Instructions
 
-- Run the `Full CI check` command when you complete a task to make sure the code is correct.
+- Run the `Full CI check` command when you complete a task that invovles code, config or dependecy changes to make sure the code is correct.
 - Do not commit or push code unless explicitly asked to.
 
 ---
