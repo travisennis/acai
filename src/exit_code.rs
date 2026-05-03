@@ -147,8 +147,8 @@ fn is_input_error(msg: &str) -> bool {
         return true;
     }
 
-    // Invalid session UUID
-    if msg.contains("Invalid session UUID") {
+    // Invalid session reference
+    if msg.contains("Invalid session UUID") || msg.contains("Invalid session reference") {
         return true;
     }
 

@@ -5,6 +5,7 @@ setup:
     @echo "Installing required cargo tools..."
     cargo install cargo-edit --quiet 2>/dev/null || true
     cargo install cargo-deny --quiet 2>/dev/null || true
+    cargo install cargo-insta --quiet 2>/dev/null || true
     cargo install cargo-llvm-cov --quiet 2>/dev/null || true
     cargo install prek --quiet 2>/dev/null || true
     cargo install --locked cocogitto --quiet 2>/dev/null || true
@@ -39,6 +40,10 @@ clippy-linux:
 # Run tests
 test:
     cargo test --quiet
+
+# Run insta snapshot tests (requires cargo-insta; installed by `just setup`)
+snapshots:
+    cargo insta test
 
 # Lint for use of super::/self:: in production code (test modules use super::* is allowed)
 lint-imports:

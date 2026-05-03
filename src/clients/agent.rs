@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use chrono::Utc;
 use tokio::time::sleep;
 use tracing::debug;
 
@@ -11,12 +10,16 @@ use crate::clients::chat_completions;
 use crate::clients::responses;
 use crate::clients::retry::{self, HttpFailure, RequestOverrides, RetryStatus};
 use crate::clients::tools::{Tool, bash_tool, edit_tool, execute_tool, read_tool, write_tool};
-use crate::clients::types::{ConversationItem, ResultSubtype, SessionRecord, Usage};
+use crate::clients::types::{
+    ConversationItem, SessionRecord, StreamRecord, TaskCompleteSubtype, Usage,
+};
 use crate::config::model::{ApiType, ResolvedModelConfig};
 use crate::models::{Message, Role};
 
 /// Callback type for streaming JSON output
 type StreamingCallback = Box<dyn Fn(&str) + Send + Sync>;
+/// Callback type for live session persistence.
+type PersistCallback = Box<dyn FnMut(&SessionRecord) -> anyhow::Result<()> + Send + Sync>;
 
 /// Callback type for progress reporting (receives conversation items as they occur)
 type ProgressCallback = Box<dyn Fn(&ConversationItem) + Send + Sync>;
@@ -58,22 +61,22 @@ pub struct Agent {
     tools: Vec<Tool>,
     /// Callback for streaming JSON output
     streaming_callback: Option<StreamingCallback>,
+    /// Callback for append-only session persistence.
+    persist_callback: Option<PersistCallback>,
     /// Callback for human-readable progress reporting
     progress_callback: Option<ProgressCallback>,
     /// Callback for retry wait reporting
     retry_callback: Option<RetryCallback>,
     /// Session ID for tracking
     pub session_id: uuid::Uuid,
+    /// Task ID for the current CLI invocation.
+    pub task_id: uuid::Uuid,
     /// Accumulated usage across all API calls
     pub total_usage: Usage,
     /// Number of API calls made
     pub turn_count: u32,
     /// Reusable HTTP client for connection pooling
     client: reqwest::Client,
-    /// Buffer of all session records emitted during this run.
-    /// Populated by `emit_init_message`, `stream_item`, and `emit_result_message`.
-    /// Used to reconstruct the session file on save.
-    stream: Vec<SessionRecord>,
     /// Maps SKILL.md paths to skill names for activation deduplication.
     /// When the Read tool targets one of these paths, the agent checks if the
     /// skill has already been activated and returns a lightweight message instead.
@@ -101,21 +104,22 @@ impl Agent {
             }],
             tools: vec![bash_tool(), edit_tool(), read_tool(), write_tool()],
             streaming_callback: None,
+            persist_callback: None,
             progress_callback: None,
             retry_callback: None,
             session_id: uuid::Uuid::new_v4(),
+            task_id: uuid::Uuid::new_v4(),
             total_usage: Usage::default(),
             turn_count: 0,
             client: build_http_client(false),
-            stream: Vec::new(),
             skill_locations: HashMap::new(),
             activated_skills: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
-    /// Returns the model name from the configuration.
-    pub fn model(&self) -> &str {
-        &self.config.config.model
+    /// Returns the enabled tool names.
+    pub fn tool_names(&self) -> Vec<String> {
+        self.tools.iter().map(|tool| tool.name.clone()).collect()
     }
 
     /// Sets the session ID for a restored session.
@@ -123,6 +127,12 @@ impl Agent {
     /// Use this when continuing a previous session to preserve the session ID.
     pub const fn with_session_id(mut self, id: uuid::Uuid) -> Self {
         self.session_id = id;
+        self
+    }
+
+    /// Sets the task ID for the current invocation.
+    pub const fn with_task_id(mut self, id: uuid::Uuid) -> Self {
+        self.task_id = id;
         self
     }
 
@@ -138,24 +148,6 @@ impl Agent {
         );
         self.history.truncate(1);
         self.history.extend(messages);
-        self
-    }
-
-    /// Seed the stream buffer with prior session records when resuming a session.
-    ///
-    /// This ensures that the full prior conversation is preserved in the stream
-    /// output so it can be saved to the session file.
-    ///
-    /// Drops any trailing Result and leading Init records: the agent will
-    /// always emit its own Init on start, and the next save writes a fresh Result.
-    pub fn with_stream_records(mut self, records: Vec<SessionRecord>) -> Self {
-        self.stream = records
-            .into_iter()
-            .filter(|r| {
-                !matches!(r, SessionRecord::Result { .. })
-                    && !matches!(r, SessionRecord::Init { .. })
-            })
-            .collect();
         self
     }
 
@@ -188,20 +180,21 @@ impl Agent {
             .map_or_else(|_| HashSet::new(), |guard| guard.clone())
     }
 
-    /// Drains and returns the full stream buffer including Init and any Result record.
-    ///
-    /// The caller is responsible for appending a Result record before draining
-    /// if they want one in the output.
-    pub fn drain_stream(&mut self) -> Vec<SessionRecord> {
-        std::mem::take(&mut self.stream)
-    }
-
     /// Enables streaming JSON output for each message.
     ///
     /// The callback receives a JSON string for each message, tool call, and result.
     /// This is useful for integrating with other tools or TUIs.
     pub fn with_streaming_json(mut self, callback: impl Fn(&str) + Send + Sync + 'static) -> Self {
         self.streaming_callback = Some(Box::new(callback));
+        self
+    }
+
+    /// Enables live append-only persistence for each emitted task record.
+    pub fn with_persist_callback(
+        mut self,
+        callback: impl FnMut(&SessionRecord) -> anyhow::Result<()> + Send + Sync + 'static,
+    ) -> Self {
+        self.persist_callback = Some(Box::new(callback));
         self
     }
 
@@ -240,38 +233,38 @@ impl Agent {
         }
     }
 
-    /// Stream a session record via the streaming callback, if set.
-    /// Also appends the record to the internal stream buffer.
-    fn stream_record(&mut self, record: SessionRecord) {
+    /// Emit a task record to persistence and streaming sinks.
+    fn stream_record(&mut self, record: StreamRecord) -> anyhow::Result<()> {
+        let stream_json = self
+            .streaming_callback
+            .as_ref()
+            .and_then(|_| serde_json::to_string(&record).ok());
+        let session_record = SessionRecord::from(record);
+        if let Some(ref mut callback) = self.persist_callback {
+            callback(&session_record)?;
+        }
         if let Some(ref callback) = self.streaming_callback
-            && let Ok(json) = serde_json::to_string(&record.to_streaming_json())
+            && let Some(json) = stream_json
         {
             callback(&json);
         }
-        self.stream.push(record);
+        Ok(())
     }
 
     /// Stream a conversation item as JSON via the streaming callback, if set.
-    fn stream_item(&mut self, item: &ConversationItem) {
-        self.stream_record(SessionRecord::from_conversation_item(item));
+    fn stream_item(&mut self, item: &ConversationItem) -> anyhow::Result<()> {
+        self.stream_record(StreamRecord::from_conversation_item(item))
     }
 
-    /// Emit the init message with session info, cwd, and tools.
-    /// Appends an Init record to the stream buffer.
-    pub fn emit_init_message(&mut self) {
-        let cwd: PathBuf = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let tools: Vec<String> = self.tools.iter().map(|tool| tool.name.clone()).collect();
-
-        let record = SessionRecord::Init {
-            format_version: 3,
+    /// Emit the task start record.
+    pub fn emit_task_start_record(&mut self) -> anyhow::Result<()> {
+        let record = StreamRecord::TaskStart {
             session_id: self.session_id.to_string(),
-            timestamp: Utc::now(),
-            working_directory: cwd,
-            model: Some(self.config.config.model.clone()),
-            tools,
+            task_id: self.task_id.to_string(),
+            timestamp: chrono::Utc::now(),
         };
 
-        self.stream_record(record);
+        self.stream_record(record)
     }
 
     /// Accumulate usage from an API turn
@@ -288,22 +281,21 @@ impl Agent {
         }
     }
 
-    /// Emit the result message with success/error, duration, usage stats.
-    /// Appends a Result record to the stream buffer.
-    pub fn emit_result_message(
+    /// Emit the task completion record with success/error and usage stats.
+    pub fn emit_task_complete_record(
         &mut self,
         success: bool,
         duration_ms: u64,
         result_text: Option<String>,
         error_message: Option<String>,
-    ) {
+    ) -> anyhow::Result<()> {
         let subtype = if success {
-            ResultSubtype::Success
+            TaskCompleteSubtype::Success
         } else {
-            ResultSubtype::ErrorDuringExecution
+            TaskCompleteSubtype::ErrorDuringExecution
         };
 
-        let record = SessionRecord::Result {
+        let record = StreamRecord::TaskComplete {
             subtype,
             success,
             is_error: !success,
@@ -311,13 +303,14 @@ impl Agent {
             turn_count: self.turn_count,
             num_turns: self.turn_count,
             session_id: self.session_id.to_string(),
+            task_id: self.task_id.to_string(),
             result: result_text,
             error: error_message,
             usage: self.total_usage.clone(),
             permission_denials: None,
         };
 
-        self.stream_record(record);
+        self.stream_record(record)
     }
 
     /// Sends a message and runs the agent loop until completion.
@@ -339,7 +332,7 @@ impl Agent {
         };
 
         // Stream user message before updating history so callers see it immediately.
-        self.stream_item(&user_item);
+        self.stream_item(&user_item)?;
         self.history.push(user_item);
 
         // Agent loop: continue until model stops making tool calls
@@ -371,7 +364,7 @@ impl Agent {
 
             // Stream each item as JSON if callback is set
             for item in &turn_result.items {
-                self.stream_item(item);
+                self.stream_item(item)?;
             }
 
             // Report progress for items, but skip assistant messages on the final turn
@@ -434,7 +427,7 @@ impl Agent {
                     output,
                     timestamp: Some(timestamp),
                 };
-                self.stream_item(&item);
+                self.stream_item(&item)?;
                 self.history.push(item);
             }
 
@@ -698,6 +691,7 @@ fn test_agent_for(api_type: ApiType, base_url: &str) -> Agent {
         "test system prompt",
     );
     agent.session_id = uuid::uuid!("550e8400-e29b-41d4-a716-446655440000");
+    agent.task_id = uuid::uuid!("550e8400-e29b-41d4-a716-446655440001");
     agent.tools = vec![];
     agent
 }
@@ -763,30 +757,35 @@ mod tests {
     }
 
     #[test]
-    fn emit_result_message_success() {
+    fn emit_task_complete_record_success() {
         let captured = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
         let captured_clone = captured.clone();
         let mut agent = test_agent().with_streaming_json(move |json| {
             *captured_clone.lock().unwrap() = json.to_string();
         });
-        agent.emit_result_message(true, 1000, None, None);
+        agent
+            .emit_task_complete_record(true, 1000, None, None)
+            .unwrap();
         drop(agent);
         let json: serde_json::Value = serde_json::from_str(&captured.lock().unwrap()).unwrap();
-        assert_eq!(json["type"], "result");
+        assert_eq!(json["type"], "task_complete");
         assert_eq!(json["subtype"], "success");
         assert_eq!(json["success"], true);
         assert_eq!(json["is_error"], false);
         assert_eq!(json["duration_ms"], 1000);
+        assert_eq!(json["task_id"], "550e8400-e29b-41d4-a716-446655440001");
     }
 
     #[test]
-    fn emit_result_message_error() {
+    fn emit_task_complete_record_error() {
         let captured = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
         let captured_clone = captured.clone();
         let mut agent = test_agent().with_streaming_json(move |json| {
             *captured_clone.lock().unwrap() = json.to_string();
         });
-        agent.emit_result_message(false, 500, None, Some("boom".to_string()));
+        agent
+            .emit_task_complete_record(false, 500, None, Some("boom".to_string()))
+            .unwrap();
         drop(agent);
         let json: serde_json::Value = serde_json::from_str(&captured.lock().unwrap()).unwrap();
         assert_eq!(json["subtype"], "error_during_execution");
@@ -795,24 +794,66 @@ mod tests {
     }
 
     #[test]
-    fn emit_result_message_no_callback() {
+    fn emit_task_complete_record_no_callback() {
         let mut agent = test_agent();
-        agent.emit_result_message(true, 1000, None, None);
+        agent
+            .emit_task_complete_record(true, 1000, None, None)
+            .unwrap();
     }
 
     #[test]
-    fn emit_init_message() {
+    fn emit_task_start_record() {
         let captured = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
         let captured_clone = captured.clone();
         let mut agent = test_agent().with_streaming_json(move |json| {
             *captured_clone.lock().unwrap() = json.to_string();
         });
-        agent.emit_init_message();
+        agent.emit_task_start_record().unwrap();
         drop(agent);
         let json: serde_json::Value = serde_json::from_str(&captured.lock().unwrap()).unwrap();
-        assert_eq!(json["type"], "init");
+        assert_eq!(json["type"], "task_start");
         assert_eq!(json["session_id"], "550e8400-e29b-41d4-a716-446655440000");
-        assert_eq!(json["format_version"], 3);
+        assert_eq!(json["task_id"], "550e8400-e29b-41d4-a716-446655440001");
+    }
+
+    #[test]
+    fn task_records_fan_out_to_persist_and_stream() {
+        let persisted = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let persisted_clone = persisted.clone();
+        let streamed = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let streamed_clone = streamed.clone();
+
+        let mut agent = test_agent()
+            .with_persist_callback(move |record| {
+                persisted_clone.lock().unwrap().push(record.clone());
+                Ok(())
+            })
+            .with_streaming_json(move |json| {
+                streamed_clone.lock().unwrap().push(json.to_string());
+            });
+
+        agent.emit_task_start_record().unwrap();
+        agent
+            .emit_task_complete_record(true, 42, Some("ok".to_string()), None)
+            .unwrap();
+
+        let persisted = persisted.lock().unwrap();
+        assert!(matches!(
+            persisted.first(),
+            Some(SessionRecord::TaskStart { .. })
+        ));
+        assert!(matches!(
+            persisted.last(),
+            Some(SessionRecord::TaskComplete { .. })
+        ));
+        drop(persisted);
+
+        let streamed = streamed.lock().unwrap();
+        let first: serde_json::Value = serde_json::from_str(&streamed[0]).unwrap();
+        let last: serde_json::Value = serde_json::from_str(&streamed[1]).unwrap();
+        drop(streamed);
+        assert_eq!(first["type"], "task_start");
+        assert_eq!(last["type"], "task_complete");
     }
 
     #[test]
@@ -914,7 +955,7 @@ mod tests {
             timestamp: None,
         };
 
-        agent.stream_item(&item);
+        agent.stream_item(&item).unwrap();
 
         drop(agent);
         let messages: Vec<serde_json::Value> = captured

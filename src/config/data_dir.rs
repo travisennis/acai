@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    fs::{self, File},
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
@@ -7,7 +7,8 @@ use std::{
 use anyhow::{Context, anyhow};
 use serde::Deserialize;
 
-use crate::config::Session;
+use crate::clients::SessionRecord;
+use crate::config::{Session, session::CURRENT_FORMAT_VERSION};
 
 /// Represents an AGENTS.md file with its path and content.
 ///
@@ -111,6 +112,11 @@ impl DataDir {
         self.sessions_dir.clone()
     }
 
+    /// Returns the canonical path for a session UUID.
+    pub fn session_path(&self, id: uuid::Uuid) -> PathBuf {
+        self.sessions_dir().join(format!("{id}.jsonl"))
+    }
+
     /// Saves a session to disk with atomic write.
     ///
     /// The session is saved to `~/.local/share/cake/sessions/{session_id}.jsonl`.
@@ -131,14 +137,33 @@ impl DataDir {
     /// # Errors
     ///
     /// Returns an error if the session file cannot be written.
+    #[allow(dead_code)]
     pub fn save_session(&self, session: &Session) -> anyhow::Result<PathBuf> {
-        let session_path = self.sessions_dir().join(format!("{}.jsonl", session.id));
+        let session_path = self.session_path(session.id);
 
         tracing::info!(target: "cake", "Saving session {} to {}", session.id, session_path.display());
 
-        session.save(&session_path)?;
+        let meta = session_meta_record(session, Vec::new());
+        let mut file = Session::create_on_disk(&session_path, &meta)?;
+        Session::append_records(&mut file, &session.records)?;
 
         Ok(session_path)
+    }
+
+    /// Create a new session file and return a locked append handle.
+    pub fn create_session_file(
+        &self,
+        session: &Session,
+        tools: Vec<String>,
+    ) -> anyhow::Result<File> {
+        let session_path = self.session_path(session.id);
+        let meta = session_meta_record(session, tools);
+        Session::create_on_disk(&session_path, &meta)
+    }
+
+    /// Open an existing session file and return a locked append handle.
+    pub fn open_session_for_append(&self, id: uuid::Uuid) -> anyhow::Result<File> {
+        Session::open_for_append(&self.session_path(id))
     }
 
     /// Loads the most recent session for a given working directory.
@@ -203,6 +228,32 @@ impl DataDir {
         Ok(result)
     }
 
+    /// Loads the most recently modified session regardless of working directory.
+    pub fn load_latest_session_any_directory(&self) -> anyhow::Result<Option<Session>> {
+        let session_dir = self.sessions_dir();
+        if !session_dir.exists() {
+            return Ok(None);
+        }
+
+        fs::read_dir(&session_dir)
+            .with_context(|| {
+                format!(
+                    "Failed to read session directory: {}",
+                    session_dir.display()
+                )
+            })?
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "jsonl"))
+            .filter_map(|entry| {
+                let path = entry.path();
+                let modified = entry.metadata().ok()?.modified().ok()?;
+                Some((path, modified))
+            })
+            .max_by_key(|(_, modified)| *modified)
+            .map(|(path, _)| Session::load(&path))
+            .transpose()
+    }
+
     /// Loads a specific session by UUID.
     ///
     /// Returns the session with the given ID, or `None` if no such session exists.
@@ -223,9 +274,10 @@ impl DataDir {
     /// Returns an error if the session ID is not a valid UUID, or if the
     /// session file exists but cannot be loaded.
     pub fn load_session(&self, id: &str) -> anyhow::Result<Option<Session>> {
-        uuid::Uuid::parse_str(id).map_err(|e| anyhow!("Invalid session UUID '{id}': {e}"))?;
+        let id =
+            uuid::Uuid::parse_str(id).map_err(|e| anyhow!("Invalid session UUID '{id}': {e}"))?;
 
-        let session_path = self.sessions_dir().join(format!("{id}.jsonl"));
+        let session_path = self.session_path(id);
 
         tracing::info!(target: "cake", "Loading session {id} from {}", session_path.display());
 
@@ -303,22 +355,22 @@ impl DataDir {
 }
 
 /// Check whether a string looks like a UUID (8-4-4-4-12 hex format).
-/// Used to distinguish `--resume <uuid>` from `--resume <path>`.
+/// Used to validate UUID-only `--resume` and `--fork` arguments.
 pub fn looks_like_uuid(s: &str) -> bool {
     uuid::Uuid::parse_str(s).is_ok()
 }
 
 /// Minimal header struct for quickly inspecting a session file without
-/// loading the entire conversation history. Supports both v2 and v3 formats.
+/// loading the entire conversation history.
 #[derive(Deserialize)]
 struct SessionFileHeader {
     #[allow(dead_code)]
     session_id: String,
+    format_version: u32,
     working_directory: PathBuf,
 }
 
 /// Reads only the first line of a session file to extract its header.
-/// Works with both v2 (`session_start`) and v3 (init) formats.
 fn read_session_header(path: &Path) -> anyhow::Result<SessionFileHeader> {
     let file = fs::File::open(path)
         .with_context(|| format!("Failed to open session file: {}", path.display()))?;
@@ -332,19 +384,27 @@ fn read_session_header(path: &Path) -> anyhow::Result<SessionFileHeader> {
     })?;
     let header: SessionFileHeader = serde_json::from_str(first_line.trim())
         .with_context(|| format!("Failed to parse session header: {}", path.display()))?;
+    if header.format_version != CURRENT_FORMAT_VERSION {
+        anyhow::bail!(
+            "Unsupported session format_version: {} (expected {}). Session file: {}",
+            header.format_version,
+            CURRENT_FORMAT_VERSION,
+            path.display()
+        );
+    }
     Ok(header)
 }
 
-/// Loads a session from an arbitrary file path.
-///
-/// This is used by `--resume <path>` and `--fork <path>` to load sessions
-/// from files outside the sessions directory (e.g. redirected stream-json output).
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be loaded or parsed.
-pub fn load_session_from_path(path: &Path) -> anyhow::Result<Session> {
-    Session::load(path)
+fn session_meta_record(session: &Session, tools: Vec<String>) -> SessionRecord {
+    SessionRecord::SessionMeta {
+        format_version: CURRENT_FORMAT_VERSION,
+        session_id: session.id.to_string(),
+        timestamp: chrono::Utc::now(),
+        working_directory: session.working_dir.clone(),
+        model: session.model.clone(),
+        tools,
+        cake_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -411,6 +471,20 @@ mod tests {
                 .to_string()
                 .contains("Invalid session UUID")
         );
+    }
+
+    #[test]
+    fn load_session_accepts_uppercase_uuid() {
+        let (dd, _tmp) = test_data_dir();
+        let id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let session = Session::new(id, PathBuf::from("/work"));
+        dd.save_session(&session).unwrap();
+
+        let loaded = dd
+            .load_session("550E8400-E29B-41D4-A716-446655440000")
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.id, id);
     }
 
     #[test]

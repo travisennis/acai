@@ -1,17 +1,16 @@
 use std::{
-    fs,
-    io::{BufRead, BufWriter, Write},
+    fs::{self, File, OpenOptions},
+    io::Write,
     path::{Path, PathBuf},
 };
 
 use anyhow::Context;
-use chrono::Utc;
-use serde::Deserialize;
+use fs4::{FileExt, TryLockError};
 
 use crate::clients::{ConversationItem, SessionRecord};
 
-/// Session format version for v3 (unified JSONL schema).
-const CURRENT_FORMAT_VERSION: u32 = 3;
+/// Session format version for append-only task event logs.
+pub const CURRENT_FORMAT_VERSION: u32 = 4;
 
 /// In-memory session state reconstructed from a JSONL file.
 ///
@@ -35,7 +34,7 @@ pub struct Session {
     pub working_dir: PathBuf,
     /// Model used for the session
     pub model: Option<String>,
-    /// Full record history (Init, Messages, `FunctionCall`, etc.)
+    /// Full record history (`SessionMeta`, task boundaries, messages, tool calls, etc.)
     pub records: Vec<SessionRecord>,
 }
 
@@ -62,7 +61,7 @@ impl Session {
     }
 
     /// Returns the conversation items from this session's records,
-    /// filtering out Init and Result records.
+    /// filtering out session metadata and task boundary records.
     pub fn messages(&self) -> Vec<ConversationItem> {
         self.records
             .iter()
@@ -70,84 +69,63 @@ impl Session {
             .collect()
     }
 
-    /// Loads a session from a JSONL file (v2 or v3 format).
-    ///
-    /// The method auto-detects the format version:
-    /// - v3: first line is `{"type":"init", ...}`. Parsed directly.
-    /// - v2: first line is `{"type":"session_start", ...}`. Converted in memory.
+    /// Loads a v4 append-only session from a JSONL file.
     ///
     /// # Errors
     ///
     /// Returns an error if the file cannot be opened, or if any line
     /// cannot be parsed as valid JSON.
+    #[allow(clippy::too_many_lines)]
     pub fn load(path: &Path) -> anyhow::Result<Self> {
-        let file = fs::File::open(path)
+        let content = fs::read_to_string(path)
             .with_context(|| format!("Failed to open session file: {}", path.display()))?;
-        let reader = std::io::BufReader::new(file);
+        let mut lines = content.lines().enumerate().peekable();
 
-        let mut lines = reader.lines().enumerate().peekable();
+        let first_line = lines
+            .by_ref()
+            .find_map(|(_, line)| {
+                let trimmed = line.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_string())
+            })
+            .ok_or_else(|| anyhow::anyhow!("Session file is empty"))?;
 
-        // Peek at the first non-empty line to detect format version
-        let first_line = loop {
-            match lines.next() {
-                Some((_, Ok(line))) => {
-                    let trimmed = line.trim();
-                    if !trimmed.is_empty() {
-                        break trimmed.to_string();
-                    }
-                },
-                Some((_, Err(e))) => {
-                    return Err(e).context("Failed to read session file");
-                },
-                None => return Err(anyhow::anyhow!("Session file is empty")),
-            }
-        };
-
-        // Detect v2 vs v3
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&first_line) {
-            let type_field = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
-            if type_field == "session_start" {
-                // v2 format
-                return Self::load_format_v2(path, &first_line, lines);
-            }
-            if type_field == "init" {
-                // v3 format
-                return Self::load_format_v3(path, &first_line, lines);
-            }
-        }
-
-        Err(anyhow::anyhow!(
-            "Unable to detect session format in: {}",
-            path.display()
-        ))
-    }
-
-    /// Parse a v3 format session file.
-    fn load_format_v3(
-        path: &Path,
-        first_line: &str,
-        lines: std::iter::Peekable<impl Iterator<Item = (usize, Result<String, std::io::Error>)>>,
-    ) -> anyhow::Result<Self> {
         let id;
         let working_dir;
         let model;
         let mut records = Vec::new();
 
-        // Parse the Init record from the first line
-        let init: SessionRecord = serde_json::from_str(first_line.trim()).with_context(|| {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(first_line.trim())
+            && value.get("type").and_then(|value| value.as_str()) != Some("session_meta")
+        {
+            anyhow::bail!(
+                "Unsupported or legacy session file format: expected session_meta as first record in {}",
+                path.display()
+            );
+        }
+
+        let meta: SessionRecord = serde_json::from_str(first_line.trim()).with_context(|| {
             format!(
-                "Failed to parse Init record of session file: {}",
+                "Failed to parse session_meta record of session file: {}",
                 path.display()
             )
         })?;
 
-        match &init {
-            SessionRecord::Init {
+        match &meta {
+            SessionRecord::SessionMeta {
+                format_version,
                 session_id,
                 working_directory,
                 model: m,
                 ..
             } => {
+                if *format_version != CURRENT_FORMAT_VERSION {
+                    anyhow::bail!(
+                        "Unsupported session format_version: {} (expected {}). Session file: {}",
+                        format_version,
+                        CURRENT_FORMAT_VERSION,
+                        path.display()
+                    );
+                }
                 id = uuid::Uuid::parse_str(session_id)
                     .with_context(|| format!("Invalid session UUID '{session_id}'"))?;
                 working_dir = working_directory.clone();
@@ -155,144 +133,38 @@ impl Session {
             },
             _ => {
                 return Err(anyhow::anyhow!(
-                    "Expected Init record as first line in v3 session file: {}",
+                    "Unsupported or legacy session file format: expected session_meta as first record in {}",
                     path.display()
                 ));
             },
         }
-        records.push(init);
+        records.push(meta);
 
-        // Parse remaining lines
-        for (line_num, line) in lines {
-            let line = line.with_context(|| {
-                format!(
-                    "Failed to read line {} of session file: {}",
-                    line_num + 1,
-                    path.display()
-                )
-            })?;
+        while let Some((line_num, line)) = lines.next() {
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
             }
-            let record: SessionRecord = serde_json::from_str(trimmed).with_context(|| {
-                format!(
-                    "Failed to parse line {} of session file: {}",
-                    line_num + 1,
-                    path.display()
-                )
-            })?;
-            records.push(record);
-        }
-
-        // Drop any trailing Result record from in-memory resumable history.
-        // The result record is metadata about a prior completed run, not
-        // an input for the next run.
-        if matches!(records.last(), Some(SessionRecord::Result { .. })) {
-            records.pop();
-        }
-
-        Ok(Self {
-            id,
-            working_dir,
-            model,
-            records,
-        })
-    }
-
-    /// Parse a v2 format session file and convert to v3 in memory.
-    fn load_format_v2(
-        path: &Path,
-        first_line: &str,
-        lines: std::iter::Peekable<impl Iterator<Item = (usize, Result<String, std::io::Error>)>>,
-    ) -> anyhow::Result<Self> {
-        // Parse the v2 header
-        #[derive(Deserialize)]
-        struct V2Header {
-            session_id: String,
-            working_directory: PathBuf,
-            #[serde(default)]
-            model: Option<String>,
-        }
-
-        #[derive(Deserialize)]
-        struct V2Line {
-            #[serde(flatten)]
-            item: ConversationItem,
-        }
-
-        let header: V2Header = serde_json::from_str(first_line.trim()).with_context(|| {
-            format!(
-                "Failed to parse v2 header of session file: {}",
-                path.display()
-            )
-        })?;
-        let id = uuid::Uuid::parse_str(&header.session_id)
-            .with_context(|| format!("Invalid session UUID '{}'", header.session_id))?;
-        let working_dir = header.working_directory;
-        let model = header.model;
-        let mut records = Vec::new();
-
-        // Create an Init record from the v2 header data
-        let now = Utc::now();
-        records.push(SessionRecord::Init {
-            format_version: CURRENT_FORMAT_VERSION,
-            session_id: id.to_string(),
-            timestamp: now,
-            working_directory: working_dir.clone(),
-            model: model.clone(),
-            tools: vec![], // v2 didn't store tools; leave empty
-        });
-
-        for (line_num, line) in lines {
-            let line = line.with_context(|| {
-                format!(
-                    "Failed to read line {} of session file: {}",
-                    line_num + 1,
-                    path.display()
-                )
-            })?;
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-
-            // Handle v2 duplicate timestamp field
-            let entry: V2Line = if trimmed.contains("\"timestamp\"") {
-                let mut value: serde_json::Value =
-                    serde_json::from_str(trimmed).with_context(|| {
+            match serde_json::from_str::<SessionRecord>(trimmed) {
+                Ok(record) => records.push(record),
+                Err(error) if lines.peek().is_none() && !content.ends_with('\n') => {
+                    tracing::warn!(
+                        "Ignoring partial final session record in {}: {}",
+                        path.display(),
+                        error
+                    );
+                    break;
+                },
+                Err(error) => {
+                    return Err(error).with_context(|| {
                         format!(
                             "Failed to parse line {} of session file: {}",
                             line_num + 1,
                             path.display()
                         )
-                    })?;
-                if let Some(obj) = value.as_object_mut() {
-                    let has_item_fields = obj.contains_key("role")
-                        || obj.contains_key("type")
-                        || obj.contains_key("call_id");
-                    if has_item_fields && obj.contains_key("timestamp") {
-                        obj.remove("timestamp");
-                    }
-                }
-                serde_json::from_value(value).with_context(|| {
-                    format!(
-                        "Failed to parse line {} of session file: {}",
-                        line_num + 1,
-                        path.display()
-                    )
-                })?
-            } else {
-                serde_json::from_str(trimmed).with_context(|| {
-                    format!(
-                        "Failed to parse line {} of session file: {}",
-                        line_num + 1,
-                        path.display()
-                    )
-                })?
-            };
-
-            records.push(SessionRecord::from_conversation_item(&entry.item));
+                    });
+                },
+            }
         }
 
         Ok(Self {
@@ -303,62 +175,70 @@ impl Session {
         })
     }
 
-    /// Saves the session to a JSONL file atomically.
-    ///
-    /// Writes to a temporary file first, then renames to ensure atomic writes.
-    /// The file is written in v3 format with exactly one Init record at the top,
-    /// zero or more conversation records, and at most one Result record at the end.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the session directory cannot be created, or if
-    /// the file cannot be written.
-    pub fn save(&self, path: &Path) -> anyhow::Result<()> {
+    /// Create a new session file, write its metadata record, and return a locked append handle.
+    pub fn create_on_disk(path: &Path, meta: &SessionRecord) -> anyhow::Result<File> {
+        if !matches!(meta, SessionRecord::SessionMeta { .. }) {
+            anyhow::bail!("First record in a new session file must be session_meta");
+        }
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).with_context(|| {
                 format!("Failed to create session directory: {}", parent.display())
             })?;
         }
 
-        let temp_path = path.with_extension("tmp");
-        let file = fs::File::create(&temp_path).with_context(|| {
-            format!(
-                "Failed to create temp session file: {}",
-                temp_path.display()
-            )
-        })?;
-        let mut writer = BufWriter::new(file);
+        let mut file = OpenOptions::new()
+            .read(true)
+            .append(true)
+            .create_new(true)
+            .open(path)
+            .with_context(|| format!("Failed to create session file: {}", path.display()))?;
+        lock_session_file(&file, path)?;
+        Self::append_record(&mut file, meta)?;
+        Ok(file)
+    }
 
-        // Ensure the session always has an Init record at the top.
-        // If the first record is not an Init, write one automatically.
-        let needs_init = !matches!(self.records.first(), Some(SessionRecord::Init { .. }));
-        if needs_init {
-            let init = SessionRecord::Init {
-                format_version: CURRENT_FORMAT_VERSION,
-                session_id: self.id.to_string(),
-                timestamp: Utc::now(),
-                working_directory: self.working_dir.clone(),
-                model: self.model.clone(),
-                tools: vec![],
-            };
-            serde_json::to_writer(&mut writer, &init)
-                .context("Failed to serialize session init record")?;
-            writer.write_all(b"\n").context("Failed to write newline")?;
+    /// Open an existing session file for append and acquire an advisory lock.
+    pub fn open_for_append(path: &Path) -> anyhow::Result<File> {
+        let file = OpenOptions::new()
+            .read(true)
+            .append(true)
+            .open(path)
+            .with_context(|| format!("Failed to open session file: {}", path.display()))?;
+        lock_session_file(&file, path)?;
+        Ok(file)
+    }
+
+    /// Append one JSONL session record and flush it to disk.
+    pub fn append_record(file: &mut File, record: &SessionRecord) -> anyhow::Result<()> {
+        serde_json::to_writer(&mut *file, record).context("Failed to serialize session record")?;
+        file.write_all(b"\n").context("Failed to write newline")?;
+        file.flush().context("Failed to flush session file")
+    }
+
+    /// Append multiple JSONL session records.
+    pub fn append_records(file: &mut File, records: &[SessionRecord]) -> anyhow::Result<()> {
+        for record in records {
+            Self::append_record(file, record)?;
         }
-
-        for record in &self.records {
-            serde_json::to_writer(&mut writer, record)
-                .context("Failed to serialize session record")?;
-            writer.write_all(b"\n").context("Failed to write newline")?;
-        }
-
-        writer.flush().context("Failed to flush session file")?;
-        drop(writer);
-
-        fs::rename(&temp_path, path)
-            .with_context(|| format!("Failed to rename temp file to: {}", path.display()))?;
-
         Ok(())
+    }
+}
+
+fn lock_session_file(file: &File, path: &Path) -> anyhow::Result<()> {
+    match FileExt::try_lock(file) {
+        Ok(()) => Ok(()),
+        Err(TryLockError::WouldBlock) => {
+            let id = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("<unknown>");
+            anyhow::bail!(
+                "Another cake invocation is currently writing to session {id}. Wait for it to finish or run in a different directory."
+            );
+        },
+        Err(TryLockError::Error(error)) => {
+            Err(error).with_context(|| format!("Failed to lock session file: {}", path.display()))
+        },
     }
 }
 
@@ -366,24 +246,53 @@ impl Session {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::clients::types::{ReasoningContent, ResultSubtype, Usage};
+    use crate::clients::types::{ReasoningContent, TaskCompleteSubtype, Usage};
     use crate::models::Role;
     use tempfile::TempDir;
 
-    /// Helper to create a minimal v3 session for testing.
+    /// Helper to create a minimal v4 session for testing.
     fn make_test_session() -> Session {
         let id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
         let mut session = Session::new(id, PathBuf::from("/work"));
         session.model = Some("test-model".to_string());
-        session.records.push(SessionRecord::Init {
-            format_version: 3,
-            session_id: id.to_string(),
-            timestamp: Utc::now(),
-            working_directory: PathBuf::from("/work"),
-            model: Some("test-model".to_string()),
-            tools: vec!["bash".to_string(), "read".to_string()],
-        });
         session
+    }
+
+    fn meta_record(session: &Session) -> SessionRecord {
+        SessionRecord::SessionMeta {
+            format_version: CURRENT_FORMAT_VERSION,
+            session_id: session.id.to_string(),
+            timestamp: chrono::Utc::now(),
+            working_directory: session.working_dir.clone(),
+            model: session.model.clone(),
+            tools: vec!["bash".to_string(), "read".to_string()],
+            cake_version: Some("test".to_string()),
+        }
+    }
+
+    fn task_start(session: &Session, task_id: &str) -> SessionRecord {
+        SessionRecord::TaskStart {
+            session_id: session.id.to_string(),
+            task_id: task_id.to_string(),
+            timestamp: chrono::Utc::now(),
+        }
+    }
+
+    fn task_complete(session: &Session, task_id: &str) -> SessionRecord {
+        SessionRecord::TaskComplete {
+            subtype: TaskCompleteSubtype::Success,
+            success: true,
+            is_error: false,
+            duration_ms: 100,
+            turn_count: 1,
+            num_turns: 1,
+            session_id: session.id.to_string(),
+            task_id: task_id.to_string(),
+            result: Some("Done".to_string()),
+            error: None,
+            usage: Usage::default(),
+            permission_denials: None,
+        }
     }
 
     #[test]
@@ -397,61 +306,73 @@ mod tests {
     }
 
     #[test]
-    fn test_session_save_and_load_roundtrip_v3() {
+    fn test_session_create_and_load_roundtrip_v4() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session.jsonl");
 
-        let mut session = make_test_session();
-        session.records.push(SessionRecord::Message {
-            role: Role::User,
-            content: "Hello".to_string(),
-            id: None,
-            status: None,
-            timestamp: None,
-        });
-        session.records.push(SessionRecord::Message {
-            role: Role::Assistant,
-            content: "Hi".to_string(),
-            id: Some("msg-1".to_string()),
-            status: Some("completed".to_string()),
-            timestamp: None,
-        });
+        let session = make_test_session();
+        let mut file = Session::create_on_disk(&path, &meta_record(&session)).unwrap();
+        Session::append_record(&mut file, &task_start(&session, "task-1")).unwrap();
+        Session::append_record(
+            &mut file,
+            &SessionRecord::Message {
+                role: Role::User,
+                content: "Hello".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+        )
+        .unwrap();
+        Session::append_record(
+            &mut file,
+            &SessionRecord::Message {
+                role: Role::Assistant,
+                content: "Hi".to_string(),
+                id: Some("msg-1".to_string()),
+                status: Some("completed".to_string()),
+                timestamp: None,
+            },
+        )
+        .unwrap();
+        Session::append_record(&mut file, &task_complete(&session, "task-1")).unwrap();
+        drop(file);
 
-        session.save(&path).unwrap();
         let loaded = Session::load(&path).unwrap();
 
         assert_eq!(loaded.id, session.id);
         assert_eq!(loaded.working_dir, session.working_dir);
         assert_eq!(loaded.model, session.model);
-        // Init + 2 messages = 3 records
-        assert_eq!(loaded.records.len(), 3);
+        assert_eq!(loaded.records.len(), 5);
+        assert_eq!(loaded.messages().len(), 2);
     }
 
     #[test]
-    fn test_session_jsonl_v3_format() {
+    fn test_session_jsonl_v4_format() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session.jsonl");
 
-        let mut session = make_test_session();
-        session.records.push(SessionRecord::Message {
-            role: Role::User,
-            content: "Hello".to_string(),
-            id: None,
-            status: None,
-            timestamp: None,
-        });
+        let session = make_test_session();
+        let mut file = Session::create_on_disk(&path, &meta_record(&session)).unwrap();
+        Session::append_record(
+            &mut file,
+            &SessionRecord::Message {
+                role: Role::User,
+                content: "Hello".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+        )
+        .unwrap();
 
-        session.save(&path).unwrap();
-
-        // Verify it's valid JSONL: Init + 1 message = 2 lines
         let content = fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 2);
 
-        // First line is the Init record
         let init: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
-        assert_eq!(init["type"], "init");
-        assert_eq!(init["format_version"], 3);
+        assert_eq!(init["type"], "session_meta");
+        assert_eq!(init["format_version"], CURRENT_FORMAT_VERSION);
         assert_eq!(init["session_id"], "550e8400-e29b-41d4-a716-446655440000");
         assert_eq!(init["working_directory"], "/work");
         assert_eq!(init["model"], "test-model");
@@ -469,54 +390,77 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session.jsonl");
 
-        let mut session = make_test_session();
-        session.records.push(SessionRecord::Message {
-            role: Role::User,
-            content: "list files".to_string(),
-            id: None,
-            status: None,
-            timestamp: None,
-        });
-        session.records.push(SessionRecord::FunctionCall {
-            id: "fc-1".to_string(),
-            call_id: "call-1".to_string(),
-            name: "bash".to_string(),
-            arguments: r#"{"cmd":"ls"}"#.to_string(),
-            timestamp: None,
-        });
-        session.records.push(SessionRecord::FunctionCallOutput {
-            call_id: "call-1".to_string(),
-            output: "file.txt".to_string(),
-            timestamp: None,
-        });
-        session.records.push(SessionRecord::Reasoning {
-            id: "r-1".to_string(),
-            summary: vec!["thinking...".to_string()],
-            encrypted_content: None,
-            content: None,
-            timestamp: None,
-        });
+        let session = make_test_session();
+        let mut file = Session::create_on_disk(&path, &meta_record(&session)).unwrap();
+        let records = vec![
+            SessionRecord::Message {
+                role: Role::User,
+                content: "list files".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            SessionRecord::FunctionCall {
+                id: "fc-1".to_string(),
+                call_id: "call-1".to_string(),
+                name: "bash".to_string(),
+                arguments: r#"{"cmd":"ls"}"#.to_string(),
+                timestamp: None,
+            },
+            SessionRecord::FunctionCallOutput {
+                call_id: "call-1".to_string(),
+                output: "file.txt".to_string(),
+                timestamp: None,
+            },
+            SessionRecord::Reasoning {
+                id: "r-1".to_string(),
+                summary: vec!["thinking...".to_string()],
+                encrypted_content: None,
+                content: None,
+                timestamp: None,
+            },
+        ];
 
-        session.save(&path).unwrap();
+        Session::append_records(&mut file, &records).unwrap();
+        drop(file);
         let loaded = Session::load(&path).unwrap();
 
-        // Init + 4 items = 5 records
         assert_eq!(loaded.records.len(), 5);
+        assert_eq!(loaded.messages().len(), 4);
     }
 
     #[test]
-    fn test_session_empty_messages() {
+    fn test_session_append_second_task_does_not_add_second_meta() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session.jsonl");
 
-        let id = uuid::Uuid::new_v4();
-        let session = Session::new(id, PathBuf::from("/tmp"));
-        // No Init record, no messages - save should produce empty file
-        session.save(&path).unwrap();
+        let session = make_test_session();
+        let mut file = Session::create_on_disk(&path, &meta_record(&session)).unwrap();
+        Session::append_records(
+            &mut file,
+            &[
+                task_start(&session, "task-1"),
+                task_complete(&session, "task-1"),
+            ],
+        )
+        .unwrap();
+        drop(file);
 
-        // An empty session file with no records is technically valid but
-        // won't load back (no Init record to detect format).
-        // In practice, sessions always have at least an Init record.
+        let mut file = Session::open_for_append(&path).unwrap();
+        Session::append_records(
+            &mut file,
+            &[
+                task_start(&session, "task-2"),
+                task_complete(&session, "task-2"),
+            ],
+        )
+        .unwrap();
+        drop(file);
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content.matches(r#""type":"session_meta""#).count(), 1);
+        assert_eq!(content.matches(r#""type":"task_start""#).count(), 2);
+        assert_eq!(content.matches(r#""type":"task_complete""#).count(), 2);
     }
 
     #[test]
@@ -524,27 +468,20 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session.jsonl");
 
-        let id = uuid::Uuid::new_v4();
-        let mut session = Session::new(id, PathBuf::from("/tmp"));
-        session.records.push(SessionRecord::Init {
-            format_version: 3,
-            session_id: id.to_string(),
-            timestamp: Utc::now(),
-            working_directory: PathBuf::from("/tmp"),
-            model: None,
-            tools: vec![],
-        });
-        session.records.push(SessionRecord::Message {
-            role: Role::User,
-            content: "Hello".to_string(),
-            id: None,
-            status: None,
-            timestamp: None,
-        });
+        let session = Session::new(uuid::Uuid::new_v4(), PathBuf::from("/tmp"));
+        let mut file = Session::create_on_disk(&path, &meta_record(&session)).unwrap();
+        Session::append_record(
+            &mut file,
+            &SessionRecord::Message {
+                role: Role::User,
+                content: "Hello".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+        )
+        .unwrap();
 
-        session.save(&path).unwrap();
-
-        // Verify model field is absent in JSON
         let content = fs::read_to_string(&path).unwrap();
         let line = content.lines().next().unwrap();
         let val: serde_json::Value = serde_json::from_str(line).unwrap();
@@ -555,126 +492,75 @@ mod tests {
     }
 
     #[test]
-    fn test_session_v2_backward_compat() {
+    fn test_session_legacy_first_record_errors() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session.jsonl");
-        let test_uuid = "550e8400-e29b-41d4-a716-446655440002";
+        fs::write(
+            &path,
+            r#"{"format_version":3,"session_id":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2026-04-04T15:51:54Z","working_directory":"/tmp/test","type":"init","tools":[]}"#,
+        )
+        .unwrap();
 
-        // Manually create a v2 session file
-        let v2_content = format!(
-            r#"{{"format_version":2,"session_id":"{test_uuid}","timestamp":"2026-04-04T15:51:54.474459Z","working_directory":"/tmp/test","model":"gpt-4","type":"session_start"}}
-{{"format_version":2,"session_id":"{test_uuid}","working_directory":"/tmp/test","model":"gpt-4","type":"message","role":"user","content":"Hello","id":null,"status":null}}
-{{"format_version":2,"session_id":"{test_uuid}","working_directory":"/tmp/test","model":"gpt-4","type":"message","role":"assistant","content":"Hi there","id":"msg-1","status":"completed"}}"#
-        );
+        let error = Session::load(&path).unwrap_err().to_string();
+        assert!(error.contains("Unsupported or legacy session file format"));
+    }
 
-        fs::write(&path, v2_content).unwrap();
+    #[test]
+    fn test_session_format_version_mismatch_errors() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("session.jsonl");
+        fs::write(
+            &path,
+            r#"{"type":"session_meta","format_version":5,"session_id":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2026-04-04T15:51:54Z","working_directory":"/tmp/test","tools":[]}"#,
+        )
+        .unwrap();
+
+        let error = Session::load(&path).unwrap_err().to_string();
+        assert!(error.contains("Unsupported session format_version: 5 (expected 4)"));
+    }
+
+    #[test]
+    fn test_session_loads_trailing_task_start() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("session.jsonl");
+        let session = make_test_session();
+        let mut file = Session::create_on_disk(&path, &meta_record(&session)).unwrap();
+        Session::append_record(&mut file, &task_start(&session, "task-1")).unwrap();
+        drop(file);
 
         let loaded = Session::load(&path).unwrap();
-        assert_eq!(loaded.id.to_string(), test_uuid);
-        assert_eq!(loaded.working_dir, PathBuf::from("/tmp/test"));
-        assert_eq!(loaded.model, Some("gpt-4".to_string()));
-        // Init (generated) + 2 messages = 3 records
-        assert_eq!(loaded.records.len(), 3);
-
-        // Verify the Init record was generated
         assert!(matches!(
-            &loaded.records[0],
-            SessionRecord::Init { session_id, .. } if session_id == test_uuid
+            loaded.records.last(),
+            Some(SessionRecord::TaskStart { .. })
         ));
+    }
 
-        // Verify messages were parsed correctly
-        match &loaded.records[1] {
-            SessionRecord::Message { role, content, .. } => {
-                assert_eq!(*role, Role::User);
-                assert_eq!(content, "Hello");
+    #[test]
+    fn test_session_v4_roundtrip_with_reasoning() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("session.jsonl");
+
+        let session = make_test_session();
+        let mut file = Session::create_on_disk(&path, &meta_record(&session)).unwrap();
+        Session::append_record(
+            &mut file,
+            &SessionRecord::Reasoning {
+                id: "r-1".to_string(),
+                summary: vec!["thinking...".to_string()],
+                encrypted_content: Some("gAAAAABencrypted...".to_string()),
+                content: Some(vec![ReasoningContent {
+                    content_type: "reasoning_text".to_string(),
+                    text: Some("deep thoughts".to_string()),
+                }]),
+                timestamp: None,
             },
-            _ => panic!("Expected Message record"),
-        }
-        match &loaded.records[2] {
-            SessionRecord::Message { role, content, .. } => {
-                assert_eq!(*role, Role::Assistant);
-                assert_eq!(content, "Hi there");
-            },
-            _ => panic!("Expected Message record"),
-        }
-    }
-
-    #[test]
-    fn test_session_v2_duplicate_timestamp_compat() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("session.jsonl");
-        let test_uuid = "550e8400-e29b-41d4-a716-446655440003";
-
-        // Simulate v2 file with duplicate timestamp fields
-        let v2_content = format!(
-            r#"{{"format_version":2,"session_id":"{test_uuid}","timestamp":"2026-04-04T15:51:54.474459Z","working_directory":"/tmp/test","model":"gpt-4","type":"session_start"}}
-{{"format_version":2,"session_id":"{test_uuid}","timestamp":"2026-04-04T15:51:18.873738Z","working_directory":"/tmp/test","model":"gpt-4","type":"message","role":"user","content":"Hello","id":null,"status":null,"timestamp":"2026-04-04T15:51:18.873738+00:00"}}"#
-        );
-
-        fs::write(&path, v2_content).unwrap();
+        )
+        .unwrap();
+        drop(file);
 
         let loaded = Session::load(&path).unwrap();
-        assert_eq!(loaded.id.to_string(), test_uuid);
-        assert_eq!(loaded.records.len(), 2); // Init + 1 message
-    }
 
-    #[test]
-    fn test_session_result_record_stripped_on_load() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("session.jsonl");
-
-        let mut session = make_test_session();
-        session.records.push(SessionRecord::Message {
-            role: Role::User,
-            content: "Hello".to_string(),
-            id: None,
-            status: None,
-            timestamp: None,
-        });
-        // Add a Result record (as if a completed run saved it)
-        session.records.push(SessionRecord::Result {
-            subtype: ResultSubtype::Success,
-            success: true,
-            is_error: false,
-            duration_ms: 1500,
-            turn_count: 1,
-            num_turns: 1,
-            session_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
-            result: Some("Done!".to_string()),
-            error: None,
-            usage: Usage::default(),
-            permission_denials: None,
-        });
-
-        session.save(&path).unwrap();
-
-        // Loading should strip the trailing Result record
-        let loaded = Session::load(&path).unwrap();
-        assert_eq!(loaded.records.len(), 2); // Init + message
-        assert!(matches!(loaded.records[1], SessionRecord::Message { .. }));
-    }
-
-    #[test]
-    fn test_session_v3_roundtrip_with_reasoning() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("session.jsonl");
-
-        let mut session = make_test_session();
-        session.records.push(SessionRecord::Reasoning {
-            id: "r-1".to_string(),
-            summary: vec!["thinking...".to_string()],
-            encrypted_content: Some("gAAAAABencrypted...".to_string()),
-            content: Some(vec![ReasoningContent {
-                content_type: "reasoning_text".to_string(),
-                text: Some("deep thoughts".to_string()),
-            }]),
-            timestamp: None,
-        });
-
-        session.save(&path).unwrap();
-        let loaded = Session::load(&path).unwrap();
-
-        assert_eq!(loaded.records.len(), 2); // Init + Reasoning
+        assert_eq!(loaded.records.len(), 2);
         match &loaded.records[1] {
             SessionRecord::Reasoning {
                 encrypted_content, ..
@@ -686,17 +572,32 @@ mod tests {
     }
 
     #[test]
-    fn test_session_save_writes_v3() {
+    fn test_session_create_writes_v4() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session.jsonl");
 
         let session = make_test_session();
-        session.save(&path).unwrap();
+        let _file = Session::create_on_disk(&path, &meta_record(&session)).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
         let first_line = content.lines().next().unwrap();
         let val: serde_json::Value = serde_json::from_str(first_line).unwrap();
-        assert_eq!(val["type"], "init");
-        assert_eq!(val["format_version"], 3);
+        assert_eq!(val["type"], "session_meta");
+        assert_eq!(val["format_version"], CURRENT_FORMAT_VERSION);
+    }
+
+    #[test]
+    fn test_session_lock_error_is_user_facing() {
+        let dir = TempDir::new().unwrap();
+        let path = dir
+            .path()
+            .join("550e8400-e29b-41d4-a716-446655440000.jsonl");
+        let session = make_test_session();
+        let _locked = Session::create_on_disk(&path, &meta_record(&session)).unwrap();
+
+        let error = Session::open_for_append(&path).unwrap_err().to_string();
+        assert!(error.contains(
+            "Another cake invocation is currently writing to session 550e8400-e29b-41d4-a716-446655440000"
+        ));
     }
 }

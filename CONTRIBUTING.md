@@ -20,6 +20,7 @@ just setup
 This installs:
 - `cargo-edit` for dependency management
 - `cargo-deny` for security audits
+- `cargo-insta` for snapshot test review
 - `cargo-llvm-cov` for coverage reports
 
 ### Install Development Tools
@@ -29,7 +30,7 @@ just setup
 prek install --hook-type pre-commit --hook-type commit-msg
 ```
 
-This installs all required cargo tools (prek, cocogitto, cargo-edit, cargo-deny, cargo-llvm-cov) and sets up git hooks for formatting, linting, and commit message validation.
+This installs all required cargo tools (prek, cocogitto, cargo-edit, cargo-deny, cargo-insta, cargo-llvm-cov) and sets up git hooks for formatting, linting, and commit message validation.
 
 Git hooks will automatically run:
 - **pre-commit**: `cargo fmt -- --check` (formatting verification)
@@ -108,6 +109,12 @@ cargo test module_name
 # Run tests with coverage
 just coverage
 
+# Run snapshot tests
+just snapshots
+
+# Review and accept snapshot updates
+cargo insta review
+
 # Open HTML coverage report
 just coverage-open
 
@@ -118,6 +125,8 @@ just ci-full
 Tests live alongside source files:
 - `src/module/mod.rs` → `tests/module_tests.rs`
 - Inline `#[cfg(test)]` modules are also used
+
+Snapshot tests use `insta`. Run `just snapshots` after changing serialized output, prompts, API request construction, or other snapshot-backed behavior. If `.snap.new` files are created, inspect and accept or reject them with `cargo insta review`; do not leave `.snap.new` files in the worktree.
 
 See [docs/design-docs/tools.md](docs/design-docs/tools.md) for testing patterns (tools use `tempfile` for isolation).
 
@@ -138,6 +147,9 @@ cargo test <module_name>
 
 # Run tests with coverage
 just coverage
+
+# Run snapshot tests
+just snapshots
 
 # Run coverage and open HTML report
 just coverage-open

@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use crate::config::{
     AgentsFile, DataDir, DiagnosticLevel, ModelConfig, ModelDefinition, ResolvedModelConfig,
     Session, SettingsLoader, SkillCatalog, discover_skills, discover_skills_with_paths,
-    load_session_from_path, looks_like_uuid, parse_skill_path_list, worktree,
+    looks_like_uuid, parse_skill_path_list, worktree,
 };
 use crate::models::{Message, Role};
 use crate::prompts::build_system_prompt;
@@ -59,13 +59,13 @@ struct CodingAssistant {
     #[arg(long = "continue")]
     pub continue_session: bool,
 
-    /// Resume a specific session by UUID or file path.
-    #[arg(long, value_name = "UUID_OR_PATH")]
+    /// Resume a specific session by UUID.
+    #[arg(long, value_name = "UUID")]
     pub resume: Option<String>,
 
     /// Fork a session: copy its history into a new session with a fresh ID.
-    /// Use without a value to fork the latest session, or provide a UUID or file path.
-    #[arg(long, num_args = 0..=1, default_missing_value = "", value_name = "UUID_OR_PATH")]
+    /// Use without a value to fork the latest session, or provide a UUID.
+    #[arg(long, num_args = 0..=1, default_missing_value = "", value_name = "UUID")]
     pub fork: Option<String>,
 
     /// Do not save the session to disk
@@ -103,6 +103,18 @@ struct CodingAssistant {
     /// Only load specific skills (comma-separated list of skill names)
     #[arg(long, value_name = "NAMES")]
     pub skills: Option<String>,
+}
+
+struct RunSession {
+    agent: Agent,
+    session: Session,
+    storage: SessionStorage,
+}
+
+enum SessionStorage {
+    New,
+    Append,
+    ForkSeed(Vec<crate::clients::SessionRecord>),
 }
 
 impl CodingAssistant {
@@ -356,37 +368,24 @@ impl CodingAssistant {
         resolved: ResolvedModelConfig,
         system_prompt: &str,
         skill_locations: &HashMap<PathBuf, String>,
-    ) -> (Agent, Session) {
+        task_id: uuid::Uuid,
+    ) -> RunSession {
         let messages = restored.messages();
         let prior_skills = Self::extract_activated_skills(&messages);
 
         let agent = Agent::new(resolved.clone(), system_prompt)
             .with_session_id(restored.id)
+            .with_task_id(task_id)
             .with_history(messages)
-            .with_stream_records(restored.records)
             .with_skill_locations(skill_locations.clone())
             .with_activated_skills(prior_skills);
         let mut session = Session::new(restored.id, restored.working_dir);
         session.model = Some(resolved.config.model);
-        (agent, session)
-    }
-
-    /// Validate that a session loaded from a file path belongs to the current directory.
-    fn ensure_session_directory_matches(
-        restored: &Session,
-        current_dir: &std::path::Path,
-        flag: &str,
-    ) -> anyhow::Result<()> {
-        if restored.working_dir == current_dir {
-            return Ok(());
+        RunSession {
+            agent,
+            session,
+            storage: SessionStorage::Append,
         }
-
-        anyhow::bail!(
-            "Working directory mismatch: session was created in '{}' but current directory is '{}'. \
-             Run the command from the original directory, or use {flag} with a UUID to skip this check.",
-            restored.working_dir.display(),
-            current_dir.display()
-        );
     }
 
     /// Build the agent/session pair for a new run using the agent-generated session id.
@@ -395,35 +394,53 @@ impl CodingAssistant {
         current_dir: PathBuf,
         system_prompt: &str,
         skill_locations: HashMap<PathBuf, String>,
-    ) -> (Agent, Session) {
-        let agent =
-            Agent::new(resolved.clone(), system_prompt).with_skill_locations(skill_locations);
+        task_id: uuid::Uuid,
+    ) -> RunSession {
+        let agent = Agent::new(resolved.clone(), system_prompt)
+            .with_task_id(task_id)
+            .with_skill_locations(skill_locations);
         let new_id = agent.session_id;
         info!(target: "cake", "New session: {new_id}");
         let mut session = Session::new(new_id, current_dir);
         session.model = Some(resolved.config.model);
-        (agent, session)
+        RunSession {
+            agent,
+            session,
+            storage: SessionStorage::New,
+        }
     }
 
     /// Build the agent/session pair for a forked run using a fresh agent session id.
     fn forked_client_and_session(
-        restored: Session,
+        restored: &Session,
         resolved: ResolvedModelConfig,
         current_dir: PathBuf,
         system_prompt: &str,
         skill_locations: HashMap<PathBuf, String>,
-    ) -> (Agent, Session) {
+        task_id: uuid::Uuid,
+    ) -> RunSession {
+        let seed_records: Vec<_> = restored
+            .records
+            .iter()
+            .filter(|record| record.to_conversation_item().is_some())
+            .cloned()
+            .collect();
         let agent = Agent::new(resolved.clone(), system_prompt)
+            .with_task_id(task_id)
             .with_history(restored.messages())
-            .with_stream_records(restored.records)
             .with_skill_locations(skill_locations);
         let new_id = agent.session_id;
         info!(target: "cake", "New forked session: {new_id}");
         let mut session = Session::new(new_id, current_dir);
         session.model = Some(resolved.config.model);
-        (agent, session)
+        RunSession {
+            agent,
+            session,
+            storage: SessionStorage::ForkSeed(seed_records),
+        }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_client_and_session(
         &self,
         data_dir: &DataDir,
@@ -432,15 +449,23 @@ impl CodingAssistant {
         models: &HashMap<String, ModelDefinition>,
         default_model: Option<&str>,
         skill_catalog: &SkillCatalog,
-    ) -> anyhow::Result<(Agent, Session)> {
+        task_id: uuid::Uuid,
+    ) -> anyhow::Result<RunSession> {
         let system_prompt = build_system_prompt(&current_dir, agents_files, skill_catalog);
         let skill_locations = Self::skill_locations(skill_catalog);
 
         if self.continue_session {
             info!(target: "cake", "Continuing latest session for directory: {}", current_dir.display());
-            let restored = data_dir
-                .load_latest_session(&current_dir)?
-                .ok_or_else(|| anyhow::anyhow!("No previous session found for this directory"))?;
+            let Some(restored) = data_dir.load_latest_session(&current_dir)? else {
+                if let Some(latest) = data_dir.load_latest_session_any_directory()? {
+                    anyhow::bail!(
+                        "Cannot continue: latest session was created in '{}' but current directory is '{}'. Run from the original directory or start a new session.",
+                        latest.working_dir.display(),
+                        current_dir.display()
+                    );
+                }
+                anyhow::bail!("No previous session found for this directory");
+            };
             info!(target: "cake", "Continuing session: {}", restored.id);
             let resolved =
                 self.resolve_model_for_session(models, default_model, restored.model.as_deref())?;
@@ -449,21 +474,18 @@ impl CodingAssistant {
                 resolved,
                 &system_prompt,
                 &skill_locations,
+                task_id,
             ))
         } else if let Some(ref arg) = self.resume {
-            let restored = if looks_like_uuid(arg) {
-                data_dir
-                    .load_session(arg)?
-                    .ok_or_else(|| anyhow::anyhow!("Session {arg} not found"))?
-            } else {
-                let path = PathBuf::from(arg);
-                load_session_from_path(&path)?
-            };
-            info!(target: "cake", "Resumed session: {}", restored.id);
-
             if !looks_like_uuid(arg) {
-                Self::ensure_session_directory_matches(&restored, &current_dir, "--resume")?;
+                anyhow::bail!(
+                    "Invalid session reference '{arg}': resume by file path is no longer supported. Provide a session UUID."
+                );
             }
+            let restored = data_dir
+                .load_session(arg)?
+                .ok_or_else(|| anyhow::anyhow!("Session {arg} not found"))?;
+            info!(target: "cake", "Resumed session: {}", restored.id);
 
             let resolved =
                 self.resolve_model_for_session(models, default_model, restored.model.as_deref())?;
@@ -472,6 +494,7 @@ impl CodingAssistant {
                 resolved,
                 &system_prompt,
                 &skill_locations,
+                task_id,
             ))
         } else if let Some(ref fork_id) = self.fork {
             info!(target: "cake", "Forking session");
@@ -484,23 +507,21 @@ impl CodingAssistant {
                     .load_session(fork_id)?
                     .ok_or_else(|| anyhow::anyhow!("Session {fork_id} not found"))?
             } else {
-                let path = PathBuf::from(fork_id);
-                load_session_from_path(&path)?
+                anyhow::bail!(
+                    "Invalid session reference '{fork_id}': fork by file path is no longer supported. Provide a session UUID."
+                );
             };
-
-            if !fork_id.is_empty() && !looks_like_uuid(fork_id) {
-                Self::ensure_session_directory_matches(&restored, &current_dir, "--fork")?;
-            }
 
             info!(target: "cake", "Forking from session: {}", restored.id);
             let resolved =
                 self.resolve_model_for_session(models, default_model, restored.model.as_deref())?;
             Ok(Self::forked_client_and_session(
-                restored,
+                &restored,
                 resolved,
                 current_dir,
                 &system_prompt,
                 skill_locations,
+                task_id,
             ))
         } else {
             let resolved =
@@ -510,6 +531,7 @@ impl CodingAssistant {
                 current_dir,
                 &system_prompt,
                 skill_locations,
+                task_id,
             ))
         }
     }
@@ -695,14 +717,35 @@ impl CmdRunner for CodingAssistant {
             );
         }
 
-        let (mut client, mut session) = self.build_client_and_session(
+        let task_id = uuid::Uuid::new_v4();
+        let run_session = self.build_client_and_session(
             data_dir,
             current_dir,
             &agents_files,
             &loaded.models,
             loaded.default_model.as_deref(),
             &skill_catalog,
+            task_id,
         )?;
+        let mut client = run_session.agent;
+        let session = run_session.session;
+
+        if !self.no_session {
+            let mut file = match run_session.storage {
+                SessionStorage::New => {
+                    data_dir.create_session_file(&session, client.tool_names())?
+                },
+                SessionStorage::Append => data_dir.open_session_for_append(session.id)?,
+                SessionStorage::ForkSeed(records) => {
+                    let mut file = data_dir.create_session_file(&session, client.tool_names())?;
+                    crate::config::Session::append_records(&mut file, &records)?;
+                    file
+                },
+            };
+            client = client.with_persist_callback(move |record| {
+                crate::config::Session::append_record(&mut file, record)
+            });
+        }
 
         if self.output_format == OutputFormat::StreamJson {
             client = client.with_streaming_json(|json| {
@@ -726,37 +769,26 @@ impl CmdRunner for CodingAssistant {
 
         let start = Instant::now();
 
-        client.emit_init_message();
+        client.emit_task_start_record()?;
 
         let result: anyhow::Result<Option<Message>> = client.send(msg).await;
 
         let duration_ms: u64 = start.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
 
-        // Emit and store the Result record for both text and stream-json modes.
+        // Emit and store the task completion record for both text and stream-json modes.
         match &result {
             Ok(response_msg) => {
                 let result_text = response_msg.as_ref().map(|m| m.content.clone());
-                client.emit_result_message(true, duration_ms, result_text, None);
+                client.emit_task_complete_record(true, duration_ms, result_text, None)?;
             },
             Err(e) => {
-                client.emit_result_message(false, duration_ms, None, Some(e.to_string()));
+                client.emit_task_complete_record(false, duration_ms, None, Some(e.to_string()))?;
             },
         }
 
         if let Some(spinner) = normal_spinner {
             let summary = format_done_summary(duration_ms, &client);
             spinner.finish_with_message(format!("Done: {summary}"));
-        }
-
-        if !self.no_session {
-            session.records = client.drain_stream();
-            if session.model.is_none() {
-                session.model = Some(client.model().to_string());
-            }
-            info!(target: "cake", "Saving session {} ({} records)", session.id, session.records.len());
-            if let Err(e) = data_dir.save_session(&session) {
-                tracing::error!("Failed to save session: {e}");
-            }
         }
 
         let response = result?;

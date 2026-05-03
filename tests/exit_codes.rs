@@ -177,7 +177,7 @@ fn test_invalid_session_uuid_exits_three() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Failed to open session file"),
-        "Error should come from treating non-UUID resume values as paths. Stderr: {stderr}"
+        stderr.contains("resume by file path is no longer supported"),
+        "Error should reject non-UUID resume values. Stderr: {stderr}"
     );
 }

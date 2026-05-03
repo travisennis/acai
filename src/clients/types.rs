@@ -228,33 +228,37 @@ impl ConversationItem {
 // Session Record Enum (for unified JSONL schema)
 // =============================================================================
 
-/// Subtype of a result record.
+/// Subtype of a task completion record.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum ResultSubtype {
+pub enum TaskCompleteSubtype {
     Success,
     ErrorDuringExecution,
     ErrorMaxTurns,
 }
 
-/// A single line in a unified JSONL session/stream file.
-///
-/// Every line in both `--output-format stream-json` output and session history
-/// files is a `SessionRecord`. This makes it possible to redirect stream-json
-/// output to a file and later resume from that file with `--resume <path>`.
+/// A single line in an append-only JSONL session file.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SessionRecord {
-    /// First line of every file. Replaces the old `SessionHeader`.
-    Init {
+    /// First line of every persisted session file.
+    SessionMeta {
         format_version: u32,
         session_id: String,
-        /// Timestamp of the current saved snapshot.
+        /// Timestamp when the session was created.
         timestamp: DateTime<Utc>,
         working_directory: PathBuf,
         #[serde(skip_serializing_if = "Option::is_none")]
         model: Option<String>,
         tools: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cake_version: Option<String>,
+    },
+
+    TaskStart {
+        session_id: String,
+        task_id: String,
+        timestamp: DateTime<Utc>,
     },
 
     Message {
@@ -295,14 +299,15 @@ pub enum SessionRecord {
         timestamp: Option<String>,
     },
 
-    Result {
-        subtype: ResultSubtype,
+    TaskComplete {
+        subtype: TaskCompleteSubtype,
         success: bool,
         is_error: bool,
         duration_ms: u64,
         turn_count: u32,
         num_turns: u32,
         session_id: String,
+        task_id: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         result: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -313,8 +318,169 @@ pub enum SessionRecord {
     },
 }
 
-impl SessionRecord {
-    /// Convert a `ConversationItem` into its corresponding `SessionRecord` variant.
+/// A single line in `--output-format stream-json` output for the current task.
+///
+/// This intentionally excludes `session_meta`, so live stream output cannot be
+/// mistaken for a complete resumable session file.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum StreamRecord {
+    TaskStart {
+        session_id: String,
+        task_id: String,
+        timestamp: DateTime<Utc>,
+    },
+
+    Message {
+        role: Role,
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        status: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
+    },
+
+    FunctionCall {
+        id: String,
+        call_id: String,
+        name: String,
+        arguments: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
+    },
+
+    FunctionCallOutput {
+        call_id: String,
+        output: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
+    },
+
+    Reasoning {
+        id: String,
+        summary: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        encrypted_content: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        content: Option<Vec<ReasoningContent>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<String>,
+    },
+
+    TaskComplete {
+        subtype: TaskCompleteSubtype,
+        success: bool,
+        is_error: bool,
+        duration_ms: u64,
+        turn_count: u32,
+        num_turns: u32,
+        session_id: String,
+        task_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        result: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+        usage: Usage,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        permission_denials: Option<Vec<String>>,
+    },
+}
+
+impl From<StreamRecord> for SessionRecord {
+    fn from(record: StreamRecord) -> Self {
+        match record {
+            StreamRecord::TaskStart {
+                session_id,
+                task_id,
+                timestamp,
+            } => Self::TaskStart {
+                session_id,
+                task_id,
+                timestamp,
+            },
+            StreamRecord::Message {
+                role,
+                content,
+                id,
+                status,
+                timestamp,
+            } => Self::Message {
+                role,
+                content,
+                id,
+                status,
+                timestamp,
+            },
+            StreamRecord::FunctionCall {
+                id,
+                call_id,
+                name,
+                arguments,
+                timestamp,
+            } => Self::FunctionCall {
+                id,
+                call_id,
+                name,
+                arguments,
+                timestamp,
+            },
+            StreamRecord::FunctionCallOutput {
+                call_id,
+                output,
+                timestamp,
+            } => Self::FunctionCallOutput {
+                call_id,
+                output,
+                timestamp,
+            },
+            StreamRecord::Reasoning {
+                id,
+                summary,
+                encrypted_content,
+                content,
+                timestamp,
+            } => Self::Reasoning {
+                id,
+                summary,
+                encrypted_content,
+                content,
+                timestamp,
+            },
+            StreamRecord::TaskComplete {
+                subtype,
+                success,
+                is_error,
+                duration_ms,
+                turn_count,
+                num_turns,
+                session_id,
+                task_id,
+                result,
+                error,
+                usage,
+                permission_denials,
+            } => Self::TaskComplete {
+                subtype,
+                success,
+                is_error,
+                duration_ms,
+                turn_count,
+                num_turns,
+                session_id,
+                task_id,
+                result,
+                error,
+                usage,
+                permission_denials,
+            },
+        }
+    }
+}
+
+impl StreamRecord {
+    /// Convert a `ConversationItem` into its corresponding `StreamRecord` variant.
     pub fn from_conversation_item(item: &ConversationItem) -> Self {
         match item {
             ConversationItem::Message {
@@ -367,9 +533,11 @@ impl SessionRecord {
             },
         }
     }
+}
 
+impl SessionRecord {
     /// Convert a `SessionRecord` back into a `ConversationItem`, if applicable.
-    /// Returns `None` for `Init` and `Result` records which have no
+    /// Returns `None` for session metadata and task boundary records, which have no
     /// `ConversationItem` equivalent.
     pub fn to_conversation_item(&self) -> Option<ConversationItem> {
         match self {
@@ -421,11 +589,12 @@ impl SessionRecord {
                 content: content.clone(),
                 timestamp: timestamp.clone(),
             }),
-            Self::Init { .. } | Self::Result { .. } => None,
+            Self::SessionMeta { .. } | Self::TaskStart { .. } | Self::TaskComplete { .. } => None,
         }
     }
 
     /// Convert this record to a JSON value suitable for streaming output.
+    #[allow(dead_code)]
     pub fn to_streaming_json(&self) -> serde_json::Value {
         // We serialize the whole record; serde handles the tag.
         serde_json::to_value(self).unwrap_or_else(

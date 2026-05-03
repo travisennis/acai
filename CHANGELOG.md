@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased]
 
+### Breaking Changes
+
+- Bump persisted session JSONL schema to v4 with append-only `session_meta`, `task_start`, and `task_complete` records.
+- Stop loading legacy v2 and old v3 session files that use `session_start`, `init`, or `result`.
+- Remove path-based `--resume <path>` and `--fork <path>`; both now accept session UUIDs only.
+- Change stream-json output to a live task stream that starts with `task_start`, ends with `task_complete`, and never emits `session_meta`.
+
 ### 🚀 Features
 
 - Initial implementation
