@@ -96,7 +96,7 @@ impl SandboxConfig {
                 home.join(".local/state/glab-cli"),
             ]);
 
-            // Runtime managers: mise, asdf, volta
+            // Runtime managers: mise, asdf, volta, fnm
             read_write.extend([
                 home.join(".config/mise"),
                 home.join(".local/share/mise"),
@@ -104,11 +104,18 @@ impl SandboxConfig {
                 home.join(".cache/mise"),
                 home.join(".asdf"),
                 home.join(".volta"),
+                home.join(".fnm"),
+                home.join(".local/share/fnm"),
+                home.join(".local/state/fnm"),
+                home.join(".local/state/fnm_multishells"),
+                home.join(".cache/fnm"),
             ]);
 
             #[cfg(target_os = "macos")]
             read_write.extend([
                 home.join("Library/Caches/mise"),
+                home.join("Library/Caches/fnm"),
+                home.join("Library/Application Support/fnm"),
                 home.join("Library/Application Support/Mozilla.sccache"),
             ]);
         }
@@ -314,4 +321,45 @@ pub(super) fn is_sandbox_disabled() -> bool {
 #[cfg(all(test, target_os = "macos"))]
 pub(super) fn can_enforce_platform_sandbox() -> bool {
     std::path::Path::new("/usr/bin/sandbox-exec").exists() && MacOsSandbox::can_apply_profile()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::clients::tools::sandbox::SandboxConfig;
+    use std::path::PathBuf;
+
+    #[test]
+    fn build_allows_fnm_runtime_manager_paths() {
+        let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+            return;
+        };
+
+        let config = SandboxConfig::build(std::path::Path::new("/workspace"));
+
+        for expected in [
+            home.join(".fnm"),
+            home.join(".local/share/fnm"),
+            home.join(".local/state/fnm"),
+            home.join(".local/state/fnm_multishells"),
+            home.join(".cache/fnm"),
+        ] {
+            assert!(
+                config.read_write.contains(&expected),
+                "expected read-write sandbox access for {}",
+                expected.display()
+            );
+        }
+
+        #[cfg(target_os = "macos")]
+        for expected in [
+            home.join("Library/Caches/fnm"),
+            home.join("Library/Application Support/fnm"),
+        ] {
+            assert!(
+                config.read_write.contains(&expected),
+                "expected read-write sandbox access for {}",
+                expected.display()
+            );
+        }
+    }
 }
