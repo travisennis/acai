@@ -310,10 +310,12 @@ async fn execute_bash_with_args(args: BashExecutionArgs) -> Result<super::ToolRe
     let cwd = std::env::current_dir().map_err(|e| format!("Failed to get cwd: {e}"))?;
     let additional_dirs = super::get_additional_dirs();
     let settings_dirs = super::get_settings_dirs();
+    let skill_dirs = super::get_skill_dirs();
     let sandbox_config = super::sandbox::SandboxConfig::build_with_additional_dirs(
         &cwd,
         &additional_dirs,
         &settings_dirs,
+        &skill_dirs,
     );
 
     // Create command with proper stdio configuration

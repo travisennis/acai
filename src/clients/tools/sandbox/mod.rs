@@ -45,17 +45,19 @@ impl SandboxConfig {
     /// Build a sandbox configuration for the current context
     #[allow(dead_code)]
     pub fn build(cwd: &std::path::Path) -> Self {
-        Self::build_with_additional_dirs(cwd, &[], &[])
+        Self::build_with_additional_dirs(cwd, &[], &[], &[])
     }
 
     /// Build a sandbox configuration with additional directories.
     ///
     /// `additional_dirs` are added as read-only (from `--add-dir`).
     /// `settings_dirs` are added as read-write (from `settings.toml`).
+    /// `skill_dirs` are added as read-only (parent dirs of SKILL.md files).
     pub fn build_with_additional_dirs(
         cwd: &std::path::Path,
         additional_dirs: &[std::path::PathBuf],
         settings_dirs: &[std::path::PathBuf],
+        skill_dirs: &[std::path::PathBuf],
     ) -> Self {
         let mut read_write = vec![cwd.to_path_buf()];
 
@@ -112,15 +114,7 @@ impl SandboxConfig {
         }
 
         // Add settings directories from settings.toml as read-write
-        for dir in settings_dirs {
-            if dir.exists() {
-                read_write.push(dir.clone());
-                // Also add canonical path to handle symlinks
-                if let Ok(canonical) = dir.canonicalize() {
-                    read_write.push(canonical);
-                }
-            }
-        }
+        push_dirs_with_canonical(&mut read_write, settings_dirs);
 
         // Include both original and canonical paths to handle symlinks
         // (e.g., /tmp → /private/tmp on macOS)
@@ -130,15 +124,10 @@ impl SandboxConfig {
         let mut read_only = Self::get_read_only_paths();
 
         // Add additional directories from --add-dir flag as read-only
-        for dir in additional_dirs {
-            if dir.exists() {
-                read_only.push(dir.clone());
-                // Also add canonical path to handle symlinks
-                if let Ok(canonical) = dir.canonicalize() {
-                    read_only.push(canonical);
-                }
-            }
-        }
+        push_dirs_with_canonical(&mut read_only, additional_dirs);
+
+        // Add skill directories as read-only (so scripts like x-fetch.js can execute)
+        push_dirs_with_canonical(&mut read_only, skill_dirs);
 
         Self {
             read_write,
@@ -208,6 +197,20 @@ impl SandboxConfig {
         }
 
         paths.into_iter().filter(|p| p.exists()).collect()
+    }
+}
+
+/// Push each existing directory and its canonical form into the target vector.
+/// Both original and canonical paths are pushed so sandbox rules match
+/// regardless of symlink resolution (e.g., /tmp and /private/tmp on macOS).
+fn push_dirs_with_canonical(target: &mut Vec<PathBuf>, dirs: &[PathBuf]) {
+    for dir in dirs {
+        if dir.exists() {
+            target.push(dir.clone());
+            if let Ok(canonical) = dir.canonicalize() {
+                target.push(canonical);
+            }
+        }
     }
 }
 

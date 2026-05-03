@@ -18,7 +18,6 @@
 //! in the working directory and temp directories.
 
 use serde::Serialize;
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -78,57 +77,52 @@ fn compute_temp_directories() -> Vec<PathBuf> {
 }
 
 // =============================================================================
-// Thread-Local Additional Directories
+// Global Directory Storage
 // =============================================================================
 
-// Thread-local storage for additional directories added via --add-dir flag.
+// Global storage for additional directories added via --add-dir flag.
 // These directories are read-only for the agent.
-thread_local! {
-    static ADDITIONAL_DIRS: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
-    // Skill base directories (parent dirs of SKILL.md files) - read-only access
-    static SKILL_DIRS: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
-    // Settings directories (from settings.toml) - read-write access
-    static SETTINGS_DIRS: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
-}
+// Uses OnceLock instead of thread_local! to work correctly with
+// Tokio's multi-threaded runtime where tool execution may run on
+// a different thread than the startup thread.
+static ADDITIONAL_DIRS: OnceLock<Vec<PathBuf>> = OnceLock::new();
+// Skill base directories (parent dirs of SKILL.md files) - read-only access
+static SKILL_DIRS: OnceLock<Vec<PathBuf>> = OnceLock::new();
+// Settings directories (from settings.toml) - read-write access
+static SETTINGS_DIRS: OnceLock<Vec<PathBuf>> = OnceLock::new();
 
-/// Set the additional directories for the current thread.
+/// Set the additional directories globally.
 /// This should be called once at startup from main.
 pub fn set_additional_dirs(dirs: Vec<PathBuf>) {
-    ADDITIONAL_DIRS.with(|cell| {
-        *cell.borrow_mut() = dirs;
-    });
+    let _ = ADDITIONAL_DIRS.set(dirs);
 }
 
-/// Get the additional directories for the current thread.
+/// Get the additional directories globally.
 pub fn get_additional_dirs() -> Vec<PathBuf> {
-    ADDITIONAL_DIRS.with(|cell| cell.borrow().clone())
+    ADDITIONAL_DIRS.get().cloned().unwrap_or_default()
 }
 
-/// Set the skill directories for the current thread.
+/// Set the skill directories globally.
 /// These directories are granted read-only access for the Read tool.
 pub fn set_skill_dirs(dirs: Vec<PathBuf>) {
-    SKILL_DIRS.with(|cell| {
-        *cell.borrow_mut() = dirs;
-    });
+    let _ = SKILL_DIRS.set(dirs);
 }
 
-/// Get the skill directories for the current thread.
+/// Get the skill directories globally.
 pub fn get_skill_dirs() -> Vec<PathBuf> {
-    SKILL_DIRS.with(|cell| cell.borrow().clone())
+    SKILL_DIRS.get().cloned().unwrap_or_default()
 }
 
-/// Set the settings directories for the current thread.
+/// Set the settings directories globally.
 /// These directories are granted read-write access and are loaded from
 /// settings.toml (both global and project-level).
 pub fn set_settings_dirs(dirs: Vec<PathBuf>) {
-    SETTINGS_DIRS.with(|cell| {
-        *cell.borrow_mut() = dirs;
-    });
+    let _ = SETTINGS_DIRS.set(dirs);
 }
 
-/// Get the settings directories for the current thread.
+/// Get the settings directories globally.
 pub fn get_settings_dirs() -> Vec<PathBuf> {
-    SETTINGS_DIRS.with(|cell| cell.borrow().clone())
+    SETTINGS_DIRS.get().cloned().unwrap_or_default()
 }
 
 // =============================================================================
@@ -200,9 +194,27 @@ pub(super) struct ValidatedPath {
 ///
 /// Returns the canonical path along with its access level.
 pub(super) fn validate_path(path_str: &str) -> Result<ValidatedPath, String> {
-    let path = Path::new(path_str);
-
     let cwd = cached_cwd()?;
+    validate_path_with_dirs(
+        path_str,
+        cwd,
+        cached_temp_dirs(),
+        &get_settings_dirs(),
+        &get_additional_dirs(),
+        &get_skill_dirs(),
+    )
+}
+
+/// Core path validation logic, separated for testability.
+fn validate_path_with_dirs(
+    path_str: &str,
+    cwd: &Path,
+    temp_dirs: &[PathBuf],
+    settings_dirs: &[PathBuf],
+    additional_dirs: &[PathBuf],
+    skill_dirs: &[PathBuf],
+) -> Result<ValidatedPath, String> {
+    let path = Path::new(path_str);
 
     // Canonicalize the path (resolve symlinks, relative paths, etc.)
     let canonical = path
@@ -210,7 +222,7 @@ pub(super) fn validate_path(path_str: &str) -> Result<ValidatedPath, String> {
         .map_err(|e| format!("Path not found or not accessible '{}': {e}", path.display()))?;
 
     // Check if path is within working directory (read-write)
-    if canonical.starts_with(cwd) {
+    if path_starts_with(&canonical, &[cwd.to_path_buf()]) {
         return Ok(ValidatedPath {
             canonical,
             access: PathAccess::ReadWrite,
@@ -218,52 +230,56 @@ pub(super) fn validate_path(path_str: &str) -> Result<ValidatedPath, String> {
     }
 
     // Allow paths in standard temp directories (read-write)
-    for temp_dir in cached_temp_dirs() {
-        if canonical.starts_with(temp_dir) {
-            return Ok(ValidatedPath {
-                canonical,
-                access: PathAccess::ReadWrite,
-            });
-        }
+    if path_starts_with(&canonical, temp_dirs) {
+        return Ok(ValidatedPath {
+            canonical,
+            access: PathAccess::ReadWrite,
+        });
     }
 
     // Allow paths in settings directories from settings.toml (read-write)
-    let settings_dirs = get_settings_dirs();
-    for settings_dir in &settings_dirs {
-        if canonical.starts_with(settings_dir) {
-            return Ok(ValidatedPath {
-                canonical,
-                access: PathAccess::ReadWrite,
-            });
-        }
+    if path_starts_with(&canonical, settings_dirs) {
+        return Ok(ValidatedPath {
+            canonical,
+            access: PathAccess::ReadWrite,
+        });
     }
 
     // Allow paths in directories added via --add-dir flag (read-only)
-    let additional_dirs = get_additional_dirs();
-    for add_dir in &additional_dirs {
-        if canonical.starts_with(add_dir) {
-            return Ok(ValidatedPath {
-                canonical,
-                access: PathAccess::ReadOnly,
-            });
-        }
+    if path_starts_with(&canonical, additional_dirs) {
+        return Ok(ValidatedPath {
+            canonical,
+            access: PathAccess::ReadOnly,
+        });
     }
 
     // Allow paths in skill directories (read-only)
-    let skill_dirs = get_skill_dirs();
-    for skill_dir in &skill_dirs {
-        if canonical.starts_with(skill_dir) {
-            return Ok(ValidatedPath {
-                canonical,
-                access: PathAccess::ReadOnly,
-            });
-        }
+    if path_starts_with(&canonical, skill_dirs) {
+        return Ok(ValidatedPath {
+            canonical,
+            access: PathAccess::ReadOnly,
+        });
     }
 
     Err(format!(
         "Path '{}' is outside the working directory",
         canonical.display()
     ))
+}
+
+/// Check if a canonical path starts with any of the given directories.
+/// Each directory is canonicalized before comparison to handle symlinks
+/// (e.g., /tmp → /private/tmp on macOS).
+fn path_starts_with(canonical: &Path, dirs: &[PathBuf]) -> bool {
+    dirs.iter().any(|dir| {
+        // Try canonical form first (fast path when no symlinks involved)
+        if canonical.starts_with(dir) {
+            return true;
+        }
+        // Also try the canonicalized form of the dir
+        dir.canonicalize()
+            .is_ok_and(|canon_dir| canonical.starts_with(&canon_dir))
+    })
 }
 
 /// Validate that a path exists and is within the current working directory, allowed temp directories,
@@ -372,4 +388,126 @@ pub fn read_tool() -> Tool {
 /// Returns the Write tool definition
 pub fn write_tool() -> Tool {
     write::write_tool()
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// Verify that `validate_path_with_dirs` accepts paths within skill directories.
+    #[test]
+    fn skill_dir_path_accepted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill_dir = tmp.path().join("fetching-x-content");
+        fs::create_dir_all(&skill_dir).unwrap();
+
+        // Create a SKILL.md and a script file in the skill directory
+        let skill_file = skill_dir.join("SKILL.md");
+        let script_file = skill_dir.join("scripts").join("x-fetch.js");
+        fs::create_dir_all(script_file.parent().unwrap()).unwrap();
+        fs::write(&skill_file, "# Skill content").unwrap();
+        fs::write(&script_file, "// script content").unwrap();
+
+        let cwd = tmp.path().join("project");
+        fs::create_dir_all(&cwd).unwrap();
+
+        let result = validate_path_with_dirs(
+            skill_file.to_str().unwrap(),
+            &cwd,
+            &[],
+            &[],
+            &[],
+            std::slice::from_ref(&skill_dir),
+        );
+        assert!(
+            result.is_ok(),
+            "Skill file should be readable: {:?}",
+            result.err()
+        );
+        let validated = result.unwrap();
+        assert_eq!(validated.access, PathAccess::ReadOnly);
+    }
+
+    /// Verify that files nested in skill subdirectories are also accepted.
+    #[test]
+    fn nested_path_in_skill_dir_accepted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill_dir = tmp.path().join("fetching-x-content");
+        let nested = skill_dir.join("scripts").join("x-fetch.js");
+        fs::create_dir_all(nested.parent().unwrap()).unwrap();
+        fs::write(&nested, "// script").unwrap();
+
+        let cwd = tmp.path().join("project");
+        fs::create_dir_all(&cwd).unwrap();
+
+        let result = validate_path_with_dirs(
+            nested.to_str().unwrap(),
+            &cwd,
+            &[],
+            &[],
+            &[],
+            std::slice::from_ref(&skill_dir),
+        );
+        assert!(
+            result.is_ok(),
+            "Nested skill file should be readable: {:?}",
+            result.err()
+        );
+        assert_eq!(result.unwrap().access, PathAccess::ReadOnly);
+    }
+
+    /// Verify that paths outside skill directories are still rejected.
+    #[test]
+    fn path_outside_skill_dir_rejected() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill_dir = tmp.path().join("fetching-x-content");
+        fs::create_dir_all(&skill_dir).unwrap();
+        let outside_file = tmp.path().join("outside.md");
+        fs::write(&outside_file, "nope").unwrap();
+
+        let cwd = tmp.path().join("project");
+        fs::create_dir_all(&cwd).unwrap();
+
+        let result = validate_path_with_dirs(
+            outside_file.to_str().unwrap(),
+            &cwd,
+            &[],
+            &[],
+            &[],
+            std::slice::from_ref(&skill_dir),
+        );
+        assert!(result.is_err(), "File outside skill dir should be rejected");
+    }
+
+    /// Verify that multiple skill directories are all recognized.
+    #[test]
+    fn multiple_skill_dirs_accepted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill_a = tmp.path().join("skill-a");
+        let skill_b = tmp.path().join("skill-b");
+        fs::create_dir_all(&skill_a).unwrap();
+        fs::create_dir_all(&skill_b).unwrap();
+        let file_a = skill_a.join("SKILL.md");
+        let file_b = skill_b.join("SKILL.md");
+        fs::write(&file_a, "a").unwrap();
+        fs::write(&file_b, "b").unwrap();
+
+        let cwd = tmp.path().join("project");
+        fs::create_dir_all(&cwd).unwrap();
+
+        let skill_dirs = [skill_a, skill_b];
+        let result_a =
+            validate_path_with_dirs(file_a.to_str().unwrap(), &cwd, &[], &[], &[], &skill_dirs);
+        assert!(result_a.is_ok());
+
+        let result_b =
+            validate_path_with_dirs(file_b.to_str().unwrap(), &cwd, &[], &[], &[], &skill_dirs);
+        assert!(result_b.is_ok());
+    }
 }

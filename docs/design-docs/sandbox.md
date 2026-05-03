@@ -10,7 +10,7 @@ When the Bash tool executes a command, cake wraps it in an OS-level sandbox that
 |---|---|---|
 | **Read-write** | Current working directory, temp directories, `~/.cargo`, `~/.rustup`, `~/.cache/sccache`, `~/.config/gh`, `~/.config/glab-cli`, `~/.config/mise`, `~/.asdf`, `~/.volta`, and related cache/state directories | Project files, build artifacts, toolchain caches, SCM CLI configs |
 | **Read-only + execute** | `/usr`, `/bin`, `/sbin`, system paths, `/Library`, `/System/Library`, `/Applications`, `/opt/homebrew`, `/opt/local` (macOS); `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc/alternatives`, `/snap` (Linux) | Running system tools and compilers |
-| **Read-only** | `/etc`, `/dev`, `/var`, `/proc`, `/sys` (Linux); `/etc`, `/private/etc`, `/private/var`, `/dev`, `/var` (macOS); `~/.config/git`, `~/.gitattributes`; **plus any directories added via `--add-dir`** | Configuration, device access, git config, user-specified reference directories |
+| **Read-only** | `/etc`, `/dev`, `/var`, `/proc`, `/sys` (Linux); `/etc`, `/private/etc`, `/private/var`, `/dev`, `/var` (macOS); `~/.config/git`, `~/.gitattributes`; **plus any directories added via `--add-dir`**; **plus skill directories (parent dirs of SKILL.md files)** | Configuration, device access, git config, user-specified reference directories, skill scripts |
 | **Denied** | Everything else | Home directory (except allowed paths), other projects, etc. |
 
 ## Platform Support
