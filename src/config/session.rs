@@ -7,7 +7,7 @@ use std::{
 use anyhow::Context;
 use fs4::{FileExt, TryLockError};
 
-use crate::clients::{ConversationItem, SessionRecord};
+use crate::clients::{ConversationItem, GitState, SessionRecord};
 
 /// Session format version for append-only task event logs.
 pub const CURRENT_FORMAT_VERSION: u32 = 4;
@@ -34,6 +34,10 @@ pub struct Session {
     pub working_dir: PathBuf,
     /// Model used for the session
     pub model: Option<String>,
+    /// Full system prompt used when the session was created.
+    pub system_prompt: Option<String>,
+    /// Git repository state captured when the session was created.
+    pub git: Option<GitState>,
     /// Full record history (`SessionMeta`, task boundaries, messages, tool calls, etc.)
     pub records: Vec<SessionRecord>,
 }
@@ -56,6 +60,8 @@ impl Session {
             id,
             working_dir,
             model: None,
+            system_prompt: None,
+            git: None,
             records: Vec::new(),
         }
     }
@@ -92,6 +98,8 @@ impl Session {
         let id;
         let working_dir;
         let model;
+        let system_prompt;
+        let git;
         let mut records = Vec::new();
 
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(first_line.trim())
@@ -116,6 +124,8 @@ impl Session {
                 session_id,
                 working_directory,
                 model: m,
+                system_prompt: sp,
+                git: git_state,
                 ..
             } => {
                 if *format_version != CURRENT_FORMAT_VERSION {
@@ -130,6 +140,8 @@ impl Session {
                     .with_context(|| format!("Invalid session UUID '{session_id}'"))?;
                 working_dir = working_directory.clone();
                 model = m.clone();
+                system_prompt = sp.clone();
+                git = Some(git_state.clone());
             },
             _ => {
                 return Err(anyhow::anyhow!(
@@ -171,6 +183,8 @@ impl Session {
             id,
             working_dir,
             model,
+            system_prompt,
+            git,
             records,
         })
     }
@@ -267,6 +281,12 @@ mod tests {
             model: session.model.clone(),
             tools: vec!["bash".to_string(), "read".to_string()],
             cake_version: Some("test".to_string()),
+            system_prompt: Some("test system prompt".to_string()),
+            git: GitState {
+                repository_url: Some("https://example.com/repo.git".to_string()),
+                branch: Some("main".to_string()),
+                commit_hash: Some("abc123".to_string()),
+            },
         }
     }
 

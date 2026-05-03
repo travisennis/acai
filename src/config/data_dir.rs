@@ -2,12 +2,13 @@ use std::{
     fs::{self, File},
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
+    process::Command,
 };
 
 use anyhow::{Context, anyhow};
 use serde::Deserialize;
 
-use crate::clients::SessionRecord;
+use crate::clients::{GitState, SessionRecord};
 use crate::config::{Session, session::CURRENT_FORMAT_VERSION};
 
 /// Represents an AGENTS.md file with its path and content.
@@ -404,7 +405,38 @@ fn session_meta_record(session: &Session, tools: Vec<String>) -> SessionRecord {
         model: session.model.clone(),
         tools,
         cake_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        system_prompt: session.system_prompt.clone(),
+        git: session
+            .git
+            .clone()
+            .or_else(|| git_state(&session.working_dir))
+            .unwrap_or_default(),
     }
+}
+
+fn git_state(working_dir: &Path) -> Option<GitState> {
+    let commit_hash = git_output(working_dir, &["rev-parse", "HEAD"])?;
+    Some(GitState {
+        repository_url: git_output(working_dir, &["config", "--get", "remote.origin.url"]),
+        branch: git_output(working_dir, &["branch", "--show-current"]),
+        commit_hash: Some(commit_hash),
+    })
+}
+
+fn git_output(working_dir: &Path, args: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(working_dir)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let trimmed = stdout.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 #[cfg(test)]
@@ -425,11 +457,93 @@ mod tests {
     #[test]
     fn save_and_load_session_round_trip() {
         let (dd, _tmp) = test_data_dir();
-        let session = Session::new(uuid::Uuid::new_v4(), PathBuf::from("/work"));
+        let mut session = Session::new(uuid::Uuid::new_v4(), PathBuf::from("/work"));
+        session.system_prompt = Some("full system prompt".to_string());
+        session.git = Some(GitState {
+            repository_url: Some("https://example.com/cake.git".to_string()),
+            branch: Some("main".to_string()),
+            commit_hash: Some("abc123".to_string()),
+        });
         dd.save_session(&session).unwrap();
         let loaded = dd.load_session(&session.id.to_string()).unwrap().unwrap();
         assert_eq!(loaded.id, session.id);
         assert_eq!(loaded.working_dir, session.working_dir);
+
+        let first_line = fs::read_to_string(dd.session_path(session.id))
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap()
+            .to_string();
+        let meta: serde_json::Value = serde_json::from_str(&first_line).unwrap();
+        assert_eq!(meta["system_prompt"], "full system prompt");
+        assert_eq!(
+            meta["git"]["repository_url"],
+            "https://example.com/cake.git"
+        );
+        assert_eq!(meta["git"]["branch"], "main");
+        assert_eq!(meta["git"]["commit_hash"], "abc123");
+    }
+
+    #[test]
+    fn session_meta_includes_empty_git_outside_repository() {
+        let (dd, tmp) = test_data_dir();
+        let mut session = Session::new(uuid::Uuid::new_v4(), tmp.path().join("not-a-repo"));
+        session.system_prompt = Some("full system prompt".to_string());
+        fs::create_dir_all(&session.working_dir).unwrap();
+
+        dd.save_session(&session).unwrap();
+
+        let first_line = fs::read_to_string(dd.session_path(session.id))
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap()
+            .to_string();
+        let meta: serde_json::Value = serde_json::from_str(&first_line).unwrap();
+        assert_eq!(meta["system_prompt"], "full system prompt");
+        assert!(meta["git"].is_object());
+        assert!(meta["git"]["repository_url"].is_null());
+        assert!(meta["git"]["branch"].is_null());
+        assert!(meta["git"]["commit_hash"].is_null());
+    }
+
+    #[test]
+    fn git_state_captures_repository_url_branch_and_commit() {
+        let repo = TempDir::new().unwrap();
+        run_git(repo.path(), &["init"]);
+        run_git(repo.path(), &["config", "user.email", "test@example.com"]);
+        run_git(repo.path(), &["config", "user.name", "Test User"]);
+        run_git(repo.path(), &["commit", "--allow-empty", "-m", "initial"]);
+        run_git(
+            repo.path(),
+            &["remote", "add", "origin", "https://example.com/cake.git"],
+        );
+        run_git(repo.path(), &["checkout", "-b", "feature/session-meta"]);
+
+        let expected_commit = git_output(repo.path(), &["rev-parse", "HEAD"]).unwrap();
+        let state = git_state(repo.path()).unwrap();
+
+        assert_eq!(
+            state.repository_url.as_deref(),
+            Some("https://example.com/cake.git")
+        );
+        assert_eq!(state.branch.as_deref(), Some("feature/session-meta"));
+        assert_eq!(state.commit_hash.as_deref(), Some(expected_commit.as_str()));
+    }
+
+    fn run_git(working_dir: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(working_dir)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     #[test]

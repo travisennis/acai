@@ -5,6 +5,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::Role;
 
+/// Snapshot of git repository state captured when a session file is created.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct GitState {
+    pub repository_url: Option<String>,
+    pub branch: Option<String>,
+    pub commit_hash: Option<String>,
+}
+
 // =============================================================================
 // Reasoning Content (preserved for API round-tripping)
 // =============================================================================
@@ -253,6 +261,10 @@ pub enum SessionRecord {
         tools: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cake_version: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        system_prompt: Option<String>,
+        #[serde(default)]
+        git: GitState,
     },
 
     TaskStart {

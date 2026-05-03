@@ -403,6 +403,7 @@ impl CodingAssistant {
         info!(target: "cake", "New session: {new_id}");
         let mut session = Session::new(new_id, current_dir);
         session.model = Some(resolved.config.model);
+        session.system_prompt = Some(system_prompt.to_string());
         RunSession {
             agent,
             session,
@@ -433,6 +434,7 @@ impl CodingAssistant {
         info!(target: "cake", "New forked session: {new_id}");
         let mut session = Session::new(new_id, current_dir);
         session.model = Some(resolved.config.model);
+        session.system_prompt = Some(system_prompt.to_string());
         RunSession {
             agent,
             session,

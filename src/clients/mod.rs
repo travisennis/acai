@@ -22,4 +22,4 @@ pub use agent::Agent;
 #[doc(inline)]
 pub use tools::{set_additional_dirs, set_settings_dirs, set_skill_dirs, summarize_tool_args};
 #[doc(inline)]
-pub use types::{ConversationItem, SessionRecord};
+pub use types::{ConversationItem, GitState, SessionRecord};

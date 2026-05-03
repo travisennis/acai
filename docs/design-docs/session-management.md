@@ -80,6 +80,12 @@ All timestamps are UTC RFC 3339 strings. `session_id` and `task_id` are UUID str
 | `model` | string | no | Resolved model identifier used for the session |
 | `tools` | array of strings | yes | Enabled tool names at session creation |
 | `cake_version` | string | no | Package version that created the file |
+| `system_prompt` | string | no | Full system prompt used when the session was created |
+| `git` | object | yes | Git repository state at session creation |
+
+The `git` object contains `repository_url`, `branch`, and `commit_hash`. Each
+property is `null` when cake cannot determine that value, such as outside a git
+repository or in a detached HEAD state.
 
 ### `task_start`
 
