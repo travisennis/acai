@@ -84,16 +84,6 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/). 
 | `model` | Model configuration and API types |
 | `prompts` | System prompt construction, AGENTS.md integration |
 | `logger` | Logging configuration |
-| `docs` | Documentation changes |
-| `tests` | Test files and test infrastructure |
-
-**Examples:**
-```
-feat(cli): add --verbose flag
-fix(agent): handle timeout correctly
-docs: update ARCHITECTURE.md with new module
-refactor(tools): extract path validation into shared function
-```
 
 ---
 
