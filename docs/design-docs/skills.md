@@ -4,12 +4,12 @@ This document describes the skills system that provides specialized instructions
 
 ## Overview
 
-Skills are self-contained instruction modules stored as `SKILL.md` files. They allow the agent to access domain-specific knowledge (debugging procedures, evaluation criteria, workflow instructions) only when needed, rather than embedding all possible knowledge in the system prompt.
+Skills are self-contained instruction modules stored as `SKILL.md` files. They allow the agent to access domain-specific knowledge (debugging procedures, evaluation criteria, workflow instructions) only when needed, rather than embedding all possible knowledge in the initial prompt.
 
 The system has three phases:
 
 1. **Discovery**: Find `SKILL.md` files in `.agents/skills/` directories
-2. **Catalog disclosure**: List discovered skills in the system prompt
+2. **Catalog disclosure**: List discovered skills in an initial developer context message
 3. **Activation**: The model reads a `SKILL.md` via the `Read` tool when its description matches the task
 
 ## Skill Format
@@ -81,9 +81,9 @@ Project: .agents/skills/evaluating-cake/SKILL.md  ->  "evaluating-cake"
 User:    ~/.agents/skills/web-searching/SKILL.md   ->  "web-searching" (unless shadowed by project)
 ```
 
-## System Prompt Integration
+## Prompt Integration
 
-Discovered skills appear in the system prompt as XML:
+Discovered skills appear in an initial developer context message as XML:
 
 ```xml
 ## Skills
@@ -277,7 +277,7 @@ impl Skill {
     pub fn parse(path: &Path, scope: SkillScope) -> Result<Self, SkillDiagnostic>;
 }
 
-// Generate XML catalog for system prompt
+// Generate XML catalog for prompt context
 impl SkillCatalog {
     pub fn to_prompt_xml(&self) -> String;
     pub fn filter_to(&mut self, skill_names: &[String]);
@@ -295,8 +295,8 @@ impl SettingsLoader {
 
 ### Integration Flow
 
-1. **`main.rs`**: Call `discover_skills()`, apply `SkillConfig`, pass catalog to `build_system_prompt()`
-2. **`prompts/mod.rs`**: Append `<available_skills>` XML to system prompt if skills exist
+1. **`main.rs`**: Call `discover_skills()`, apply `SkillConfig`, pass catalog to `build_initial_prompt_messages()`
+2. **`prompts/mod.rs`**: Emit `<available_skills>` XML in a developer context message if skills exist
 3. **`tools/mod.rs`**: Register skill base directories for path validation via `set_skill_dirs()`
 4. **`agent.rs`**: Check Read tool paths against `skill_locations`; deduplicate via `activated_skills`
 

@@ -287,6 +287,42 @@ mod tests {
     }
 
     #[test]
+    fn extract_instructions_keeps_developer_messages_in_input() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::System,
+                content: "You are cake.".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Message {
+                role: Role::Developer,
+                content: "Mutable context".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Message {
+                role: Role::User,
+                content: "Hello".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+        ];
+
+        let (instructions, remaining) = extract_instructions(&history);
+        assert_eq!(instructions, Some("You are cake."));
+        assert_eq!(remaining.len(), 2);
+
+        let input = build_input(remaining);
+        assert_eq!(input[0]["role"], "developer");
+        assert_eq!(input[0]["content"][0]["text"], "Mutable context");
+        assert_eq!(input[1]["role"], "user");
+    }
+
+    #[test]
     fn extract_instructions_without_system_message() {
         let history = vec![ConversationItem::Message {
             role: Role::User,

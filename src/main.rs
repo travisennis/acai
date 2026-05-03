@@ -23,7 +23,7 @@ use crate::config::{
     looks_like_uuid, parse_skill_path_list, worktree,
 };
 use crate::models::{Message, Role};
-use crate::prompts::build_system_prompt;
+use crate::prompts::build_initial_prompt_messages;
 use clap::{Parser, ValueEnum};
 use indicatif::{ProgressBar, ProgressStyle};
 use tracing::info;
@@ -366,14 +366,14 @@ impl CodingAssistant {
     fn restored_client_and_session(
         restored: Session,
         resolved: ResolvedModelConfig,
-        system_prompt: &str,
+        initial_messages: &[(Role, String)],
         skill_locations: &HashMap<PathBuf, String>,
         task_id: uuid::Uuid,
     ) -> RunSession {
         let messages = restored.messages();
         let prior_skills = Self::extract_activated_skills(&messages);
 
-        let agent = Agent::new(resolved.clone(), system_prompt)
+        let agent = Agent::new(resolved.clone(), initial_messages)
             .with_session_id(restored.id)
             .with_task_id(task_id)
             .with_history(messages)
@@ -392,18 +392,18 @@ impl CodingAssistant {
     fn new_client_and_session(
         resolved: ResolvedModelConfig,
         current_dir: PathBuf,
-        system_prompt: &str,
+        initial_messages: &[(Role, String)],
         skill_locations: HashMap<PathBuf, String>,
         task_id: uuid::Uuid,
     ) -> RunSession {
-        let agent = Agent::new(resolved.clone(), system_prompt)
+        let agent = Agent::new(resolved.clone(), initial_messages)
             .with_task_id(task_id)
             .with_skill_locations(skill_locations);
         let new_id = agent.session_id;
         info!(target: "cake", "New session: {new_id}");
         let mut session = Session::new(new_id, current_dir);
         session.model = Some(resolved.config.model);
-        session.system_prompt = Some(system_prompt.to_string());
+        session.system_prompt = initial_messages.first().map(|(_, content)| content.clone());
         RunSession {
             agent,
             session,
@@ -416,7 +416,7 @@ impl CodingAssistant {
         restored: &Session,
         resolved: ResolvedModelConfig,
         current_dir: PathBuf,
-        system_prompt: &str,
+        initial_messages: &[(Role, String)],
         skill_locations: HashMap<PathBuf, String>,
         task_id: uuid::Uuid,
     ) -> RunSession {
@@ -426,7 +426,7 @@ impl CodingAssistant {
             .filter(|record| record.to_conversation_item().is_some())
             .cloned()
             .collect();
-        let agent = Agent::new(resolved.clone(), system_prompt)
+        let agent = Agent::new(resolved.clone(), initial_messages)
             .with_task_id(task_id)
             .with_history(restored.messages())
             .with_skill_locations(skill_locations);
@@ -434,7 +434,7 @@ impl CodingAssistant {
         info!(target: "cake", "New forked session: {new_id}");
         let mut session = Session::new(new_id, current_dir);
         session.model = Some(resolved.config.model);
-        session.system_prompt = Some(system_prompt.to_string());
+        session.system_prompt = initial_messages.first().map(|(_, content)| content.clone());
         RunSession {
             agent,
             session,
@@ -453,7 +453,8 @@ impl CodingAssistant {
         skill_catalog: &SkillCatalog,
         task_id: uuid::Uuid,
     ) -> anyhow::Result<RunSession> {
-        let system_prompt = build_system_prompt(&current_dir, agents_files, skill_catalog);
+        let initial_messages =
+            build_initial_prompt_messages(&current_dir, agents_files, skill_catalog);
         let skill_locations = Self::skill_locations(skill_catalog);
 
         if self.continue_session {
@@ -474,7 +475,7 @@ impl CodingAssistant {
             Ok(Self::restored_client_and_session(
                 restored,
                 resolved,
-                &system_prompt,
+                &initial_messages,
                 &skill_locations,
                 task_id,
             ))
@@ -494,7 +495,7 @@ impl CodingAssistant {
             Ok(Self::restored_client_and_session(
                 restored,
                 resolved,
-                &system_prompt,
+                &initial_messages,
                 &skill_locations,
                 task_id,
             ))
@@ -521,7 +522,7 @@ impl CodingAssistant {
                 &restored,
                 resolved,
                 current_dir,
-                &system_prompt,
+                &initial_messages,
                 skill_locations,
                 task_id,
             ))
@@ -531,7 +532,7 @@ impl CodingAssistant {
             Ok(Self::new_client_and_session(
                 resolved,
                 current_dir,
-                &system_prompt,
+                &initial_messages,
                 skill_locations,
                 task_id,
             ))
@@ -771,6 +772,7 @@ impl CmdRunner for CodingAssistant {
 
         let start = Instant::now();
 
+        client.emit_prompt_context_records()?;
         client.emit_task_start_record()?;
 
         let result: anyhow::Result<Option<Message>> = client.send(msg).await;
@@ -1427,7 +1429,10 @@ mod tests {
                 Ok(resolved) => resolved,
                 Err(err) => panic!("test config should resolve: {err}"),
             };
-            let mut agent = Agent::new(resolved, "test system prompt");
+            let mut agent = Agent::new(
+                resolved,
+                &[(Role::System, "test system prompt".to_string())],
+            );
             agent.session_id = uuid::uuid!("550e8400-e29b-41d4-a716-446655440000");
             agent.turn_count = 3;
             agent.total_usage.input_tokens = 1000;

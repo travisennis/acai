@@ -127,21 +127,39 @@ fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage<'_>> {
     let mut messages: Vec<ChatMessage<'_>> = Vec::new();
     let mut pending_tool_calls: Vec<ChatToolCallRef<'_>> = Vec::new();
     let mut pending_reasoning_content: Option<Cow<'_, str>> = None;
+    let mut pending_developer_context: Vec<&str> = Vec::new();
 
     for item in history {
         match item {
             ConversationItem::Message { role, content, .. } => {
                 let role_str = match role {
                     Role::System => "system",
+                    Role::Developer => {
+                        pending_developer_context.push(content);
+                        continue;
+                    },
                     Role::Assistant => "assistant",
                     Role::User => "user",
                     Role::Tool => "tool",
                 };
+                let content = if matches!(role, Role::User) && !pending_developer_context.is_empty()
+                {
+                    Cow::Owned(format!(
+                        "{}\n\nUser message:\n{}",
+                        pending_developer_context.join("\n\n"),
+                        content
+                    ))
+                } else {
+                    Cow::Borrowed(content.as_str())
+                };
+                if matches!(role, Role::User) {
+                    pending_developer_context.clear();
+                }
 
                 if matches!(role, Role::Assistant) && !pending_tool_calls.is_empty() {
                     messages.push(ChatMessage {
                         role: Cow::Borrowed(role_str),
-                        content: Some(Cow::Borrowed(content)),
+                        content: Some(content),
                         reasoning_content: pending_reasoning_content.take(),
                         tool_calls: Some(std::mem::take(&mut pending_tool_calls)),
                         tool_call_id: None,
@@ -158,7 +176,7 @@ fn build_messages(history: &[ConversationItem]) -> Vec<ChatMessage<'_>> {
 
                 messages.push(ChatMessage {
                     role: Cow::Borrowed(role_str),
-                    content: Some(Cow::Borrowed(content)),
+                    content: Some(content),
                     reasoning_content: matches!(role, Role::Assistant)
                         .then(|| pending_reasoning_content.take())
                         .flatten(),
@@ -373,6 +391,49 @@ mod tests {
         assert_eq!(msgs[0].content.as_deref(), Some("You are helpful."));
         assert_eq!(msgs[1].role, "user");
         assert_eq!(msgs[1].content.as_deref(), Some("Hello"));
+    }
+
+    #[test]
+    fn build_messages_folds_developer_context_into_first_user_message() {
+        let history = vec![
+            ConversationItem::Message {
+                role: Role::System,
+                content: "You are cake.".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Message {
+                role: Role::Developer,
+                content: "AGENTS.md context".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Message {
+                role: Role::Developer,
+                content: "Environment context".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+            ConversationItem::Message {
+                role: Role::User,
+                content: "Hello".to_string(),
+                id: None,
+                status: None,
+                timestamp: None,
+            },
+        ];
+
+        let msgs = build_messages(&history);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].role, "system");
+        assert_eq!(msgs[1].role, "user");
+        assert_eq!(
+            msgs[1].content.as_deref(),
+            Some("AGENTS.md context\n\nEnvironment context\n\nUser message:\nHello")
+        );
     }
 
     #[test]

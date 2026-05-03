@@ -273,6 +273,19 @@ pub enum SessionRecord {
         timestamp: DateTime<Utc>,
     },
 
+    /// Initial prompt context used for one invocation.
+    ///
+    /// These records are append-only audit entries. They are intentionally not
+    /// replayed from session history; each invocation rebuilds fresh prompt
+    /// context from current AGENTS.md files, skills, and environment state.
+    PromptContext {
+        session_id: String,
+        task_id: String,
+        role: Role,
+        content: String,
+        timestamp: DateTime<Utc>,
+    },
+
     Message {
         role: Role,
         content: String,
@@ -601,7 +614,10 @@ impl SessionRecord {
                 content: content.clone(),
                 timestamp: timestamp.clone(),
             }),
-            Self::SessionMeta { .. } | Self::TaskStart { .. } | Self::TaskComplete { .. } => None,
+            Self::SessionMeta { .. }
+            | Self::TaskStart { .. }
+            | Self::PromptContext { .. }
+            | Self::TaskComplete { .. } => None,
         }
     }
 
@@ -1062,6 +1078,25 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         let expected = r#"{"only":["OpenAI"]}"#;
         assert_eq!(json, expected);
+    }
+
+    #[test]
+    fn prompt_context_records_are_audit_only() {
+        let record = SessionRecord::PromptContext {
+            session_id: "session-1".to_string(),
+            task_id: "task-1".to_string(),
+            role: Role::Developer,
+            content: "mutable context".to_string(),
+            timestamp: DateTime::parse_from_rfc3339("2026-05-03T12:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        };
+
+        let json = serde_json::to_value(&record).unwrap();
+        assert_eq!(json["type"], "prompt_context");
+        assert_eq!(json["role"], "developer");
+        assert_eq!(json["content"], "mutable context");
+        assert!(record.to_conversation_item().is_none());
     }
 
     #[test]

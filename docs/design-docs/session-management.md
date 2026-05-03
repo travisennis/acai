@@ -53,6 +53,7 @@ The first non-empty line must be exactly one `session_meta` record. Every saved 
 ```json
 {"type":"session_meta","format_version":4,"session_id":"550e8400-e29b-41d4-a716-446655440000","timestamp":"2026-05-03T12:00:00Z","working_directory":"/Users/user/project","model":"anthropic/claude-3.5-sonnet","tools":["bash","read","edit","write"],"cake_version":"0.1.0"}
 {"type":"task_start","session_id":"550e8400-e29b-41d4-a716-446655440000","task_id":"2b15f29d-8c42-4c53-9bdf-35c8f2390d3e","timestamp":"2026-05-03T12:00:01Z"}
+{"type":"prompt_context","session_id":"550e8400-e29b-41d4-a716-446655440000","task_id":"task-1","role":"developer","content":"Current working directory: /work\nToday's date: 2026-05-03","timestamp":"2026-05-03T12:00:00Z"}
 {"type":"message","role":"user","content":"List files"}
 {"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":"{\"command\":\"ls\"}"}
 {"type":"function_call_output","call_id":"call_1","output":"Cargo.toml\nsrc"}
@@ -60,7 +61,9 @@ The first non-empty line must be exactly one `session_meta` record. Every saved 
 {"type":"task_complete","subtype":"success","success":true,"is_error":false,"duration_ms":1523,"turn_count":2,"num_turns":2,"session_id":"550e8400-e29b-41d4-a716-446655440000","task_id":"2b15f29d-8c42-4c53-9bdf-35c8f2390d3e","result":"The project contains Cargo.toml and src.","usage":{"input_tokens":150,"input_tokens_details":{"cached_tokens":50},"output_tokens":320,"output_tokens_details":{"reasoning_tokens":120},"total_tokens":470}}
 ```
 
-Conversation records are `message`, `function_call`, `function_call_output`, and `reasoning`. Only those records are restored into model context. `session_meta`, `task_start`, and `task_complete` remain in the file but are skipped when reconstructing conversation history.
+Conversation records are `message`, `function_call`, `function_call_output`, and `reasoning`. Only those records are restored into model context. `session_meta`, `task_start`, `prompt_context`, and `task_complete` remain in the file but are skipped when reconstructing conversation history.
+
+`prompt_context` records are append-only audit records for the mutable context used by a single invocation, such as AGENTS.md contents, discovered skills, and environment details. On continue, resume, or fork, cake rebuilds fresh prompt context and appends new `prompt_context` records; it does not replay stale prompt context from earlier invocations.
 
 ## Schema
 
@@ -80,7 +83,7 @@ All timestamps are UTC RFC 3339 strings. `session_id` and `task_id` are UUID str
 | `model` | string | no | Resolved model identifier used for the session |
 | `tools` | array of strings | yes | Enabled tool names at session creation |
 | `cake_version` | string | no | Package version that created the file |
-| `system_prompt` | string | no | Full system prompt used when the session was created |
+| `system_prompt` | string | no | Stable system prompt used when the session was created |
 | `git` | object | yes | Git repository state at session creation |
 
 The `git` object contains `repository_url`, `branch`, and `commit_hash`. Each
@@ -98,14 +101,31 @@ repository or in a detached HEAD state.
 | `task_id` | string | yes | UUID for this invocation |
 | `timestamp` | string | yes | Task start time |
 
+### `prompt_context`
+
+`prompt_context` records the mutable prompt context used for one CLI invocation.
+These records are session-file audit entries and are not restored as conversation
+history.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | yes | Always `prompt_context` |
+| `session_id` | string | yes | Session UUID |
+| `task_id` | string | yes | UUID for this invocation |
+| `role` | string | yes | Logical role for this context, currently `developer` |
+| `content` | string | yes | Context content sent to the model for this invocation |
+| `timestamp` | string | yes | Record creation time |
+
 ### `message`
 
-`message` stores system, user, assistant, or tool text.
+`message` stores user, assistant, or tool text. Older sessions may contain
+system or developer messages; current prompt context is stored separately in
+`session_meta.system_prompt` and `prompt_context`.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `type` | string | yes | Always `message` |
-| `role` | string | yes | One of `system`, `user`, `assistant`, or `tool` |
+| `role` | string | yes | One of `user`, `assistant`, or `tool` for current sessions |
 | `content` | string | yes | Plain text message content |
 | `id` | string | no | Provider message id, normally present for assistant messages from the Responses API |
 | `status` | string | no | Provider status such as `completed` or `incomplete` |

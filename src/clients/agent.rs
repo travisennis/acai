@@ -87,21 +87,24 @@ pub struct Agent {
 }
 
 impl Agent {
-    /// Creates a new agent with the given configuration and system prompt.
+    /// Creates a new agent with the given configuration and initial prompt messages.
     ///
     /// The agent is initialized with four default tools: Bash, Read, Edit, and Write.
     /// A new session ID is generated automatically.
-    pub fn new(config: ResolvedModelConfig, system_prompt: &str) -> Self {
+    pub fn new(config: ResolvedModelConfig, initial_messages: &[(Role, String)]) -> Self {
         let timestamp = chrono::Utc::now().to_rfc3339();
         Self {
             config,
-            history: vec![ConversationItem::Message {
-                role: Role::System,
-                content: system_prompt.to_string(),
-                id: None,
-                status: None,
-                timestamp: Some(timestamp),
-            }],
+            history: initial_messages
+                .iter()
+                .map(|(role, content)| ConversationItem::Message {
+                    role: *role,
+                    content: content.clone(),
+                    id: None,
+                    status: None,
+                    timestamp: Some(timestamp.clone()),
+                })
+                .collect(),
             tools: vec![bash_tool(), edit_tool(), read_tool(), write_tool()],
             streaming_callback: None,
             persist_callback: None,
@@ -140,14 +143,26 @@ impl Agent {
     ///
     /// Use this when continuing a previous session to restore the conversation context.
     pub fn with_history(mut self, messages: Vec<ConversationItem>) -> Self {
-        // Preserve the system message (first item set by Agent::new),
-        // then append the restored conversation history.
+        // Preserve the current initial prompt messages set by Agent::new, then
+        // append the restored conversation history without stale prompt context.
         debug_assert!(
             !self.history.is_empty(),
-            "with_history requires Agent::new() to have set a system message"
+            "with_history requires Agent::new() to have set initial prompt messages"
         );
-        self.history.truncate(1);
-        self.history.extend(messages);
+        let first_non_prompt = messages
+            .iter()
+            .position(|item| {
+                !matches!(
+                    item,
+                    ConversationItem::Message {
+                        role: Role::System | Role::Developer,
+                        ..
+                    }
+                )
+            })
+            .unwrap_or(messages.len());
+        self.history
+            .extend(messages.into_iter().skip(first_non_prompt));
         self
     }
 
@@ -251,6 +266,14 @@ impl Agent {
         Ok(())
     }
 
+    /// Persist a session-only audit record without emitting it to stream-json.
+    fn persist_record(&mut self, record: &SessionRecord) -> anyhow::Result<()> {
+        if let Some(ref mut callback) = self.persist_callback {
+            callback(record)?;
+        }
+        Ok(())
+    }
+
     /// Stream a conversation item as JSON via the streaming callback, if set.
     fn stream_item(&mut self, item: &ConversationItem) -> anyhow::Result<()> {
         self.stream_record(StreamRecord::from_conversation_item(item))
@@ -265,6 +288,41 @@ impl Agent {
         };
 
         self.stream_record(record)
+    }
+
+    /// Emit append-only audit records for mutable prompt context used by this task.
+    pub fn emit_prompt_context_records(&mut self) -> anyhow::Result<()> {
+        let timestamp = chrono::Utc::now();
+        let prompt_context: Vec<_> = self
+            .history
+            .iter()
+            .take_while(|item| {
+                matches!(
+                    item,
+                    ConversationItem::Message {
+                        role: Role::System | Role::Developer,
+                        ..
+                    }
+                )
+            })
+            .filter_map(|item| {
+                let ConversationItem::Message { role, content, .. } = item else {
+                    return None;
+                };
+                (!matches!(role, Role::System)).then(|| SessionRecord::PromptContext {
+                    session_id: self.session_id.to_string(),
+                    task_id: self.task_id.to_string(),
+                    role: *role,
+                    content: content.clone(),
+                    timestamp,
+                })
+            })
+            .collect();
+
+        for record in &prompt_context {
+            self.persist_record(record)?;
+        }
+        Ok(())
     }
 
     /// Accumulate usage from an API turn
@@ -688,7 +746,7 @@ fn test_resolved_model_config(api_type: ApiType, base_url: &str) -> ResolvedMode
 fn test_agent_for(api_type: ApiType, base_url: &str) -> Agent {
     let mut agent = Agent::new(
         test_resolved_model_config(api_type, base_url),
-        "test system prompt",
+        &[(Role::System, "test system prompt".to_string())],
     );
     agent.session_id = uuid::uuid!("550e8400-e29b-41d4-a716-446655440000");
     agent.task_id = uuid::uuid!("550e8400-e29b-41d4-a716-446655440001");
@@ -854,6 +912,56 @@ mod tests {
         drop(streamed);
         assert_eq!(first["type"], "task_start");
         assert_eq!(last["type"], "task_complete");
+    }
+
+    #[test]
+    fn prompt_context_records_persist_without_streaming() {
+        let persisted = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let persisted_clone = persisted.clone();
+        let streamed = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let streamed_clone = streamed.clone();
+
+        let mut agent = Agent::new(
+            test_resolved_model_config(ApiType::ChatCompletions, "https://api.example.com"),
+            &[
+                (Role::System, "test system prompt".to_string()),
+                (Role::Developer, "AGENTS context".to_string()),
+                (Role::Developer, "Environment context".to_string()),
+            ],
+        )
+        .with_session_id(uuid::uuid!("550e8400-e29b-41d4-a716-446655440000"))
+        .with_task_id(uuid::uuid!("550e8400-e29b-41d4-a716-446655440001"))
+        .with_persist_callback(move |record| {
+            persisted_clone.lock().unwrap().push(record.clone());
+            Ok(())
+        })
+        .with_streaming_json(move |json| {
+            streamed_clone.lock().unwrap().push(json.to_string());
+        });
+
+        agent.emit_prompt_context_records().unwrap();
+
+        let persisted = persisted.lock().unwrap();
+        assert_eq!(persisted.len(), 2);
+        assert!(matches!(
+            &persisted[0],
+            SessionRecord::PromptContext {
+                role: Role::Developer,
+                content,
+                ..
+            } if content == "AGENTS context"
+        ));
+        assert!(matches!(
+            &persisted[1],
+            SessionRecord::PromptContext {
+                role: Role::Developer,
+                content,
+                ..
+            } if content == "Environment context"
+        ));
+        drop(persisted);
+
+        assert!(streamed.lock().unwrap().is_empty());
     }
 
     #[test]

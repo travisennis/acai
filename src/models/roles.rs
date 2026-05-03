@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 /// Represents the role of a message sender in a conversation.
 ///
 /// Roles distinguish between different participants in the conversation:
-/// system prompts, assistant responses, user inputs, and tool outputs.
+/// system prompts, developer-provided context, assistant responses, user inputs,
+/// and tool outputs.
 ///
 /// # Examples
 ///
@@ -18,6 +19,8 @@ use serde::{Deserialize, Serialize};
 pub enum Role {
     /// Represents a system role.
     System,
+    /// Represents developer-provided instructions or mutable context.
+    Developer,
     /// Represents an assistant.
     Assistant,
     /// Represents a user.
@@ -42,6 +45,7 @@ impl Role {
     pub const fn as_str(&self) -> &str {
         match self {
             Self::System => "system",
+            Self::Developer => "developer",
             Self::Assistant => "assistant",
             Self::User => "user",
             Self::Tool => "tool",
@@ -58,6 +62,7 @@ mod tests {
     fn role_serialization_roundtrip() {
         let cases = [
             (Role::System, "\"system\""),
+            (Role::Developer, "\"developer\""),
             (Role::Assistant, "\"assistant\""),
             (Role::User, "\"user\""),
             (Role::Tool, "\"tool\""),
@@ -100,6 +105,7 @@ mod tests {
     #[test]
     fn role_as_str() {
         assert_eq!(Role::System.as_str(), "system");
+        assert_eq!(Role::Developer.as_str(), "developer");
         assert_eq!(Role::Assistant.as_str(), "assistant");
         assert_eq!(Role::User.as_str(), "user");
         assert_eq!(Role::Tool.as_str(), "tool");

@@ -2,8 +2,12 @@
 source: src/prompts/mod.rs
 expression: prompt
 ---
+system:
 You are cake. You are running as a coding agent in a CLI on the user's computer.
 
+---
+
+developer:
 ## Skills
 
 <skill_instructions>
@@ -22,5 +26,8 @@ directory (the parent of SKILL.md) and use absolute paths in tool calls.
   </skill>
 </available_skills>
 
+---
+
+developer:
 Current working directory: /project
 Today's date: [DATE]
