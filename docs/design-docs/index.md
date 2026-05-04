@@ -13,6 +13,7 @@ See the [../adr/](../adr/) directory for architectural decision records (ADRs).
 | [api-retry-strategy.md](api-retry-strategy.md) | API retry classification, backoff, and verification strategy |
 | [cli.md](cli.md) | CLI design and command structure |
 | [conversation-types.md](conversation-types.md) | Conversation type system and patterns |
+| [hooks.md](hooks.md) | Command hook configuration, runtime protocol, and observability |
 | [logging.md](logging.md) | Logging architecture and implementation |
 | [models.md](models.md) | Role and Message types |
 | [prompts.md](prompts.md) | Prompt engineering and templating |

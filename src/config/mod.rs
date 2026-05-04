@@ -12,6 +12,7 @@
 //! - [`SettingsLoader`] - Loads settings from TOML files
 
 mod data_dir;
+pub mod hooks;
 pub mod model;
 pub mod session;
 pub mod settings;
@@ -20,6 +21,8 @@ pub mod worktree;
 
 #[doc(inline)]
 pub use data_dir::{AgentsFile, DataDir, looks_like_uuid};
+#[doc(inline)]
+pub use hooks::HooksLoader;
 #[doc(inline)]
 pub use model::{ModelConfig, ResolvedModelConfig};
 #[doc(inline)]

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use futures::FutureExt;
 use tokio::time::sleep;
 use tracing::debug;
 
@@ -14,6 +15,7 @@ use crate::clients::types::{
     ConversationItem, SessionRecord, StreamRecord, TaskCompleteSubtype, Usage,
 };
 use crate::config::model::{ApiType, ResolvedModelConfig};
+use crate::hooks::{HookRunner, ToolHookPlan};
 use crate::models::{Message, Role};
 
 /// Callback type for streaming JSON output
@@ -84,6 +86,8 @@ pub struct Agent {
     /// Names of skills that have been activated (read) in this session.
     /// Shared between tool executions for concurrent access.
     activated_skills: Arc<Mutex<HashSet<String>>>,
+    /// Optional user-configured command hook runner.
+    hook_runner: Option<Arc<HookRunner>>,
 }
 
 impl Agent {
@@ -117,12 +121,18 @@ impl Agent {
             client: build_http_client(false),
             skill_locations: HashMap::new(),
             activated_skills: Arc::new(Mutex::new(HashSet::new())),
+            hook_runner: None,
         }
     }
 
     /// Returns the enabled tool names.
     pub fn tool_names(&self) -> Vec<String> {
         self.tools.iter().map(|tool| tool.name.clone()).collect()
+    }
+
+    /// Returns the resolved provider model identifier.
+    pub fn model_name(&self) -> &str {
+        &self.config.config.model
     }
 
     /// Sets the session ID for a restored session.
@@ -185,6 +195,29 @@ impl Agent {
             *guard = skills;
         }
         self
+    }
+
+    /// Enables command hooks for lifecycle and tool-call events.
+    pub fn with_hook_runner(mut self, runner: Arc<HookRunner>) -> Self {
+        self.hook_runner = Some(runner);
+        self
+    }
+
+    /// Append hook-provided developer context before the next provider request.
+    pub fn append_developer_context(&mut self, contexts: Vec<String>) {
+        let timestamp = chrono::Utc::now().to_rfc3339();
+        for content in contexts {
+            if content.is_empty() {
+                continue;
+            }
+            self.history.push(ConversationItem::Message {
+                role: Role::Developer,
+                content,
+                id: None,
+                status: None,
+                timestamp: Some(timestamp.clone()),
+            });
+        }
     }
 
     /// Returns the names of skills that have been activated in this session.
@@ -380,6 +413,7 @@ impl Agent {
     ///
     /// Returns an error if the API request fails, the response cannot be parsed,
     /// or a tool execution fails critically.
+    #[allow(clippy::too_many_lines)]
     pub async fn send(&mut self, message: Message) -> anyhow::Result<Option<Message>> {
         let user_item = ConversationItem::Message {
             role: Role::User,
@@ -452,26 +486,104 @@ impl Agent {
                 return Ok(Some(resolve_assistant_message(&self.history)));
             }
 
-            // Execute tool calls concurrently
-            let skill_locations = self.skill_locations.clone();
-            let activated_skills = Arc::clone(&self.activated_skills);
-            let futures = function_calls
+            // Run pre-tool hooks concurrently, then execute allowed tool calls concurrently.
+            let hook_runner = self.hook_runner.clone();
+            let pre_futures = function_calls
                 .iter()
                 .map(|(_id, call_id, name, arguments)| {
+                    let hook_runner = hook_runner.clone();
                     let call_id = call_id.clone();
                     let name = name.clone();
                     let arguments = arguments.clone();
+                    async move {
+                        let plan = if let Some(runner) = hook_runner {
+                            runner.pre_tool_use(&name, &call_id, &arguments).await?
+                        } else {
+                            ToolHookPlan::Execute {
+                                arguments: arguments.clone(),
+                                prefix_notice: None,
+                                additional_context: Vec::new(),
+                            }
+                        };
+                        anyhow::Ok((call_id, name, arguments, plan))
+                    }
+                });
+            let pre_results = futures::future::join_all(pre_futures).await;
+            let mut tool_plans = Vec::with_capacity(pre_results.len());
+            for result in pre_results {
+                tool_plans.push(result?);
+            }
+
+            let skill_locations = self.skill_locations.clone();
+            let activated_skills = Arc::clone(&self.activated_skills);
+            let futures = tool_plans
+                .iter()
+                .map(|(call_id, name, _original_arguments, plan)| {
+                    let call_id = call_id.clone();
+                    let name = name.clone();
                     let skill_locations = skill_locations.clone();
                     let activated_skills = Arc::clone(&activated_skills);
-                    async move {
-                        let result = execute_tool_with_skill_dedup(
-                            &name,
-                            &arguments,
-                            &skill_locations,
-                            &activated_skills,
-                        )
-                        .await;
-                        (call_id, result)
+                    let hook_runner = self.hook_runner.clone();
+                    match plan {
+                        ToolHookPlan::Block {
+                            reason,
+                            additional_context,
+                        } => {
+                            let reason = reason.clone();
+                            let additional_context = additional_context.clone();
+                            async move {
+                                let output = format!("Hook blocked tool execution: {reason}");
+                                let output = append_hook_context(output, &additional_context);
+                                (call_id, output)
+                            }
+                            .boxed()
+                        },
+                        ToolHookPlan::Execute {
+                            arguments,
+                            prefix_notice,
+                            additional_context,
+                        } => {
+                            let arguments = arguments.clone();
+                            let prefix_notice = prefix_notice.clone();
+                            let pre_context = additional_context.clone();
+                            async move {
+                                let result = execute_tool_with_skill_dedup(
+                                    &name,
+                                    &arguments,
+                                    &skill_locations,
+                                    &activated_skills,
+                                )
+                                .await;
+
+                                let post_context = if let Some(runner) = hook_runner {
+                                    runner
+                                        .post_tool_use(&name, &call_id, &arguments, &result)
+                                        .await
+                                        .ok()
+                                        .flatten()
+                                } else {
+                                    None
+                                };
+
+                                let mut output = match result {
+                                    Ok(output) => output,
+                                    Err(error) => format!("Error: {error}"),
+                                };
+                                if let Some(notice) = prefix_notice {
+                                    output = format!("{notice}{output}");
+                                }
+                                if let Some(context) = post_context
+                                    && !context.is_empty()
+                                {
+                                    output.push_str("\n\nAdditional hook context:\n");
+                                    output.push_str(&context);
+                                }
+                                output = append_hook_context(output, &pre_context);
+
+                                (call_id, output)
+                            }
+                            .boxed()
+                        },
                     }
                 });
 
@@ -615,11 +727,25 @@ impl Agent {
     }
 }
 
-async fn execute_tool_output(name: &str, arguments: &str) -> String {
-    match execute_tool(name, arguments).await {
-        Ok(result) => result.output,
-        Err(error) => format!("Error: {error}"),
+fn append_hook_context(mut output: String, contexts: &[String]) -> String {
+    let contexts = contexts
+        .iter()
+        .filter(|context| !context.is_empty())
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    if contexts.is_empty() {
+        return output;
     }
+
+    output.push_str("\n\nAdditional hook context:\n");
+    output.push_str(&contexts.join("\n\n"));
+    output
+}
+
+async fn execute_tool_output(name: &str, arguments: &str) -> Result<String, String> {
+    execute_tool(name, arguments)
+        .await
+        .map(|result| result.output)
 }
 
 async fn execute_tool_with_skill_dedup(
@@ -627,7 +753,7 @@ async fn execute_tool_with_skill_dedup(
     arguments: &str,
     skill_locations: &HashMap<PathBuf, String>,
     activated_skills: &Arc<Mutex<HashSet<String>>>,
-) -> String {
+) -> Result<String, String> {
     if name != "Read" {
         return execute_tool_output(name, arguments).await;
     }
@@ -649,10 +775,10 @@ async fn execute_tool_with_skill_dedup(
         .is_ok_and(|guard| guard.contains(skill_name));
     if already_active {
         tracing::info!("Skill '{skill_name}' already activated, skipping re-read");
-        return format!(
+        return Ok(format!(
             "Skill '{skill_name}' is already active in this session. \
              Its instructions are already in the conversation context."
-        );
+        ));
     }
 
     let result = execute_tool_output(name, arguments).await;
@@ -1085,7 +1211,9 @@ mod tests {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod error_tests {
     use super::*;
+    use crate::config::hooks::{HookCommand, HookEvent, HookGroup, HookMatcher, LoadedHooks};
     use crate::config::model::ApiType;
+    use crate::hooks::{HookContext, HookRunner};
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
@@ -1147,6 +1275,89 @@ mod error_tests {
                 "total_tokens": 15
             }
         })
+    }
+
+    fn tool_call_response() -> serde_json::Value {
+        serde_json::json!({
+            "id": "resp-tool",
+            "output": [
+                {
+                    "type": "function_call",
+                    "id": "fc-1",
+                    "call_id": "call-1",
+                    "name": "Bash",
+                    "arguments": "{\"command\":\"printf unsafe\"}"
+                }
+            ],
+            "usage": {
+                "input_tokens": 1,
+                "output_tokens": 1,
+                "total_tokens": 2
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn pre_tool_hook_denies_tool_execution() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(tool_call_response()))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_response()))
+            .mount(&mock_server)
+            .await;
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let source_path = tmp.path().join("hooks.json");
+        let loaded = LoadedHooks {
+            groups: vec![HookGroup {
+                source_path: source_path.clone(),
+                event: HookEvent::PreToolUse,
+                matcher: HookMatcher::All,
+                hooks: vec![HookCommand {
+                    command: "echo blocked >&2; exit 2".to_string(),
+                    timeout: Duration::from_secs(2),
+                    fail_closed: false,
+                    status_message: None,
+                    source_path,
+                }],
+            }],
+        };
+
+        let runner = Arc::new(HookRunner::new(
+            loaded,
+            HookContext {
+                session_id: uuid::Uuid::new_v4(),
+                task_id: uuid::Uuid::new_v4(),
+                transcript_path: None,
+                cwd: tmp.path().to_path_buf(),
+                model: "test-model".to_string(),
+            },
+        ));
+        let mut agent = test_agent_with_url(&mock_server.uri()).with_hook_runner(runner);
+
+        let result = agent
+            .send(Message {
+                role: Role::User,
+                content: "run a command".to_string(),
+            })
+            .await
+            .unwrap();
+
+        assert!(matches!(result, Some(Message { content, .. }) if content == "Hello!"));
+        assert!(agent.history.iter().any(|item| matches!(
+            item,
+            ConversationItem::FunctionCallOutput { output, .. }
+                if output.starts_with("Hook blocked tool execution:")
+                    && output.contains("blocked")
+        )));
     }
 
     // =========================================================================

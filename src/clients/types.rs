@@ -313,6 +313,23 @@ pub enum SessionRecord {
         timestamp: Option<String>,
     },
 
+    HookEvent {
+        timestamp: DateTime<Utc>,
+        task_id: String,
+        event: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
+        source_file: PathBuf,
+        command: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exit_code: Option<i32>,
+        duration_ms: u64,
+        decision: String,
+        fail_closed: bool,
+        stdout: String,
+        stderr: String,
+    },
+
     Reasoning {
         id: String,
         summary: Vec<String>,
@@ -617,6 +634,7 @@ impl SessionRecord {
             Self::SessionMeta { .. }
             | Self::TaskStart { .. }
             | Self::PromptContext { .. }
+            | Self::HookEvent { .. }
             | Self::TaskComplete { .. } => None,
         }
     }

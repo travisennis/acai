@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.cake/hooks/block-dangerous-bash.sh",
+            "timeout": 5,
+            "fail_closed": true,
+            "status_message": "Checking Bash command policy"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.cake/hooks/audit-tool.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

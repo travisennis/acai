@@ -4,24 +4,26 @@ mod cli;
 mod clients;
 mod config;
 mod exit_code;
+mod hooks;
 mod logger;
 mod models;
 mod prompts;
 
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::cli::CmdRunner;
 use crate::clients::{
     Agent, ConversationItem, set_additional_dirs, set_settings_dirs, set_skill_dirs,
 };
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-
 use crate::config::{
-    AgentsFile, DataDir, DiagnosticLevel, ModelConfig, ModelDefinition, ResolvedModelConfig,
-    Session, SettingsLoader, SkillCatalog, discover_skills, discover_skills_with_paths,
-    looks_like_uuid, parse_skill_path_list, worktree,
+    AgentsFile, DataDir, DiagnosticLevel, HooksLoader, ModelConfig, ModelDefinition,
+    ResolvedModelConfig, Session, SettingsLoader, SkillCatalog, discover_skills,
+    discover_skills_with_paths, looks_like_uuid, parse_skill_path_list, worktree,
 };
+use crate::hooks::{HookContext, HookRunner};
 use crate::models::{Message, Role};
 use crate::prompts::build_initial_prompt_messages;
 use clap::{Parser, ValueEnum};
@@ -723,7 +725,7 @@ impl CmdRunner for CodingAssistant {
         let task_id = uuid::Uuid::new_v4();
         let run_session = self.build_client_and_session(
             data_dir,
-            current_dir,
+            current_dir.clone(),
             &agents_files,
             &loaded.models,
             loaded.default_model.as_deref(),
@@ -732,6 +734,14 @@ impl CmdRunner for CodingAssistant {
         )?;
         let mut client = run_session.agent;
         let session = run_session.session;
+        let hooks = HooksLoader::load(&current_dir)?;
+        let session_start_source = if self.fork.is_some() {
+            "fork"
+        } else if self.continue_session || self.resume.is_some() {
+            "resume"
+        } else {
+            "startup"
+        };
 
         if !self.no_session {
             let mut file = match run_session.storage {
@@ -750,6 +760,23 @@ impl CmdRunner for CodingAssistant {
             });
         }
 
+        let hook_runner = if hooks.is_empty() {
+            None
+        } else {
+            let runner = Arc::new(HookRunner::new(
+                hooks,
+                HookContext {
+                    session_id: session.id,
+                    task_id,
+                    transcript_path: (!self.no_session).then(|| data_dir.session_path(session.id)),
+                    cwd: current_dir.clone(),
+                    model: client.model_name().to_string(),
+                },
+            ));
+            client = client.with_hook_runner(Arc::clone(&runner));
+            Some(runner)
+        };
+
         if self.output_format == OutputFormat::StreamJson {
             client = client.with_streaming_json(|json| {
                 println!("{json}");
@@ -767,11 +794,17 @@ impl CmdRunner for CodingAssistant {
 
         let msg = Message {
             role: Role::User,
-            content,
+            content: content.clone(),
         };
 
         let start = Instant::now();
 
+        if let Some(runner) = &hook_runner {
+            let contexts = runner.session_start(session_start_source, &content).await?;
+            client.append_developer_context(contexts);
+            let contexts = runner.user_prompt_submit(&content).await?;
+            client.append_developer_context(contexts);
+        }
         client.emit_prompt_context_records()?;
         client.emit_task_start_record()?;
 
@@ -783,9 +816,17 @@ impl CmdRunner for CodingAssistant {
         match &result {
             Ok(response_msg) => {
                 let result_text = response_msg.as_ref().map(|m| m.content.clone());
+                if let Some(runner) = &hook_runner
+                    && let Some(context) = runner.stop(result_text.as_deref()).await?
+                {
+                    tracing::info!(target: "cake::hooks", additional_context = %context, "Stop hook returned additional context");
+                }
                 client.emit_task_complete_record(true, duration_ms, result_text, None)?;
             },
             Err(e) => {
+                if let Some(runner) = &hook_runner {
+                    runner.error_occurred(e).await?;
+                }
                 client.emit_task_complete_record(false, duration_ms, None, Some(e.to_string()))?;
             },
         }
