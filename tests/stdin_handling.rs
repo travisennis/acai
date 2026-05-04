@@ -12,7 +12,12 @@
 
 mod support;
 
-use std::process::Stdio;
+use std::{
+    io::Write,
+    process::Stdio,
+    thread,
+    time::{Duration, Instant},
+};
 
 use support::TestEnv;
 
@@ -120,6 +125,45 @@ fn test_dash_prompt_parsing() {
     assert!(
         stderr.contains("No input provided via stdin"),
         "Should fail specifically on missing stdin. Stderr: {stderr}"
+    );
+}
+
+#[test]
+fn test_dash_waits_for_delayed_stdin() {
+    let env = cake_env();
+    let mut child = env
+        .command()
+        .arg("--no-session")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn command");
+
+    let mut stdin = child.stdin.take().expect("stdin should be piped");
+    let start = Instant::now();
+    let writer = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(200));
+        stdin
+            .write_all(b"delayed stdin content")
+            .expect("failed to write delayed stdin");
+    });
+
+    let output = child
+        .wait_with_output()
+        .expect("Failed to wait for command");
+    writer.join().expect("stdin writer thread should complete");
+    let elapsed = start.elapsed();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        elapsed >= Duration::from_millis(200),
+        "Should wait for delayed stdin before continuing"
+    );
+    assert!(
+        !stderr.contains("No input provided via stdin"),
+        "Should read delayed stdin instead of treating it as missing. Stderr: {stderr}"
     );
 }
 
