@@ -39,7 +39,7 @@ Before evaluating, understand what tools the cake CLI has available. This ensure
 
 ### Finding Sessions
 
-Sessions are stored in `~/.local/share/cake/sessions/` as flat `.jsonl` files:
+Sessions are stored in `~/.local/share/cake/sessions/` as flat `.jsonl` files, or in `$CAKE_DATA_DIR/sessions/` when that override is set:
 
 ```bash
 # List all session files
@@ -51,13 +51,16 @@ ls -t ~/.local/share/cake/sessions/*.jsonl 2>/dev/null | head -1
 
 ### Reading Sessions
 
-Read the raw JSONL file:
+Read the raw JSONL file. Current persisted sessions are append-only format version 4: the first record is `session_meta`, each invocation starts with `task_start`, may include `prompt_context` audit records, and should end with `task_complete`.
 
 ```bash
+# View session metadata
+head -1 ~/.local/share/cake/sessions/{uuid}.jsonl | jq '.'
+
 # View full session
 jq '.' ~/.local/share/cake/sessions/{uuid}.jsonl
 
-# View last 10 messages (most relevant for evaluation)
+# View last 10 records (often most relevant for evaluation)
 tail -10 ~/.local/share/cake/sessions/{uuid}.jsonl | jq '.'
 
 # View all user prompts
@@ -75,9 +78,17 @@ jq 'select(.type == "function_call") | {name, arguments}' session.jsonl
 # View tool calls with outputs
 jq 'select(.type == "function_call" or .type == "function_call_output")' session.jsonl
 
+# View prompt/context audit records
+jq 'select(.type == "prompt_context") | {task_id, role, timestamp, content: (.content[0:500])}' session.jsonl
+
+# View task outcomes
+jq 'select(.type == "task_complete") | {task_id, subtype, success, duration_ms, turn_count, result, error, usage, permission_denials}' session.jsonl
+
 # Count message types
 jq -r '.type' session.jsonl | sort | uniq -c
 ```
+
+Treat files whose first record is `session_start`, `init`, or `result` as legacy or unsupported unless the evaluation is specifically about compatibility. Redirected `--output-format stream-json` output is not a resumable persisted session file because it does not start with `session_meta`.
 
 ## Phase 2: Evaluate Task Completion
 
@@ -159,7 +170,7 @@ Evaluate:
 
 ### Recording Issues
 
-Append findings to `current-issues.md` with this structure:
+Return a concise, evidence-backed report by default. Only create or update a project file when the user explicitly asks for a persistent report. If a file is requested, prefer a named artifact such as `session-analysis.md` and avoid inventing persistent issue trackers that are not already part of the repo.
 
 ```markdown
 ## [Date] Session: {session-id}
@@ -192,13 +203,16 @@ Prioritized list of improvements.
 
 ### Issue Categories
 
-- **System prompt** - Core behavior or reasoning flaws
-- **Tool gaps** - Missing tools that would help
-- **Tool descriptions** - Unclear or misleading tool docs
-- **Knowledge gaps** - Missing context in AGENTS.md
-- **Capability limitations** - General abilities lacking
-- **Error handling** - Poor failure recovery
-- **Context management** - Information loss or overload
+- **tool_call_error** - Tool invocation failed or returned an unexpected error
+- **tool_result_error** - Tool output was malformed, incomplete, too verbose, misleading, or hard to use
+- **repeated_tool_call** - Same or equivalent call repeated without meaningful new information
+- **permission_issue** - Sandbox, filesystem, approval, network, or OS permission handling blocked progress or was unclear
+- **performance_issue** - Excessive duration, turn count, token use, output size, retries, or context growth
+- **missing_context** - Needed project, environment, file, session, or prior-task context was absent
+- **prompt_or_instruction_gap** - cake prompts, AGENTS.md, skills, or tool docs did not provide enough guidance or created ambiguity
+- **instruction_following_issue** - Agent ignored or only partly followed user, developer, project, or tool instructions
+- **missing_tool_or_capability** - An unavailable or poorly described tool, parser, permission path, or workflow would have materially helped
+- **session_integrity_issue** - Malformed JSONL, missing task boundaries, unsupported format, missing records, orphan calls, duplicate ids, or incomplete final records
 
 ## Phase 5: Recommend Improvements
 
@@ -249,18 +263,21 @@ Rank recommendations by impact:
 
 When evaluation is complete:
 
-1. Update `current-issues.md` with findings
-2. Record learnings in `usage.md` if patterns emerge
-3. Summarize recommendations with rationale
-4. Prioritize by impact level
+1. Summarize recommendations with rationale
+2. Prioritize by impact level
+3. Include concrete evidence: record type, line number when available, task id, timestamp, tool name and `call_id` for tool issues, and a short excerpt
+4. Mention any test, log, or source-code checks used to validate the finding
 
 ## Quick Reference: Evaluation Checklist
 
 ### Session Analysis
 - [ ] Locate and read the session
+- [ ] Validate the first record is `session_meta` with `format_version: 4`
+- [ ] Segment records by `task_start` and `task_complete`
 - [ ] Identify the original task
 - [ ] Trace tool calls and results
 - [ ] Review reasoning messages
+- [ ] Review `prompt_context` records for AGENTS.md, skills, environment, cwd, and date context
 - [ ] Check final response for completion
 
 ### Quality Assessment
@@ -279,8 +296,8 @@ When evaluation is complete:
 - [ ] Error handling problems?
 
 ### Documentation
-- [ ] Findings recorded in `current-issues.md`
-- [ ] Patterns noted in `usage.md`
+- [ ] Findings include evidence and implementation-ready recommendations
+- [ ] Persistent report file created only if requested
 - [ ] Recommendations prioritized
 
 ## File Locations
@@ -288,5 +305,4 @@ When evaluation is complete:
 | File | Purpose |
 |------|---------|
 | `~/.local/share/cake/sessions/{uuid}.jsonl` | Session files (or `$CAKE_DATA_DIR/sessions/` if set) |
-| `current-issues.md` | Documented issues |
-| `usage.md` | Usage patterns and learnings |
+| `~/.cache/cake/cake.YYYY-MM-DD.log` | Daily logs (or `$CAKE_DATA_DIR/cake.YYYY-MM-DD.log` if set) |

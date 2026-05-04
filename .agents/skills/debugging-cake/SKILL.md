@@ -22,10 +22,7 @@ This skill helps investigate and debug issues with the cake CLI tool.
 # List all session files
 ls ~/.local/share/cake/sessions/
 
-# Find the latest session for current directory
-ls -t ~/.local/share/cake/sessions/*.jsonl 2>/dev/null | head -1
-
-# Quick way to find latest session for current directory (most recently modified .jsonl)
+# Find the latest session file (most recently modified .jsonl)
 ls -t ~/.local/share/cake/sessions/*.jsonl 2>/dev/null | head -1
 ```
 
@@ -37,10 +34,10 @@ Sessions use JSON Lines (`.jsonl`) format. Use `jq -c` to process each line:
 # View full session (all lines, pretty-printed)
 jq '.' ~/.local/share/cake/sessions/{uuid}.jsonl
 
-# View session header (first line - metadata)
+# View session metadata (first line)
 head -1 ~/.local/share/cake/sessions/{uuid}.jsonl | jq '.'
 
-# View last 5 messages (most useful)
+# View last 5 records (most useful)
 tail -5 ~/.local/share/cake/sessions/{uuid}.jsonl | jq '.'
 
 # View all user prompts (see what was asked)
@@ -49,8 +46,11 @@ jq 'select(.type == "message" and .role == "user") | .content' ~/.local/share/ca
 # View all assistant responses (see what was returned)
 jq 'select(.role == "assistant") | .content' ~/.local/share/cake/sessions/{uuid}.jsonl
 
-# Check if response was complete (last line)
-tail -1 ~/.local/share/cake/sessions/{uuid}.jsonl | jq '{type, status}'
+# Check if the task completed (last record should usually be task_complete)
+tail -1 ~/.local/share/cake/sessions/{uuid}.jsonl | jq '{type, success, subtype, error}'
+
+# View task summaries
+jq 'select(.type == "task_complete") | {task_id, subtype, success, duration_ms, turn_count, result, error, usage}' ~/.local/share/cake/sessions/{uuid}.jsonl
 
 # View all reasoning messages
 jq 'select(.type == "reasoning")' ~/.local/share/cake/sessions/{uuid}.jsonl
@@ -125,34 +125,40 @@ ls -lt ~/.local/share/cake/sessions/*.jsonl 2>/dev/null | head -5
 
 ### Session File Structure
 
-Sessions use JSON Lines (`.jsonl`) format. Each line is a valid JSON object:
+Current persisted sessions use append-only JSON Lines (`.jsonl`) format version 4. Each line is a valid JSON object.
 
-**Line 1: Session Header**
+**Line 1: Session Metadata**
 ```json
 {
-  "format_version": 2,
+  "type": "session_meta",
+  "format_version": 4,
   "session_id": "uuid-v4",
   "timestamp": "2026-03-28T12:00:00Z",
   "working_directory": "/absolute/path/to/project",
   "model": "model-name",
-  "type": "session_start"
+  "tools": ["bash", "read", "edit", "write"],
+  "cake_version": "0.1.0",
+  "git": {
+    "repository_url": null,
+    "branch": null,
+    "commit_hash": null
+  }
 }
 ```
 
-**Subsequent Lines: Conversation Items**
+**Subsequent Lines: Task and Conversation Records**
 ```json
+{"type":"task_start","session_id":"uuid-v4","task_id":"task-uuid","timestamp":"2026-03-28T12:00:01Z"}
+{"type":"prompt_context","session_id":"uuid-v4","task_id":"task-uuid","role":"developer","content":"...","timestamp":"2026-03-28T12:00:01Z"}
 {
-  "format_version": 2,
-  "session_id": "uuid-v4",
-  "timestamp": "2026-03-28T12:00:01Z",
-  "working_directory": "/absolute/path/to/project",
   "type": "message",
   "role": "user",
   "content": "Hello"
 }
+{"type":"task_complete","subtype":"success","success":true,"is_error":false,"duration_ms":1000,"turn_count":1,"num_turns":1,"session_id":"uuid-v4","task_id":"task-uuid","result":"Hi","usage":{"input_tokens":0,"input_tokens_details":{"cached_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":0}}
 ```
 
-Each conversation item (message, function_call, function_call_output, reasoning) is on its own line.
+Each task starts with `task_start` and should end with `task_complete`. `prompt_context` records are audit entries for AGENTS.md, skills, environment, cwd, and date. Only conversation records (`message`, `function_call`, `function_call_output`, `reasoning`) are restored into model history.
 
 ### Message Types
 
@@ -160,6 +166,10 @@ Each conversation item (message, function_call, function_call_output, reasoning)
 - `reasoning` - Model's internal reasoning (if supported by model)
 - `function_call` - Tool invocation request
 - `function_call_output` - Result of tool execution
+- `session_meta` - Session metadata, first record only
+- `task_start` - CLI invocation boundary
+- `prompt_context` - Prompt/context audit record for one invocation
+- `task_complete` - CLI invocation result, duration, turns, usage, and permission denials
 
 ## Common Debugging Patterns
 
@@ -169,22 +179,24 @@ Each conversation item (message, function_call, function_call_output, reasoning)
 
 **Check**:
 ```bash
-# A complete response ends with type: "message" and status: "completed"
-# If it ends with "reasoning" or has no status, it was truncated
-tail -1 ~/.local/share/cake/sessions/{uuid}.jsonl | jq '{type, status}'
+# A complete invocation usually ends with type: "task_complete"
+# If the file ends with task_start, reasoning, function_call, function_call_output,
+# or an assistant message without a following task_complete, the invocation may
+# have crashed, timed out, or been interrupted.
+tail -1 ~/.local/share/cake/sessions/{uuid}.jsonl | jq '{type, success, subtype, error}'
 ```
 
 **Example truncated response** (last line of `.jsonl` file):
 ```json
-{"format_version":2,"session_id":"abc-123","timestamp":"2026-03-28T12:00:00Z","working_directory":"/work","type":"reasoning","id":"rs_tmp_tf8nkow8vrp","summary":["Now"]}
+{"type":"reasoning","id":"rs_tmp_tf8nkow8vrp","summary":["Now"],"timestamp":"2026-03-28T12:00:05Z"}
 ```
-Note: The `summary` array is cut off mid-sentence (incomplete reasoning).
+Note: A trailing conversation record without `task_complete` indicates the task did not finish cleanly.
 
 **How to investigate**:
 1. Find the session directory
 2. View the last few messages to see where it ended
-3. Check logs for "output truncated" messages
-4. Look at the reasoning messages to understand what the model was doing
+3. Check logs for API, timeout, stream, or tool errors
+4. Look at the final task's reasoning and tool records to understand what the model was doing
 
 ### 2. Tool Execution Failed
 
@@ -243,14 +255,14 @@ grep "$SESSION_ID" ~/.cache/cake/cake.*.log
 ## Quick Reference Commands
 
 ```bash
-# Find latest session for current directory
+# Find latest session file
 LATEST=$(ls -t ~/.local/share/cake/sessions/*.jsonl 2>/dev/null | head -1)
 
 # View last 5 messages (most common debugging command)
 tail -5 "$LATEST" | jq '.'
 
 # Check if response was complete (last line)
-tail -1 "$LATEST" | jq '{type, status}'
+tail -1 "$LATEST" | jq '{type, success, subtype, error}'
 
 # View recent errors in logs (one-liner)
 tail -50 ~/.cache/cake/cake.$(date +%Y-%m-%d).log | grep -i error
@@ -268,8 +280,8 @@ When the user reports an issue:
    - Find the most recently modified `.jsonl` file
 
 2. **Check for truncation**
-   - `tail -1 session.jsonl | jq '{type, status}'` - should end with a completed message
-   - If it ends with reasoning or has no status, the response was truncated
+   - `tail -1 session.jsonl | jq '{type, success, subtype, error}'` - should usually end with `task_complete`
+   - If it ends with a conversation record or `task_start`, the task likely ended abruptly
 
 3. **Review the conversation flow**
    - `tail -5 session.jsonl | jq '.'` - see the last few interactions
@@ -286,7 +298,7 @@ When the user reports an issue:
 
 ## Key Insight: Why "None" Happens
 
-The most common cause of `None` output is **response truncation**. When the model's response is cut off mid-generation (often during reasoning), the CLI has no complete message to return, so it returns `None`.
+The common failure pattern behind `None` or empty output is **no completed assistant result for the task**. When the model response is cut off, the process times out, or streaming is interrupted, the session may end without a `task_complete` success record or without final assistant text.
 
 This typically happens when:
 - The model hits token limits
@@ -306,10 +318,10 @@ When commands fail with `Operation not permitted (os error 1)` inside the sandbo
 
 ```bash
 # Check if sandbox is active
-echo $CAKE_SANDBOX  # Should be unset or "on"
+echo $CAKE_SANDBOX  # Sandboxing is enabled unless this is off, 0, false, or no
 
 # Test a command in the sandbox with the same profile
-sandbox-exec -f /tmp/cake/sandbox_profiles/cake_sandbox_*.sb bash -c "your-command-here"
+sandbox-exec -f "$TMPDIR"/cake/sandbox_profiles/cake_sandbox_*.sb bash -c "your-command-here"
 ```
 
 ### Using Trace Mode
@@ -318,10 +330,10 @@ Create a debug profile that logs denials instead of blocking them. Add a `(trace
 
 ```bash
 # 1. Find the generated profile
-ls -la /tmp/cake/sandbox_profiles/
+ls -la "$TMPDIR"/cake/sandbox_profiles/
 
 # 2. Copy it and add trace mode
-cp /tmp/cake/sandbox_profiles/cake_sandbox_XXXX.sb /tmp/debug_sandbox.sb
+cp "$TMPDIR"/cake/sandbox_profiles/cake_sandbox_XXXX.sb /tmp/debug_sandbox.sb
 
 # 3. Edit to add trace output — replace "(deny default)" with:
 #    (deny default (with send-signal SIGKILL))
@@ -353,8 +365,8 @@ cat /tmp/sandbox_trace.log
 grep "Generated sandbox profile" ~/.cache/cake/cake.*.log
 
 # Or find the latest profile file
-ls -lt /tmp/cake/sandbox_profiles/ | head -5
-cat /tmp/cake/sandbox_profiles/cake_sandbox_*.sb
+ls -lt "$TMPDIR"/cake/sandbox_profiles/ | head -5
+cat "$TMPDIR"/cake/sandbox_profiles/cake_sandbox_*.sb
 ```
 
 ## File Locations Summary
@@ -385,3 +397,9 @@ To continue a previous session:
 ```
 
 The `--continue` flag loads the latest session from the current directory.
+
+To resume a specific session, pass the UUID, not a file path:
+
+```bash
+./target/release/cake --resume {uuid} "Continue"
+```
