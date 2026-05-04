@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.cake/hooks/rust-command-failure-context.sh",
+            "timeout": 5,
+            "status_message": "Adding Rust failure context"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.cake/hooks/format-edited-file.sh",
+            "timeout": 15,
+            "status_message": "Formatting edited file"
+          }
+        ]
+      }
+    ]
+  }
+}
