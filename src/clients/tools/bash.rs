@@ -68,8 +68,7 @@ pub(super) fn bash_tool() -> super::Tool {
         type_: "function".to_string(),
         name: "Bash".to_string(),
         description: "Execute a shell command in the host machine's terminal. \
-            Returns the stdout/stderr output. Use for running build commands, \
-            git operations, file manipulation, etc. Does not support interactive commands."
+            Returns the stdout/stderr output along with a footer showing the exit code and elapsed time of the command. Does not support interactive commands."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
