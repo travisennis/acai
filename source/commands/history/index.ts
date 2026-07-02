@@ -56,7 +56,7 @@ Keep the summary focused and informative, around 3-5 paragraphs. Use plain text 
 
   const { text, usage } = await generateText({
     model: modelManager.getModel("conversation-summarizer"),
-    system: systemPrompt,
+    instructions: systemPrompt,
     prompt: `Please summarize this conversation:\n\n${conversationText}`,
   });
 

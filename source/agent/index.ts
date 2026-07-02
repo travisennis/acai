@@ -296,8 +296,9 @@ export class Agent {
         const result = streamText({
           model: langModel,
           maxOutputTokens: aiConfig.maxOutputTokens(),
-          system: systemPrompt,
+          instructions: systemPrompt,
           messages,
+          allowSystemInMessages: true,
           temperature: aiConfig.temperature(),
           topP: aiConfig.topP(),
           maxRetries: 2,
@@ -339,7 +340,7 @@ export class Agent {
 
         const pendingToolCalls: PendingToolCall[] = [];
 
-        for await (const chunk of result.fullStream) {
+        for await (const chunk of result.stream) {
           if (firstTokenAt === null && isContentChunk(chunk)) {
             firstTokenAt = performance.now();
             logger.info(
@@ -611,7 +612,7 @@ export class Agent {
   }
 
   private handleStreamChunk(
-    // biome-ignore lint/suspicious/noExplicitAny: chunk type from AI SDK fullStream is a complex discriminated union
+    // biome-ignore lint/suspicious/noExplicitAny: AI SDK stream chunks are a complex discriminated union
     chunk: any,
     ctx: {
       accumulatedText: string;
@@ -720,8 +721,9 @@ export class Agent {
     this._state.usage.inputTokens = inputTokens;
     this._state.usage.outputTokens = outputTokens;
     this._state.usage.totalTokens = totalTokens;
-    this._state.usage.cachedInputTokens = cacheReadTokens;
     this._state.usage.inputTokenDetails.cacheReadTokens = cacheReadTokens;
+    this._state.usage.cachedInputTokens = cacheReadTokens;
+    this._state.usage.outputTokenDetails.reasoningTokens = reasoningTokens;
     this._state.usage.reasoningTokens = reasoningTokens;
     sessionManager.setContextWindow(totalTokens);
 
@@ -729,8 +731,10 @@ export class Agent {
     this._state.totalUsage.inputTokens += inputTokens;
     this._state.totalUsage.outputTokens += outputTokens;
     this._state.totalUsage.totalTokens += totalTokens;
-    this._state.totalUsage.cachedInputTokens += cacheReadTokens;
     this._state.totalUsage.inputTokenDetails.cacheReadTokens += cacheReadTokens;
+    this._state.totalUsage.cachedInputTokens += cacheReadTokens;
+    this._state.totalUsage.outputTokenDetails.reasoningTokens +=
+      reasoningTokens;
     this._state.totalUsage.reasoningTokens += reasoningTokens;
 
     this.opts.tokenTracker.trackUsage("repl", stepUsage);
@@ -944,11 +948,16 @@ export class Agent {
       return;
     }
 
-    const toolExec = iTool.execute as ToolExecuteFunction<unknown, string>;
+    const toolExec = iTool.execute as ToolExecuteFunction<
+      unknown,
+      string,
+      unknown
+    >;
 
     try {
       const output = await toolExec(call.input, {
         toolCallId: call.toolCallId,
+        context: undefined,
         messages: sessionManager.get(),
         abortSignal,
       });
@@ -1098,7 +1107,7 @@ const toolCallRepair = <T extends ToolSet>(modelManager: ModelManager) => {
         ].join("\n"),
       });
 
-      return { ...toolCall, args: JSON.stringify(repairedArgs) };
+      return { ...toolCall, input: JSON.stringify(repairedArgs) };
     } catch (err) {
       logger.error(err, `Failed to repair tool call: ${toolCall.toolName}.`);
       return null;

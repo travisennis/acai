@@ -271,6 +271,7 @@ describe("AiConfig", () => {
       deepStrictEqual(config.providerOptions(), {
         openai: {
           reasoningEffort: "medium",
+          reasoningSummary: null,
         },
       });
     });

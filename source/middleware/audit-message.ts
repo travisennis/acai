@@ -1,17 +1,16 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type {
-  LanguageModelV3Middleware,
-  LanguageModelV3Prompt,
-  LanguageModelV3StreamPart,
-  LanguageModelV3TextPart,
+  LanguageModelV4Prompt,
+  LanguageModelV4StreamPart,
+  LanguageModelV4TextPart,
 } from "@ai-sdk/provider";
-import type { LanguageModelUsage } from "ai";
+import type { LanguageModelMiddleware, LanguageModelUsage } from "ai";
 
 interface AuditRecord {
   model: string;
   app: string;
-  messages: LanguageModelV3Prompt;
+  messages: LanguageModelV4Prompt;
   usage: LanguageModelUsage;
   timestamp: number;
 }
@@ -47,8 +46,8 @@ export const auditMessage = ({
   filePath: string;
   app: string;
 }) => {
-  const middleware: LanguageModelV3Middleware = {
-    specificationVersion: "v3",
+  const middleware: LanguageModelMiddleware = {
+    specificationVersion: "v4",
     wrapGenerate: async ({ doGenerate, params, model }) => {
       const result = await doGenerate();
 
@@ -62,7 +61,7 @@ export const auditMessage = ({
               type: "text",
               // biome-ignore lint/suspicious/noExplicitAny: work-around on type issue
               text: (result as any).text,
-            } as LanguageModelV3TextPart,
+            } as LanguageModelV4TextPart,
           ],
         }),
         usage: {
@@ -109,8 +108,8 @@ export const auditMessage = ({
       };
 
       const transformStream = new TransformStream<
-        LanguageModelV3StreamPart,
-        LanguageModelV3StreamPart
+        LanguageModelV4StreamPart,
+        LanguageModelV4StreamPart
       >({
         transform(chunk, controller) {
           if (chunk.type === "text-delta") {

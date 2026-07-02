@@ -13,6 +13,7 @@ import { basename, join } from "node:path";
 import { isString } from "@travisennis/stdlib/typeguards";
 import {
   type AssistantModelMessage,
+  type FilePart,
   generateText,
   type ImagePart, // Added ImagePart
   type ModelMessage,
@@ -26,13 +27,13 @@ import { dedent } from "../utils/dedent.ts";
 import { logger } from "../utils/logger.ts";
 
 // Define a type for the items that can be passed in the first argument
-export type UserMessageContentItem = string | ImagePart;
+export type UserMessageContentItem = string | FilePart | ImagePart;
 
 export function createUserMessage(
   contentItems: UserMessageContentItem[],
   prompt?: string,
 ): UserModelMessage {
-  const messageParts: (TextPart | ImagePart)[] = [];
+  const messageParts: (FilePart | ImagePart | TextPart)[] = [];
 
   // Process content items (images and pre-defined texts)
   for (const item of contentItems) {
@@ -40,7 +41,7 @@ export function createUserMessage(
       if (item.trim().length > 0) {
         messageParts.push({ type: "text", text: item });
       }
-    } else if (item.type === "image") {
+    } else if (item.type === "file" || item.type === "image") {
       messageParts.push(item);
     }
   }
@@ -590,7 +591,7 @@ React Component Rendering Debug";
 
       const result = await generateText({
         model,
-        system: systemPrompt,
+        instructions: systemPrompt,
         prompt: `Message:\n${message}\n\nTitle:`,
       });
 

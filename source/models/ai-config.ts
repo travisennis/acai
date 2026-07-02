@@ -1,4 +1,4 @@
-import type { SharedV2ProviderMetadata } from "@ai-sdk/provider";
+import type { SharedV4ProviderOptions } from "@ai-sdk/provider";
 import type { ModelMetadata } from "./providers.ts";
 
 type Effort = "none" | "low" | "medium" | "high";
@@ -76,11 +76,11 @@ export class AiConfig {
     return undefined;
   }
 
-  providerOptions(): SharedV2ProviderMetadata {
+  providerOptions(): SharedV4ProviderOptions {
     const modelConfig = this.modelMetadata;
     const thinkingLevel = this.thinkingLevel;
 
-    const meta: SharedV2ProviderMetadata = {
+    const meta: SharedV4ProviderOptions = {
       [modelConfig.provider]: {},
     };
 
@@ -97,6 +97,7 @@ export class AiConfig {
         case "openai":
           Object.assign(meta["openai"], {
             reasoningEffort: thinkingLevel.effort,
+            reasoningSummary: null,
           });
           break;
         case "google":

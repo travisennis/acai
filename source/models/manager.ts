@@ -1,7 +1,7 @@
 import EventEmitter from "node:events";
 import { devToolsMiddleware } from "@ai-sdk/devtools";
-import type { LanguageModelV3 } from "@ai-sdk/provider";
-import { wrapLanguageModel } from "ai";
+import type { LanguageModelV4 } from "@ai-sdk/provider";
+import { type LanguageModelMiddleware, wrapLanguageModel } from "ai";
 import {
   auditMessage,
   cacheMiddleware,
@@ -25,7 +25,7 @@ function getLanguageModel({
   stateDir: string;
   devtoolsEnabled?: boolean;
 }) {
-  const middleware = [
+  const middleware: LanguageModelMiddleware[] = [
     cacheMiddleware,
     createRateLimitMiddleware({ requestsPerMinute: 30 }),
     auditMessage({ filePath: stateDir, app }),
@@ -62,7 +62,7 @@ interface ModelManagerEvents {
 }
 
 export class ModelManager extends EventEmitter<ModelManagerEvents> {
-  private modelMap: Map<App, LanguageModelV3>;
+  private modelMap: Map<App, LanguageModelV4>;
   private modelMetadataMap: Map<App, ModelMetadata>;
   private stateDir: string;
   private devtoolsEnabled: boolean;

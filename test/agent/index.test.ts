@@ -17,7 +17,7 @@ const USAGE_ZERO = {
 };
 
 /**
- * Mock LanguageModelV3 that always returns a valid stream with text content
+ * Mock language model that always returns a valid stream with text content
  * and finish reason "tool-calls" so the agent loop continues on success.
  */
 function createWorkingMockModel(finishType: "tool-calls" | "stop") {

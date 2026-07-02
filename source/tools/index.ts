@@ -1,5 +1,5 @@
 import type { AsyncReturnType } from "@travisennis/stdlib/types";
-import type { Tool } from "ai";
+import type { ToolSet } from "ai";
 import { config } from "../config/index.ts";
 import type { WorkspaceContext } from "../index.ts";
 import { ActivatedSkillsTracker } from "../skills/activated-tracker.ts";
@@ -20,12 +20,7 @@ export type CompleteToolSet = {
   >[K];
 };
 
-export type CompleteTools = {
-  -readonly [K in keyof AsyncReturnType<typeof initTools>]: Tool<
-    unknown,
-    string
-  >;
-};
+export type CompleteTools = ToolSet;
 
 export type CompleteToolNames = keyof CompleteToolSet;
 

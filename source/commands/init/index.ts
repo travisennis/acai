@@ -1,5 +1,5 @@
 import { platform } from "node:os";
-import { stepCountIs, streamText } from "ai";
+import { isStepCount, streamText } from "ai";
 import style from "../../terminal/style.ts";
 import { initTools } from "../../tools/index.ts";
 import { toAiSdkTools } from "../../tools/utils.ts";
@@ -58,7 +58,7 @@ export const initCommand = ({
         model: modelManager.getModel("init-project"),
         temperature: 0.5,
         prompt: initPrompt,
-        stopWhen: stepCountIs(40),
+        stopWhen: isStepCount(40),
         tools: toAiSdkTools(tools),
       });
 

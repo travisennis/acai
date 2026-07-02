@@ -1,8 +1,8 @@
 import {
   generateText,
+  isStepCount,
   NoSuchToolError,
   Output,
-  stepCountIs,
   type ToolCallRepairFunction,
   type ToolSet,
 } from "ai";
@@ -66,11 +66,12 @@ export class Cli {
       const result = await generateText({
         model: langModel,
         maxOutputTokens: aiConfig.maxOutputTokens(),
-        system: finalSystemPrompt,
+        instructions: finalSystemPrompt,
         messages: sessionManager.get(),
+        allowSystemInMessages: true,
         temperature: aiConfig.temperature(),
         topP: aiConfig.topP(),
-        stopWhen: stepCountIs(200),
+        stopWhen: isStepCount(200),
         maxRetries: 2,
         providerOptions: aiConfig.providerOptions(),
         tools: toAiSdkTools(tools),
@@ -80,11 +81,11 @@ export class Cli {
         abortSignal: signal,
       });
 
-      if (result.response.messages.length > 0) {
-        sessionManager.appendResponseMessages(result.response.messages);
+      if (result.responseMessages.length > 0) {
+        sessionManager.appendResponseMessages(result.responseMessages);
       }
 
-      // this tracks the usage of every step in the call to streamText. it's a cumulative usage.
+      // This tracks cumulative usage for every step in the generateText call.
       tokenTracker.trackUsage("cli", result.usage);
 
       if (!this.options.noSession) {
@@ -223,7 +224,7 @@ const toolCallRepair = <T extends ToolSet>(modelManager: ModelManager) => {
         ].join("\n"),
       });
 
-      return { ...toolCall, args: JSON.stringify(repairedArgs) };
+      return { ...toolCall, input: JSON.stringify(repairedArgs) };
     } catch (err) {
       logger.error(err, `Failed to repair tool call: ${toolCall.toolName}.`);
       return null;

@@ -91,8 +91,8 @@ async function handleImagePaste(
   }
 
   promptManager.addContext({
-    type: "image",
-    image: dataUrl,
+    type: "file",
+    data: dataUrl,
     mediaType: mimeType,
   });
 

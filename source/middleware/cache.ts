@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto";
-import type {
-  LanguageModelV3Middleware,
-  SharedV3ProviderOptions,
-} from "@ai-sdk/provider";
+import type { SharedV4ProviderOptions } from "@ai-sdk/provider";
+import type { LanguageModelMiddleware } from "ai";
 import { logger } from "../utils/logger.ts";
 
 interface CacheOptions {
@@ -12,7 +10,7 @@ interface CacheOptions {
 
 function applyCaching(
   input: {
-    providerOptions?: SharedV3ProviderOptions | undefined;
+    providerOptions?: SharedV4ProviderOptions | undefined;
   },
   options: CacheOptions = {},
 ) {
@@ -34,7 +32,7 @@ function applyCaching(
       // biome-ignore lint/style/useNamingConvention: third-party
       cache_control: { type: "ephemeral" },
     },
-  } as SharedV3ProviderOptions;
+  } as SharedV4ProviderOptions;
 }
 
 function generateCacheKey(text: string, salt?: string): string {
@@ -75,8 +73,8 @@ function detectProvider(modelId: string): string {
   return "unknown";
 }
 
-export const cacheMiddleware: LanguageModelV3Middleware = {
-  specificationVersion: "v3",
+export const cacheMiddleware: LanguageModelMiddleware = {
+  specificationVersion: "v4",
   transformParams: async ({ params, model }) => {
     const modelId = model.modelId;
     const provider = detectProvider(modelId);
