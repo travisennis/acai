@@ -29,5 +29,8 @@ jobs:
       - name: Run typecheck, lint, and format checks
         run: npm run check
 
+      - name: Check documentation links
+        run: node scripts/check-links.mjs
+
       - name: Run tests
         run: npm test

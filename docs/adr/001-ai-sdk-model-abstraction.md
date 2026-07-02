@@ -1,6 +1,6 @@
 ---
-status: proposed
-date: 2026-04-15
+status: accepted
+date: 2026-07-02
 decision-makers: Travis Ennis
 ---
 # Use AI SDK for Model Abstraction

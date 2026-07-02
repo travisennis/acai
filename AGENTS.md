@@ -19,7 +19,7 @@ Keep AGENTS.md as routing, not as a command catalog or procedure manual.
 ## Workflow Routing
 
 ### CLI, REPL, TUI, And User Output
-Use this workflow for command parsing, slash commands, stdin, interactive behavior, terminal rendering, markdown, autocomplete, and user-visible text. Consult `docs/guardrails/cli-and-user-output.md`, `docs/usage.md`, `ARCHITECTURE.md`, and relevant `specs/`. Preserve documented commands, flags, exit behavior, and terminal-width handling.
+Use this workflow for command parsing, slash commands, stdin, interactive behavior, terminal rendering, markdown, autocomplete, and user-visible text. Consult `docs/guardrails/cli-and-user-output.md`, `docs/usage.md`, and `ARCHITECTURE.md`. Preserve documented commands, flags, exit behavior, and terminal-width handling.
 
 ### Agent Runtime, Tools, Skills, And Provider Contracts
 Use this workflow for agent orchestration, model providers, AI SDK integration, tool calling, dynamic tools, skills, prompts, tokens, and middleware. Consult `docs/guardrails/api-stability-and-compatibility.md`, `docs/guardrails/security-and-permissions.md`, `docs/dynamic-tools.md`, `docs/skills.md`, `ARCHITECTURE.md`, and `docs/adr/`. Keep tool schemas provider-compatible.
@@ -28,7 +28,7 @@ Use this workflow for agent orchestration, model providers, AI SDK integration, 
 Use this workflow for `.env`, `acai.json`, config loading, AGENTS.md discovery, global/project settings, and generated rules. Consult `docs/guardrails/configuration.md`, `docs/configuration.md`, and `ARCHITECTURE.md`. Preserve precedence, defaults, and secret handling.
 
 ### Persistence, Sessions, Logs, And File Formats
-Use this workflow for session storage, resume/share/history, log paths, caches, selections, serialized records, and migrations. Consult `docs/guardrails/persistence-and-migrations.md`, `ARCHITECTURE.md`, `docs/adr/004-session-persistence-format.md`, and relevant `specs/`. Maintain backward compatibility unless the task explicitly scopes a migration.
+Use this workflow for session storage, resume/share/history, log paths, caches, selections, serialized records, and migrations. Consult `docs/guardrails/persistence-and-migrations.md`, `ARCHITECTURE.md`, and `docs/adr/004-session-persistence-format.md`. Maintain backward compatibility unless the task explicitly scopes a migration.
 
 ### Security, Permissions, And Sandboxing
 Use this workflow for shell execution, filesystem access, web fetch/search, dynamic tool execution, approvals, path validation, secrets, and log redaction. Consult `docs/guardrails/security-and-permissions.md`, `docs/dynamic-tools.md`, and security tests. Default to least privilege.

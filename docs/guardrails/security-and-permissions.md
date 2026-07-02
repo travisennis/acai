@@ -20,7 +20,7 @@ headers, and logging redaction.
 - Exercise both allowed and rejected paths for filesystem/shell changes.
 - Verify secrets are not logged, echoed, serialized, or committed.
 - Security-sensitive durable decisions require ADR coverage through
-  `docs/adr/README.md`.
+  `docs/adr/index.md`.
 
 ## Common Failure Modes
 

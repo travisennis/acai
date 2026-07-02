@@ -1,6 +1,7 @@
 ---
-status: proposed
-date: 2026-04-15
+status: superseded by ADR-012
+date: 2026-07-02
+superseded-by: 012
 decision-makers: Travis Ennis
 ---
 # Sub-agent Communication
@@ -145,3 +146,6 @@ The sub-agent completed the following tasks:
 
 **Shared History:** Sub-agents could append directly to parent session history. Currently they return results instead, keeping history cleaner.
 
+## Supersession
+
+Superseded by [ADR-012](012-remove-specialized-search-and-agent-tools.md).

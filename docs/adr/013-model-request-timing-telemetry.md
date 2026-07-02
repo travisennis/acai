@@ -82,7 +82,7 @@ The timing boundaries within each iteration are:
 
 ## References
 
-- Task `.agents/.tasks/active/001.md`
+- Task `.agents/.tasks/completed/001.md`
 - `source/agent/index.ts`, `source/sessions/manager.ts`, `source/sessions/summary.ts`
 - ADR 008: Token Tracking Strategy
 

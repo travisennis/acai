@@ -4,9 +4,10 @@ Quick reference for developing and extending acai-ts.
 
 ## Getting Started
 
-- [Installation & Setup](../CONTRIBUTING.md#setup) - Local development environment
+- [Installation & Setup](../CONTRIBUTING.md#development-environment-setup) - Local development environment
 - [Usage Guide](usage.md) - Commands, keyboard shortcuts, prompt syntax
 - [Project Structure](../ARCHITECTURE.md) - Source code organization and flow diagrams
+- [Domain Model](DOMAIN.md) - Core concepts: session, agent, tool, skill, provider, prompt
 
 ## Configuration
 
@@ -40,11 +41,11 @@ Quick reference for developing and extending acai-ts.
 
 ## Workflow Docs
 
-- [Task Workflow](../.agents/TASKS.md) - AHM task queue and lifecycle rules
-- [Documentation Workflow](../.agents/DOCS.md) - Documentation audit/update rules
-- [Research Workflow](../.agents/RESEARCH.md) - Research artifact rules
-- [ExecPlans](../.agents/PLANS.md) - Large-change planning format
-- [ADR Workflow](adr/README.md) - Architecture decision records
+- [Task Workflow](../AGENTS.md#managed-work-intake-with-ahm) - AHM task queue and lifecycle rules
+- [Documentation Workflow](../docs/guardrails/documentation.md) - Documentation audit/update rules
+- [Research Workflow](../AGENTS.md#managed-work-intake-with-ahm) - Research artifact rules
+- [ExecPlans](../AGENTS.md#managed-work-intake-with-ahm) - Large-change planning format
+- [ADR Workflow](adr/index.md) - Architecture decision records
 
 ## API Reference
 

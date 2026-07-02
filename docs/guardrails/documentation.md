@@ -15,8 +15,8 @@ ADRs, specs, task workflow docs, research, plans, and generated indexes.
 
 ## Required Checks
 
-- Read `.agents/DOCS.md` before documentation audits or broad doc updates.
-- Use `docs/adr/README.md` before creating or changing ADR lifecycle state.
+- Review `AGENTS.md#workflow-routing` and `docs/guardrails/documentation.md` before documentation audits or broad doc updates.
+- Use `docs/adr/index.md` before creating or changing ADR lifecycle state.
 - Update `ARCHITECTURE.md` when files are added/removed or implementation
   moves.
 - Update `README.md` when docs or user-visible features are added/removed.
@@ -32,9 +32,6 @@ ADRs, specs, task workflow docs, research, plans, and generated indexes.
 
 ## Related Docs
 
-- `.agents/DOCS.md`
-- `.agents/TASKS.md`
-- `.agents/RESEARCH.md`
-- `.agents/PLANS.md`
-- `docs/adr/README.md`
-- `docs/README.md`
+- `AGENTS.md` — Agent routing with `ahm` managed-work intake
+- `docs/adr/index.md` — ADR index and lifecycle
+- `docs/README.md` — Documentation index

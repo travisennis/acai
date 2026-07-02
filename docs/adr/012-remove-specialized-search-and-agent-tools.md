@@ -53,3 +53,6 @@ The system prompt is updated to instruct models to use `rg` and `find` via Bash 
 
 **Replace with lighter wrappers:** Would still require schema maintenance and dependency management. The Bash tool already provides full shell access.
 
+## More Information
+
+- Supersedes [ADR-005](005-sub-agent-communication.md).

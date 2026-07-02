@@ -11,7 +11,6 @@ acai-ts
 ├── LICENSE
 ├── README.md
 ├── TODO.md
-├── benchmark-cache.sh
 ├── biome.json
 ├── commitlint.config.js
 ├── knip.json
@@ -42,43 +41,8 @@ acai-ts
 │       └── testing-and-verification.md
 ├── scripts
 │   └── show-config.ts
-├── specs
-│   ├── background-resume.md
-│   ├── cli-stdin-handling.md
-│   ├── footer-restructure.md
-│   ├── session-storage.md
-│   ├── session-token-usage.md
-│   ├── share-command.md
-│   └── template.md
-├── temp
-│   ├── ANALYSIS.md
-│   ├── COMMANDS-TO-DEPRECATE.md
-│   ├── MARKDOWN-PLAN.md
-│   ├── MARKDOWN_REFACTOR_PLAN.md
-│   ├── PI-CA-TUI.md
-│   ├── PI-TUI-SOURCE.md
-│   ├── REVIEW.md
-│   ├── SOURCE.md
-│   ├── UPDATED-PI-SOURCE.md
-│   ├── UPDATED-PI-CA_SOURCE.md
-│   ├── add-docs.md
-│   ├── autocomplete.md
-│   ├── autocomplete_plan.md
-│   ├── cursor_markdown_parsing_implementation.md
-│   ├── generate-prompts.ts
-│   ├── hooks_feature.md
-│   ├── hooks_feature2.md
-│   ├── new-code-executor.md
-│   ├── ralph.sh
-│   ├── system-prompt-cli.md
-│   ├── system-prompt-full.md
-│   ├── system-prompt-minimal.md
-│   ├── system-prompts-comparison.md
-│   ├── test-coverage-progress.txt
-│   ├── test-coverage.sh
-│   └── test-side-effects.md
 ├── tsconfig.build.json
-└── tsconfig.json
+├── tsconfig.json
 ├── bin
 │   └── acai
 └── source
@@ -195,16 +159,11 @@ acai-ts
     │   ├── counter.ts
     │   └── tracker.ts
     ├── tools
-    │   ├── agent.ts
     │   ├── apply-patch.ts
     │   ├── bash.ts
-    │   ├── code-search.ts
-    │   ├── directory-tree.ts
+    │   ├── dynamic-tool-loader.ts
     │   ├── edit-file.ts
-    │   ├── glob.ts
-    │   ├── grep.ts
     │   ├── index.ts
-    │   ├── ls.ts
     │   ├── read-file.ts
     │   ├── save-file.ts
     │   ├── skill.ts
@@ -341,6 +300,86 @@ acai-ts
         └── test-fixtures.ts
 ```
 
+## Invariants, Boundaries, and Absences
+
+### Layer Dependencies
+
+Source modules follow a layered dependency rule: modules in one layer may depend
+on modules in the same layer or layers below, never upward:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  CLI / REPL / TUI          (orchestration, user-facing)     │
+│  ├── source/cli/                                            │
+│  ├── source/repl/                                            │
+│  └── source/tui/                                             │
+├─────────────────────────────────────────────────────────────┤
+│  Agent / Commands / Prompts   (interaction logic)           │
+│  ├── source/agent/                                           │
+│  ├── source/commands/                                        │
+│  ├── source/prompts/                                         │
+│  └── source/skills/                                          │
+├─────────────────────────────────────────────────────────────┤
+│  Models / Sessions / Tools / Tokens  (domain abstractions)  │
+│  ├── source/models/                                          │
+│  ├── source/sessions/                                        │
+│  ├── source/tools/                                           │
+│  └── source/tokens/                                          │
+├─────────────────────────────────────────────────────────────┤
+│  Config / Middleware / Execution  (infrastructure)          │
+│  ├── source/config/                                          │
+│  ├── source/middleware/                                      │
+│  └── source/execution/                                       │
+├─────────────────────────────────────────────────────────────┤
+│  Utils / Terminal               (shared utilities)          │
+│  ├── source/utils/                                           │
+│  └── source/terminal/                                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **CLI/REPL/TUI** may import Agent, Commands, Models, Sessions, Tools, Tokens,
+  Config, and Utils.
+- **Agent** may import Models, Tools, Sessions, Prompts, and Utils — but never
+  directly import TUI or CLI modules.
+- **Tools** may import Utils and Config only — they must not import Agent,
+  Commands, Sessions, or Prompts.
+- **Utils** imports only Node built-ins and third-party packages — never other
+  source modules. This is the leaf layer.
+- **Config** is self-contained and has no source imports beyond Utils.
+
+### Key Absences
+
+- **There is no ORM.** All data persistence uses raw JSON files in
+  `~/.acai/sessions/` with no database layer.
+- **There is no global state.** Every module receives its dependencies through
+  constructors or function arguments. Singletons exist only within the
+  `ModelManager` and `ConfigManager` scopes.
+- **There is no HTTP server.** Acai is a CLI-only tool — all model API calls go
+  outbound through the AI SDK, never inbound.
+- **There is no plugin system.** Dynamic tools (`.acai/tools/`) are the
+  extensibility mechanism, not a loaded-plugin architecture.
+- **There is no generic auth layer.** API key handling is per-provider in
+  `source/models/` — no shared authentication middleware exists outside the
+  provider implementations.
+- **Tools do not have access to the session object.** Sessions are managed by
+  `SessionManager` and `source/agent/index.ts`; tool execution receives only
+  the context it needs via `ToolExecutionOptions`.
+- **There is no cross-provider automatic fallback.** If a provider fails, the
+  user must switch models manually (see ADR-007).
+
+### Boundaries
+
+- **Public vs internal**: Each source directory's `index.ts` is the public
+  API surface. Modules outside that directory should not import files other
+  than the index. The `source/utils/` directory is the exception — its
+  functions are importable by name.
+- **Config precedence**: `~/.acai/acai.json` < project `.acai/acai.json` <
+  CLI flags < environment variables. Later sources win.
+- **Session ownership**: Session files are created and managed exclusively by
+  `source/sessions/manager.ts`. Other modules (commands, agent) interact with
+  sessions through `SessionManager` methods, never by reading session files
+  directly.
+
 ## File Descriptions
 
 ### Root Configuration Files
@@ -364,16 +403,6 @@ acai-ts
 
 - **scripts/show-config.ts**: Utility script to display current configuration
 
-### Specs
-
-- **specs/background-resume.md**: Specification for session background resumption
-- **specs/cli-stdin-handling.md**: Specification for CLI stdin input handling
-- **specs/footer-restructure.md**: Footer component restructure specification
-- **specs/session-storage.md**: Session persistence and storage specification
-- **specs/session-token-usage.md**: Token usage tracking for sessions
-- **specs/share-command.md**: Share command feature specification
-- **specs/template.md**: Template for new specifications
-
 ### Docs
 
 - **docs/README.md**: Documentation map for users, contributors, and agents
@@ -383,10 +412,6 @@ acai-ts
 - **docs/usage.md**: User guide for CLI, REPL, commands, prompt syntax, and keyboard shortcuts
 - **docs/adr/**: Architecture decision records and ADR workflow
 - **docs/guardrails/**: Short agent-facing rules organized by compatibility and risk surface
-
-### Temp
-
-- **temp/**: Temporary working directory for analysis and planning documents
 
 ### Bin
 
