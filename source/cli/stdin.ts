@@ -14,13 +14,13 @@ export async function readStdinWithLimits(): Promise<StdinResult> {
     return { content: null, sizeBytes: 0, wasPiped: false };
   }
 
-  // Check if stdin is a pipe (piped input) vs just not a TTY
-  // When stdin is a TTY or a pipe, we can read from it
-  // When stdin is neither (e.g., running in background without TTY or pipe), treat as empty
+  // Check if stdin has a readable source (pipe, file redirect, etc.) vs no input
+  // isTTY===false means STDIN is explicitly not a terminal (pipe or redirect)
+  // readable confirms the stream is in flowing/readable mode
+  // When neither condition holds (e.g. background process), treat as empty
   const isPipe =
     process.stdin.readableObjectMode ||
-    // @ts-expect-error - _isStdio is internal
-    process.stdin._isStdio;
+    (process.stdin.isTTY === false && process.stdin.readable);
 
   // Check if stdin has data by attempting a non-blocking read
   // If stdin is not a pipe and not a TTY, treat it as empty (no input)
