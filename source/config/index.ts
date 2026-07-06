@@ -338,8 +338,11 @@ export class ConfigManager {
     try {
       await fs.access(configPath);
       return await this._readAppConfig(configName);
-    } catch {
-      // Create directory and default config if missing
+    } catch (error) {
+      // Only create default config when the file is missing; rethrow on malformed JSON, etc.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
       await this.app.ensurePath();
 
       await fs.writeFile(configPath, JSON.stringify(defaultConfig, null, 2));
