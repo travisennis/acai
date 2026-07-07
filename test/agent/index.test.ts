@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it, mock } from "node:test";
+import { z } from "zod";
 import type { AgentEvent } from "../../source/agent/index.ts";
 import {
   createMockConfig,
@@ -20,7 +21,11 @@ const USAGE_ZERO = {
  * Mock language model that always returns a valid stream with text content
  * and finish reason "tool-calls" so the agent loop continues on success.
  */
-function createWorkingMockModel(finishType: "tool-calls" | "stop") {
+function createWorkingMockModel(
+  finishType: "tool-calls" | "stop",
+  options?: { toolName?: string },
+) {
+  let toolCallCount = 0;
   return {
     provider: "test",
     modelId: "test-model",
@@ -40,6 +45,15 @@ function createWorkingMockModel(finishType: "tool-calls" | "stop") {
             delta: "hello",
           });
           controller.enqueue({ type: "text-end" as const, id: "0" });
+          if (options?.toolName) {
+            toolCallCount += 1;
+            controller.enqueue({
+              type: "tool-call" as const,
+              toolCallId: `call-${toolCallCount}`,
+              toolName: options.toolName,
+              input: "{}",
+            });
+          }
           controller.enqueue({
             type: "finish" as const,
             finishReason: { unified: finishType, original: finishType },
@@ -54,38 +68,44 @@ function createWorkingMockModel(finishType: "tool-calls" | "stop") {
   };
 }
 
+function createAgentDeps(mockModel: unknown) {
+  const modelManager = createMockModelManager({
+    contextWindow: 200000,
+    supportsToolCalling: true,
+  });
+  (modelManager as any).getModel = mock.fn(() => mockModel);
+  (modelManager as any).getModelMetadata = mock.fn(() => ({
+    id: "test-model",
+    provider: "test",
+    contextWindow: 200000,
+    supportsToolCalling: true,
+    supportsReasoning: false,
+    costPerInputToken: 0,
+    costPerOutputToken: 0,
+    maxOutputTokens: 8192,
+    defaultTemperature: 0.7,
+    promptFormat: "markdown",
+  }));
+
+  const config = createMockConfig();
+  const tokenTracker = createMockTokenTracker();
+  (tokenTracker as any).trackUsage = mock.fn();
+
+  const sessionManager = createMockSessionManager([
+    { role: "user", content: [{ type: "text", text: "hello" }] },
+  ]);
+  sessionManager.getSessionId = mock.fn(() => "test-session") as any;
+  (sessionManager as any).setContextWindow = mock.fn();
+  (sessionManager as any).recordTurnUsage = mock.fn();
+
+  return { config, modelManager, tokenTracker, sessionManager };
+}
+
 describe("Agent consecutiveErrors", () => {
   it("resets consecutiveErrors after a successful iteration", async () => {
     const mockModel = createWorkingMockModel("tool-calls");
-
-    const modelManager = createMockModelManager({
-      contextWindow: 200000,
-      supportsToolCalling: true,
-    });
-    (modelManager as any).getModel = mock.fn(() => mockModel);
-    (modelManager as any).getModelMetadata = mock.fn(() => ({
-      id: "test-model",
-      provider: "test",
-      contextWindow: 200000,
-      supportsToolCalling: true,
-      supportsReasoning: false,
-      costPerInputToken: 0,
-      costPerOutputToken: 0,
-      maxOutputTokens: 8192,
-      defaultTemperature: 0.7,
-      promptFormat: "markdown",
-    }));
-
-    const config = createMockConfig();
-    const tokenTracker = createMockTokenTracker();
-    (tokenTracker as any).trackUsage = mock.fn();
-
-    const sessionManager = createMockSessionManager([
-      { role: "user", content: [{ type: "text", text: "hello" }] },
-    ]);
-    sessionManager.getSessionId = mock.fn(() => "test-session") as any;
-    (sessionManager as any).setContextWindow = mock.fn();
-    (sessionManager as any).recordTurnUsage = mock.fn();
+    const { config, modelManager, tokenTracker, sessionManager } =
+      createAgentDeps(mockModel);
 
     // Inject transient errors on specific appendResponseMessages calls.
     // These are regular Errors, not NoOutputGeneratedError, so the agent's
@@ -130,6 +150,55 @@ describe("Agent consecutiveErrors", () => {
       retryExceededEvents.length,
       0,
       "Should not abort when errors are separated by successful iterations",
+    );
+  });
+});
+
+describe("Agent state step history", () => {
+  it("caps retained steps while preserving aggregate step and tool-call totals", async () => {
+    const testToolName = "test_tool";
+    const mockModel = createWorkingMockModel("tool-calls", {
+      toolName: testToolName,
+    });
+    const { config, modelManager, tokenTracker, sessionManager } =
+      createAgentDeps(mockModel);
+
+    const agent = new (await import("../../source/agent/index.ts")).Agent({
+      config: config as any,
+      modelManager,
+      tokenTracker,
+      sessionManager,
+    });
+
+    const tools = {
+      [testToolName]: {
+        toolDef: {
+          description: "Test tool",
+          inputSchema: z.object({}),
+        },
+        display: () => "Testing",
+        execute: async () => "ok",
+      },
+    };
+
+    for await (const _event of agent.run({
+      systemPrompt: "test",
+      input: "test input",
+      tools: tools as any,
+      maxIterations: 15,
+    })) {
+      // Drain the generator.
+    }
+
+    assert.equal(agent.state.stepCount, 15);
+    assert.equal(agent.state.toolCallCount, 15);
+    assert.equal(agent.state.steps.length, 10);
+    assert.equal(
+      agent.state.steps.reduce(
+        (total, step) => total + step.toolCalls.length,
+        0,
+      ),
+      10,
     );
   });
 });

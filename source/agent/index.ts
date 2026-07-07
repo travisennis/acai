@@ -76,6 +76,8 @@ function extractProviderHeaders(
   return out;
 }
 
+const AGENT_STATE_STEP_HISTORY_LIMIT = 10;
+
 type AgentOptions = {
   config: Config;
   modelManager: ModelManager;
@@ -186,6 +188,8 @@ interface PendingToolCall {
 export type AgentState = {
   modelId: string;
   modelConfig: ModelMetadata;
+  stepCount: number;
+  toolCallCount: number;
   steps: {
     toolResults: Array<{ toolName: string }>;
     toolCalls: Array<{ toolName: string }>;
@@ -333,10 +337,17 @@ export class Agent {
 
         const thisStepToolCalls: { toolName: string }[] = [];
         const thisStepToolResults: { toolName: string }[] = [];
+        this._state.stepCount += 1;
         this._state.steps.push({
           toolCalls: thisStepToolCalls,
           toolResults: thisStepToolResults,
         });
+        if (this._state.steps.length > AGENT_STATE_STEP_HISTORY_LIMIT) {
+          this._state.steps.splice(
+            0,
+            this._state.steps.length - AGENT_STATE_STEP_HISTORY_LIMIT,
+          );
+        }
 
         const pendingToolCalls: PendingToolCall[] = [];
 
@@ -367,6 +378,10 @@ export class Agent {
         }
 
         const modelStreamEnd = performance.now();
+        thisStepToolCalls.push(
+          ...pendingToolCalls.map(({ toolName }) => ({ toolName })),
+        );
+        this._state.toolCallCount += pendingToolCalls.length;
 
         // ============================================================
         // PARALLEL TOOL EXECUTION
@@ -378,7 +393,6 @@ export class Agent {
             pendingToolCalls,
             abortSignal,
             toolsCalled,
-            stepToolCalls: thisStepToolCalls,
             stepToolResults: thisStepToolResults,
           });
         const toolEnd = performance.now();
@@ -569,6 +583,8 @@ export class Agent {
     this._state = {
       modelId: modelManager.getModel("repl").modelId,
       modelConfig: modelManager.getModelMetadata("repl"),
+      stepCount: 0,
+      toolCallCount: 0,
       usage: {
         inputTokens: 0,
         outputTokens: 0,
@@ -787,13 +803,11 @@ export class Agent {
     pendingToolCalls,
     abortSignal,
     toolsCalled,
-    stepToolCalls,
     stepToolResults,
   }: {
     pendingToolCalls: PendingToolCall[];
     abortSignal: AbortSignal | undefined;
     toolsCalled: Map<string, ToolEvent[]>;
-    stepToolCalls: Array<{ toolName: string }>;
     stepToolResults: Array<{ toolName: string }>;
   }): Promise<{
     collectedEvents: ToolCallLifeCycle[];
@@ -845,7 +859,6 @@ export class Agent {
         toolsCalled,
         collectedEvents,
         results,
-        stepToolCalls,
         stepToolResults,
       });
     });
@@ -906,7 +919,6 @@ export class Agent {
     toolsCalled,
     collectedEvents,
     results,
-    stepToolCalls,
     stepToolResults,
   }: {
     pending: PendingToolCall;
@@ -921,13 +933,9 @@ export class Agent {
       resultOutput: string;
       success: boolean;
     }>;
-    stepToolCalls: Array<{ toolName: string }>;
     stepToolResults: Array<{ toolName: string }>;
   }): Promise<void> {
     const { call, toolName, iTool } = pending;
-
-    // Track in step stats
-    stepToolCalls.push({ toolName });
 
     if (!iTool) {
       const errorMsg = `No executor for tool ${toolName}`;

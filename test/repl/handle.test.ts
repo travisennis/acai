@@ -97,6 +97,8 @@ function createAgentState(overrides?: Partial<AgentState>): AgentState {
       defaultTemperature: 0,
       promptFormat: "markdown",
     },
+    stepCount: 0,
+    toolCallCount: 0,
     steps: [],
     usage: {
       inputTokens: 0,

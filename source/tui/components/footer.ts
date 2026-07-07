@@ -129,13 +129,15 @@ export class FooterComponent implements Component {
     }
 
     if (this.agentState) {
-      let status = `Steps: ${this.agentState.steps.length} - `;
-
-      // Calculate total tool calls across all steps
-      const totalToolCalls = this.agentState.steps.reduce(
-        (total, step) => total + step.toolCalls.length,
-        0,
-      );
+      const stepCount =
+        this.agentState.stepCount ?? this.agentState.steps.length;
+      const totalToolCalls =
+        this.agentState.toolCallCount ??
+        this.agentState.steps.reduce(
+          (total, step) => total + step.toolCalls.length,
+          0,
+        );
+      let status = `Steps: ${stepCount} - `;
       status += `Tool calls: ${totalToolCalls} - `;
 
       // Show time spend on this prompt
