@@ -373,11 +373,25 @@ export class SessionManager extends EventEmitter<MessageHistoryEvents> {
     const history = [...this.history].filter(this.validMessage);
     if (this.transientMessages.length > 0 && history.length > 0) {
       const lastIndex = history.length - 1;
-      return [
-        ...history.slice(0, lastIndex),
-        ...this.transientMessages,
-        history[lastIndex] as ModelMessage,
-      ];
+      const last = history[lastIndex] as ModelMessage;
+
+      // Merge transient user messages into the last history entry when both are
+      // user role, avoiding consecutive user messages that some providers reject.
+      if (last.role === "user") {
+        const lastContent = Array.isArray(last.content) ? last.content : [];
+        const transientContent = this.transientMessages.flatMap((m) =>
+          Array.isArray(m.content) ? m.content : [],
+        );
+        return [
+          ...history.slice(0, lastIndex),
+          {
+            ...last,
+            content: [...lastContent, ...transientContent],
+          } as ModelMessage,
+        ];
+      }
+
+      return [...history.slice(0, lastIndex), ...this.transientMessages, last];
     }
     return history;
   }
