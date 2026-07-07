@@ -56,6 +56,10 @@ describe("isMarkdown", () => {
     assert.strictEqual(isMarkdown("![alt text](url)"), true);
   });
 
+  it("should return false for inline text with asterisk operators", () => {
+    assert.strictEqual(isMarkdown("price is 3 * 4"), false);
+  });
+
   it("should return false for plain text", () => {
     assert.strictEqual(isMarkdown("This is plain text."), false);
   });
