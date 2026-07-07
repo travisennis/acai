@@ -7,7 +7,7 @@ export function replaceArgumentPlaceholders(
   let replacementsMade = false;
   let result = content;
 
-  for (let i = 0; i < args.length; i++) {
+  for (let i = args.length - 1; i >= 0; i--) {
     const placeholder = `$${i + 1}`;
     if (result.includes(placeholder)) {
       result = result.replaceAll(placeholder, args[i]);

@@ -45,4 +45,31 @@ describe("replaceArgumentPlaceholders", () => {
     const result = replaceArgumentPlaceholders("Plain content", []);
     assert.equal(result, "Plain content");
   });
+
+  it("should handle 10+ positional placeholders without corruption", () => {
+    const args = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"];
+    const template = Array.from(
+      { length: args.length },
+      (_, i) => `$${i + 1}`,
+    ).join(" ");
+    const result = replaceArgumentPlaceholders(template, args);
+    assert.equal(result, args.join(" "));
+  });
+
+  it("should handle mixed single- and multi-digit placeholders", () => {
+    const result = replaceArgumentPlaceholders("$1 $10 $11 $2", [
+      "first",
+      "second",
+      "third",
+      "fourth",
+      "fifth",
+      "sixth",
+      "seventh",
+      "eighth",
+      "ninth",
+      "tenth",
+      "eleventh",
+    ]);
+    assert.equal(result, "first tenth eleventh second");
+  });
 });
