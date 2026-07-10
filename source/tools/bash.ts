@@ -2,7 +2,12 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
-import { initExecutionEnvironment } from "../execution/index.ts";
+import { ttySizeEnv, validateCommandSafety } from "../execution/index.ts";
+import {
+  filteredProcessEnv,
+  ProcessSessionManager,
+  setupSessionCleanup,
+} from "../execution/process-session.ts";
 import type { WorkspaceContext } from "../index.ts";
 import style from "../terminal/style.ts";
 import { resolveCwd, validatePaths } from "../utils/bash.ts";
@@ -65,9 +70,10 @@ export const BashTool = {
 };
 
 const simpleDescription =
-  "Run terminal commands. When you need to run multiple independent commands (e.g. `git status`, `git diff`, `git log`; or several `rg`/`grep` searches with different patterns), ALWAYS issue multiple Bash tool calls in the same assistant message rather than running one, waiting for the result, then running the next. The runtime executes parallel tool calls concurrently, so batching independent commands is several times faster than serial calls. Only sequence commands when one truly depends on the output of another.";
+  "Run terminal commands. When you need to run multiple independent commands (e.g. `git status`, `git diff`, `git log`; or several `rg`/`grep` searches with different patterns), ALWAYS issue multiple Bash tool calls in the same assistant message rather than running one, waiting for the result, then running the next. The runtime executes parallel tool calls concurrently, so batching independent commands is several times faster than serial calls. Only sequence commands when one truly depends on the output of another. A command that outlives its timeout is not killed: the call returns a session id and the command keeps running — use the BashSession tool to poll for more output, send stdin, or kill it. Set background: true to get a session id immediately for commands meant to keep running (dev servers, watchers).";
 
-// Command execution timeout in milliseconds
+// Default yield window in milliseconds: how long to wait for completion
+// before the command yields a session and keeps running
 const DEFAULT_TIMEOUT = 1.5 * 60 * 1000; // 1.5 minutes
 
 // Maximum output size in bytes (50KB) to prevent context window exhaustion
@@ -78,7 +84,7 @@ const MAX_OUTPUT_SIZE = 50 * 1024;
  * This prevents extremely large outputs from exhausting the context window.
  * The footer is always appended at the end, even when output is truncated.
  */
-function truncateOutput(output: string, footer: string): string {
+export function truncateOutput(output: string, footer: string): string {
   if (output.length === 0) {
     return footer;
   }
@@ -104,13 +110,13 @@ const inputSchema = z.object({
   timeout: z
     .preprocess((val) => convertNullString(val), z.coerce.number().nullable())
     .describe(
-      `Command execution timeout in milliseconds. Required but nullable. If null, the default value is ${DEFAULT_TIMEOUT}ms`,
+      `Yield window in milliseconds. Required but nullable. If null, the default value is ${DEFAULT_TIMEOUT}ms. A command that outlives this window is NOT killed: the call returns a session id and the command keeps running; use the BashSession tool to poll it, send stdin, or kill it.`,
     ),
   background: z
     .boolean()
     .optional()
     .describe(
-      "Run command in background. If true, command will run until program exit.",
+      "Run command in background. If true, returns a session id immediately without waiting; retrieve output later with the BashSession tool.",
     ),
 });
 
@@ -119,16 +125,18 @@ type BashInputSchema = z.infer<typeof inputSchema>;
 export const createBashTool = async (options: {
   workspace: WorkspaceContext;
   env?: Record<string, string>;
+  sessionManager?: ProcessSessionManager;
 }) => {
   const { primaryDir, allowedDirs } = options.workspace;
   const configEnv = options.env ? expandEnvVars(options.env) : {};
-  const execEnv = await initExecutionEnvironment({
-    execution: {
-      env: {
-        ...configEnv,
-      },
-    },
-  });
+  const sessionManager = options.sessionManager ?? new ProcessSessionManager();
+  setupSessionCleanup(sessionManager);
+  const baseEnv: Record<string, string> = {
+    ...filteredProcessEnv(),
+    // biome-ignore lint/style/useNamingConvention: environment variable.
+    NODE_ENV: "production",
+    ...configEnv,
+  };
   const allowedDirectories = allowedDirs ?? [primaryDir];
 
   function validateCommand(
@@ -150,6 +158,8 @@ export const createBashTool = async (options: {
     if (destructiveCheck.blocked) {
       throw new Error(formatBlockedCommandMessage(destructiveCheck));
     }
+
+    validateCommandSafety(command);
   }
 
   function processCommand(cmd: string, isBackground: boolean): string {
@@ -157,71 +167,45 @@ export const createBashTool = async (options: {
     return fixRgCommand(stripped);
   }
 
-  function executeBackground(
+  async function runCommand(
     cmd: string,
     cwd: string,
-    signal: AbortSignal | undefined,
-  ): string {
-    const proc = execEnv.executeCommandInBackground(cmd, {
-      cwd,
-      abortSignal: signal,
-      onOutput: (output: string) => {
-        logger.debug({ output }, "Background command output:");
-      },
-      onError: (error: string) => {
-        logger.debug({ error }, "Background command error:");
-      },
-      onExit: (code: number | null) => {
-        logger.debug(`Background command exited with code ${code}`);
-      },
-    });
-    return `Background process started with PID: ${proc.pid}`;
-  }
-
-  async function executeSync(
-    cmd: string,
-    cwd: string,
-    timeout: number,
+    yieldMs: number,
     signal: AbortSignal | undefined,
   ): Promise<string> {
-    const startTime = Date.now();
-    const { output, exitCode, error } = await execEnv.executeCommand(cmd, {
+    const result = await sessionManager.start(cmd, {
       cwd,
-      timeout,
+      env: { ...baseEnv, ...ttySizeEnv() },
+      yieldMs,
       abortSignal: signal,
-      preserveOutputOnError: true,
-      captureStderr: true,
-      throwOnError: false,
     });
-    const elapsedMs = Date.now() - startTime;
-    const timeStr =
-      elapsedMs < 1000 ? `${elapsedMs}ms` : `${(elapsedMs / 1000).toFixed(1)}s`;
 
-    const metadataFooter = `[exit:${exitCode} | ${timeStr}]`;
-
-    if (exitCode !== 0) {
-      const execError = error as
-        | (Error & { killed?: boolean; signal?: string | null })
-        | undefined;
-      const wasKilled = execError?.killed === true || execError?.signal != null;
-
-      if (wasKilled) {
-        const timeoutOutput =
-          output || `Command timed out after ${timeout.toLocaleString()}ms`;
-        return truncateOutput(timeoutOutput, metadataFooter);
-      }
-
-      return truncateOutput(output, metadataFooter);
+    if (result.type === "running") {
+      logger.debug(
+        { sessionId: result.sessionId, command: cmd },
+        "Command yielded a session",
+      );
+      const overflowNote = result.truncated
+        ? "\n[Oldest output was dropped: the session buffer overflowed before yielding.]"
+        : "";
+      const footer = `[still running | session: ${result.sessionId}]${overflowNote}\nThe command was NOT killed; it is still running. Use the BashSession tool with sessionId "${result.sessionId}" to poll for new output, send stdin, or kill it.`;
+      return truncateOutput(result.output, footer);
     }
 
+    const timeStr =
+      result.duration < 1000
+        ? `${result.duration}ms`
+        : `${(result.duration / 1000).toFixed(1)}s`;
+    const metadataFooter = `[exit:${result.exitCode} | ${timeStr}]`;
+
     // Check for binary output and handle specially
-    if (isBinaryOutput(output)) {
-      const saveResult = saveBinaryOutput(output);
+    if (result.exitCode === 0 && isBinaryOutput(result.output)) {
+      const saveResult = saveBinaryOutput(result.output);
       const binaryMessage = formatBinaryMessage(saveResult);
       return `${binaryMessage}\n${metadataFooter}`;
     }
 
-    return truncateOutput(output, metadataFooter);
+    return truncateOutput(result.output, metadataFooter);
   }
 
   return {
@@ -252,16 +236,10 @@ export const createBashTool = async (options: {
 
       const processedCommand = processCommand(command, background ?? false);
 
-      if (background) {
-        return executeBackground(processedCommand, resolvedCwd, abortSignal);
-      }
+      // background yields immediately; otherwise wait out the yield window
+      const yieldMs = background ? 0 : safeTimeout;
 
-      return executeSync(
-        processedCommand,
-        resolvedCwd,
-        safeTimeout,
-        abortSignal,
-      );
+      return runCommand(processedCommand, resolvedCwd, yieldMs, abortSignal);
     },
   };
 };

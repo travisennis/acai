@@ -493,7 +493,8 @@ on modules in the same layer or layers below, never upward:
 - **source/tools/index.ts**: Tool initialization and registry
 - **source/tools/types.ts**: Tool type definitions including `SessionContext` and `ToolExecutionOptions`
 - **source/tools/utils.ts**: Tool utility functions
-- **source/tools/bash.ts**: Bash command execution tool
+- **source/tools/bash.ts**: Bash command execution tool. Commands that outlive their yield window (`timeout`) are not killed; they yield a process session id instead
+- **source/tools/bash-session.ts**: BashSession tool for interacting with yielded Bash sessions — poll for new output, write to stdin, or kill the process group
 - **source/tools/dynamic-tool-loader.ts**: Dynamic tool loader for loading user-defined tools from `.acai/tools` directories. Supports language-agnostic tools (bash, python, etc.) via shebang/extension detection, Amp-compatible text schema format, `.tool` companion files, and session context passing via environment variables
 - **source/tools/edit-file.ts**: File editing tool
 - **source/tools/apply-patch.ts**: Apply unified patch format for batch file modifications (supports add, update, delete, and move operations)
@@ -564,7 +565,7 @@ on modules in the same layer or layers below, never upward:
 - **source/tokens/counter.ts**: Token counting utilities
 - **source/tokens/tracker.ts**: Token usage tracking
 - **source/middleware/**: Middleware for AI interactions (audit, cache, rate-limit)
-- **source/execution/**: Command execution handling
+- **source/execution/**: Command execution handling; `process-session.ts` manages long-running command sessions (yield window, output buffering, stdin, process-group kill, cleanup on exit)
 
 ### Test
 

@@ -1,10 +1,15 @@
 import type { AsyncReturnType } from "@travisennis/stdlib/types";
 import type { ToolSet } from "ai";
 import { config } from "../config/index.ts";
+import {
+  ProcessSessionManager,
+  setupSessionCleanup,
+} from "../execution/process-session.ts";
 import type { WorkspaceContext } from "../index.ts";
 import { ActivatedSkillsTracker } from "../skills/activated-tracker.ts";
 import { ApplyPatchTool, createApplyPatchTool } from "./apply-patch.ts";
 import { BashTool, createBashTool } from "./bash.ts";
+import { BashSessionTool, createBashSessionTool } from "./bash-session.ts";
 import { loadDynamicTools } from "./dynamic-tool-loader.ts";
 import { createEditFileTool, EditFileTool } from "./edit-file.ts";
 import { createReadFileTool, ReadFileTool } from "./read-file.ts";
@@ -49,7 +54,16 @@ export async function initTools({
   const thinkTool = createThinkTool();
 
   const projectConfig = await config.getConfig();
-  const bashTool = await createBashTool({ workspace, env: projectConfig.env });
+  // Shared between the Bash tool (creates sessions) and the BashSession tool
+  // (polls, writes stdin, kills).
+  const sessionManager = new ProcessSessionManager();
+  setupSessionCleanup(sessionManager);
+  const bashTool = await createBashTool({
+    workspace,
+    env: projectConfig.env,
+    sessionManager,
+  });
+  const bashSessionTool = createBashSessionTool({ sessionManager });
 
   const skillTool = await createSkillTool(activatedSkillsTracker);
 
@@ -65,6 +79,7 @@ export async function initTools({
       ApplyPatchTool.name,
       EditFileTool.name,
       BashTool.name,
+      BashSessionTool.name,
       SaveFileTool.name,
       ReadFileTool.name,
       ThinkTool.name,
@@ -84,6 +99,7 @@ export async function initTools({
     [ApplyPatchTool.name]: applyPatchTool,
     [EditFileTool.name]: editFileTool,
     [BashTool.name]: bashTool,
+    [BashSessionTool.name]: bashSessionTool,
     [SaveFileTool.name]: saveFileTool,
     [ReadFileTool.name]: readFileTool,
     [ThinkTool.name]: thinkTool,

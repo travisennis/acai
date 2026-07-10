@@ -20,7 +20,7 @@ A **tool** is a capability the agent can invoke during a conversation — readin
 
 ### Built-in Tool vs Dynamic Tool
 
-- **Built-in tools** ship with acai: Bash, Read, Edit, ApplyPatch, SaveFile, WebSearch, WebFetch, Think, Skill. They are always available.
+- **Built-in tools** ship with acai: Bash, BashSession, Read, Edit, ApplyPatch, SaveFile, WebSearch, WebFetch, Think, Skill. They are always available.
 - **Dynamic tools** are user-defined scripts placed in `.acai/tools/`. They can be written in any language (bash, Python, Node.js, etc.) and follow a describe/execute protocol. Dynamic tools are loaded at startup and cannot conflict with built-in tool names.
 
 ### Skill

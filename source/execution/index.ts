@@ -102,11 +102,24 @@ interface ExecutionConfig {
   };
 }
 
-function getShell() {
+/**
+ * Throws if the command matches a known-dangerous pattern.
+ */
+export function validateCommandSafety(command: string): void {
+  for (const pattern of DANGEROUS_COMMANDS) {
+    if (pattern.test(command)) {
+      throw new Error(
+        `Command execution blocked: '${command}' matches dangerous pattern`,
+      );
+    }
+  }
+}
+
+export function getShell() {
   return process.env["ZSH_VERSION"] ? "zsh" : process.env["SHELL"] || "bash";
 }
 
-function ttySizeEnv(): Record<string, string> {
+export function ttySizeEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   if (
     process.stdout.isTTY &&
@@ -625,13 +638,7 @@ export class ExecutionEnvironment {
    */
   validateCommand(command: string): void {
     // Check if command is in the denied list
-    for (const pattern of DANGEROUS_COMMANDS) {
-      if (pattern.test(command)) {
-        throw new Error(
-          `Command execution blocked: '${command}' matches dangerous pattern`,
-        );
-      }
-    }
+    validateCommandSafety(command);
 
     // Check if command is in allowed list (if configured)
     if (

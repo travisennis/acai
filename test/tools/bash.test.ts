@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import { config } from "../../source/config/index.ts";
+import { ProcessSessionManager } from "../../source/execution/process-session.ts";
 import { createBashTool } from "../../source/tools/bash.ts";
 import { validatePaths } from "../../source/utils/bash.ts";
 
@@ -114,23 +115,71 @@ describe("bash tool abort signal handling", async () => {
   });
 });
 
-describe("bash tool timeout handling", async () => {
-  it("returns timeout output with exit metadata when command times out", async () => {
-    const tool = await createBashTool({
-      workspace: { primaryDir: baseDir, allowedDirs: [baseDir] },
-    });
-    const { execute } = tool;
+describe("bash tool yield behavior", async () => {
+  const sessionManager = new ProcessSessionManager();
+  const tool = await createBashTool({
+    workspace: { primaryDir: baseDir, allowedDirs: [baseDir] },
+    sessionManager,
+  });
 
-    const result = await execute(
-      { command: "sleep 5", cwd: baseDir, timeout: 10 },
+  after(() => {
+    sessionManager.killAll();
+  });
+
+  it("yields a session instead of killing a command that outlives the timeout", async () => {
+    const result = await tool.execute(
+      { command: "echo early-output; sleep 30", cwd: baseDir, timeout: 300 },
       { toolCallId: "t1", messages: [] },
     );
 
-    assert.ok(result.includes("Command timed out after 10ms"));
-    assert.ok(result.includes("[exit:1"));
-    assert.ok(!result.includes("Command failed"));
+    assert.ok(result.includes("early-output"), "partial output is returned");
+    assert.ok(result.includes("still running"));
+    const match = result.match(/session: (bash_[0-9a-f]+)/);
+    assert.ok(match?.[1], `expected a session id in result: ${result}`);
+    assert.ok(!result.includes("timed out"));
+
+    // The process must not have been killed at the yield boundary.
+    const sessions = sessionManager.list();
+    assert.strictEqual(sessions.length, 1);
+    assert.strictEqual(sessions[0]?.status, "running");
   });
 
+  it("background returns a session immediately with retrievable output", async () => {
+    const result = await tool.execute(
+      {
+        command: "echo bg-output; sleep 30",
+        cwd: baseDir,
+        timeout: null,
+        background: true,
+      },
+      { toolCallId: "t1", messages: [] },
+    );
+
+    const match = result.match(/session: (bash_[0-9a-f]+)/);
+    assert.ok(match?.[1], `expected a session id in result: ${result}`);
+    const sessionId = match[1];
+
+    // Output that previously vanished into logger.debug is now retrievable.
+    const read = await sessionManager.read(sessionId, { waitMs: 5000 });
+    assert.ok(read.output.includes("bg-output"));
+    assert.strictEqual(read.status, "running");
+  });
+
+  it("commands that finish within the window return no session", async () => {
+    const before = sessionManager.list().length;
+    const result = await tool.execute(
+      { command: "echo -n fast", cwd: baseDir, timeout: 5000 },
+      { toolCallId: "t1", messages: [] },
+    );
+
+    assert.ok(result.startsWith("fast"));
+    assert.ok(result.includes("[exit:0"));
+    assert.ok(!result.includes("still running"));
+    assert.strictEqual(sessionManager.list().length, before);
+  });
+});
+
+describe("bash tool exit metadata", async () => {
   it("returns only exit metadata for silent non-zero exits", async () => {
     const tool = await createBashTool({
       workspace: { primaryDir: baseDir, allowedDirs: [baseDir] },
