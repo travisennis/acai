@@ -7,7 +7,7 @@ decision-makers: Travis Ennis
 
 ## Context
 
-The acai-ts CLI tool needs a mechanism for users to define custom tools beyond the built-in set. These user-defined tools should be discoverable, executable, and consistent with the built-in tool interface.
+The acai CLI tool needs a mechanism for users to define custom tools beyond the built-in set. These user-defined tools should be discoverable, executable, and consistent with the built-in tool interface.
 
 ## Decision
 

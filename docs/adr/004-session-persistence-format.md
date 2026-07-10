@@ -7,7 +7,7 @@ decision-makers: Travis Ennis
 
 ## Context
 
-The acai-ts CLI tool needs to persist conversation state between sessions for resumption. Sessions should be storable in JSON format with metadata, message history, and token usage tracking.
+The acai CLI tool needs to persist conversation state between sessions for resumption. Sessions should be storable in JSON format with metadata, message history, and token usage tracking.
 
 ## Decision
 

@@ -7,8 +7,8 @@ This project requires **Node.js ≥24** (pinned in `.node-version` — `fnm`, `n
 ### Quick start (single command)
 
 ```bash
-git clone https://github.com/travisennis/acai-ts.git
-cd acai-ts
+git clone https://github.com/travisennis/acai.git
+cd acai
 npm run setup
 ```
 
@@ -18,8 +18,8 @@ npm run setup
 
 1. **Clone and install dependencies:**
    ```bash
-   git clone https://github.com/travisennis/acai-ts.git
-   cd acai-ts
+   git clone https://github.com/travisennis/acai.git
+   cd acai
    npm install
    ```
 

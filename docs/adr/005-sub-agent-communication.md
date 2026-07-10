@@ -8,7 +8,7 @@ decision-makers: Travis Ennis
 
 ## Context
 
-The acai-ts CLI tool needs a sub-agent system where specialized agents can be spawned to handle specific tasks while passing context back to the parent agent. Sub-agents need access to workspace context, tool filtering, and proper result aggregation.
+The acai CLI tool needs a sub-agent system where specialized agents can be spawned to handle specific tasks while passing context back to the parent agent. Sub-agents need access to workspace context, tool filtering, and proper result aggregation.
 
 ## Decision
 

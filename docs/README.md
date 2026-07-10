@@ -1,6 +1,6 @@
 # Documentation
 
-Quick reference for developing and extending acai-ts.
+Quick reference for developing and extending acai.
 
 ## Getting Started
 

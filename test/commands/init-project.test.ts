@@ -25,9 +25,7 @@ function cleanupTestDir(testDir: string): void {
 describe("init-project/utils.ts", () => {
   describe("isDevelopmentDirectory", () => {
     it("returns true for development directory", () => {
-      const result = isDevelopmentDirectory(
-        "/Users/travisennis/Github/acai-ts",
-      );
+      const result = isDevelopmentDirectory("/Users/travisennis/Projects/acai");
       assert.strictEqual(result, true);
     });
 

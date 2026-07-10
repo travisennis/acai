@@ -1,9 +1,9 @@
 ---
 name: debugging-acai
-description: Debugging tools and techniques for acai-ts. Use when investigating errors, analyzing session behavior, or troubleshooting issues in the acai CLI application. Includes guidance on reading logs, session files, and common error patterns.
+description: Debugging tools and techniques for acai. Use when investigating errors, analyzing session behavior, or troubleshooting issues in the acai CLI application. Includes guidance on reading logs, session files, and common error patterns.
 ---
 
-# Debugging acai-ts
+# Debugging acai
 
 ## Key Principles
 

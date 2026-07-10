@@ -29,7 +29,7 @@ export const initProjectCommand = (_options: CommandOptions): ReplCommand => {
       if (isDevelopmentDirectory(currentDir)) {
         container.addChild(
           new Text(
-            "Cannot initialize project in acai-ts development directory.",
+            "Cannot initialize project in acai development directory.",
             1,
             0,
           ),

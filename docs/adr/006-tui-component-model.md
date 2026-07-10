@@ -7,7 +7,7 @@ decision-makers: Travis Ennis
 
 ## Context
 
-The acai-ts CLI tool needs a terminal UI that supports rich rendering, interactive components, and differential updates for smooth performance. The UI must handle scrolling, modals, user input, and mouse events.
+The acai CLI tool needs a terminal UI that supports rich rendering, interactive components, and differential updates for smooth performance. The UI must handle scrolling, modals, user input, and mouse events.
 
 ## Decision
 

@@ -193,7 +193,7 @@ function generateModelDetails(opencodeModel, openrouterModel, clientType) {
 // Show help
 function showHelp() {
   console.info(`
-Add OpenCode Model - Skill for acai-ts project
+Add OpenCode Model - Skill for acai project
 
 Usage:
   node add-model.js <model-id>

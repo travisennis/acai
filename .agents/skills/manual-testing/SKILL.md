@@ -1,11 +1,11 @@
 ---
 name: manual-testing
-description: "Manually test acai-ts features by running the app in tmux, interacting with the REPL, and inspecting logs and session files. Use after implementing a feature to verify it works end-to-end."
+description: "Manually test acai features by running the app in tmux, interacting with the REPL, and inspecting logs and session files. Use after implementing a feature to verify it works end-to-end."
 ---
 
 # Manual Testing
 
-Run the acai-ts REPL in a tmux session and interact with it to verify features work correctly. Inspect application logs and session files to confirm internal behavior.
+Run the acai REPL in a tmux session and interact with it to verify features work correctly. Inspect application logs and session files to confirm internal behavior.
 
 ## Quick Reference
 

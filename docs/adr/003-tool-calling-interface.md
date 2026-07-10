@@ -7,7 +7,7 @@ decision-makers: Travis Ennis
 
 ## Context
 
-The acai-ts CLI tool needs a robust tool calling interface that supports multiple tools with different capabilities, proper input validation, error handling, and a clean abstraction for tool developers.
+The acai CLI tool needs a robust tool calling interface that supports multiple tools with different capabilities, proper input validation, error handling, and a clean abstraction for tool developers.
 
 ## Decision
 

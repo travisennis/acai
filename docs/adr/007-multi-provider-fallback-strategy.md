@@ -7,7 +7,7 @@ decision-makers: Travis Ennis
 
 ## Context
 
-The acai-ts CLI tool needs to handle failures gracefully when AI providers experience issues. Users should not be blocked by temporary outages, and the system should provide appropriate fallback behavior.
+The acai CLI tool needs to handle failures gracefully when AI providers experience issues. Users should not be blocked by temporary outages, and the system should provide appropriate fallback behavior.
 
 ## Decision
 

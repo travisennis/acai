@@ -12,7 +12,7 @@ const openRouterClient = createOpenAICompatible({
   // biome-ignore lint/style/useNamingConvention: third-party controlled
   baseURL: "https://openrouter.ai/api/v1",
   headers: {
-    "HTTP-Referer": "https://github.com/travisennis/acai-ts",
+    "HTTP-Referer": "https://github.com/travisennis/acai",
     "X-Title": "acai",
   },
 });
@@ -23,7 +23,7 @@ const openResponses = createOpenResponses({
   url: "https://openrouter.ai/api/v1/responses",
   apiKey: process.env["OPENROUTER_API_KEY"] ?? "",
   headers: {
-    "HTTP-Referer": "https://github.com/travisennis/acai-ts",
+    "HTTP-Referer": "https://github.com/travisennis/acai",
     "X-Title": "acai",
   },
 });

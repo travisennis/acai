@@ -104,7 +104,7 @@ function generateModelDetails(model) {
 // Show help
 function showHelp() {
   console.info(`
-Add OpenRouter Model - Skill for acai-ts project
+Add OpenRouter Model - Skill for acai project
 
 Usage:
   node add-model.js <model-id>

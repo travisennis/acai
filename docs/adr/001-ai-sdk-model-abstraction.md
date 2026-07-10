@@ -7,7 +7,7 @@ decision-makers: Travis Ennis
 
 ## Context
 
-The acai-ts CLI tool needs to support multiple AI model providers (Anthropic, OpenAI, Google, Groq, DeepSeek, OpenRouter, xAI, OpenCode) with a unified interface. Each provider has different APIs, authentication methods, and response formats. We need to abstract these differences while preserving provider-specific capabilities.
+The acai CLI tool needs to support multiple AI model providers (Anthropic, OpenAI, Google, Groq, DeepSeek, OpenRouter, xAI, OpenCode) with a unified interface. Each provider has different APIs, authentication methods, and response formats. We need to abstract these differences while preserving provider-specific capabilities.
 
 ## Decision
 
@@ -17,7 +17,7 @@ We use the Vercel AI SDK (`ai` package) as the core abstraction layer for model 
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        acai-ts                               │
+│                        acai                               │
 ├─────────────────────────────────────────────────────────────┤
 │  Agent (streamText, generateText)                           │
 │  ModelManager (per-app model instances, metadata)           │

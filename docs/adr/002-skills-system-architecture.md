@@ -7,7 +7,7 @@ decision-makers: Travis Ennis
 
 ## Context
 
-The acai-ts CLI tool needs a skill system that allows extending the agent's capabilities with specialized knowledge and workflows. Skills should be discovered from filesystem locations, validated, and made available to the model for invocation.
+The acai CLI tool needs a skill system that allows extending the agent's capabilities with specialized knowledge and workflows. Skills should be discovered from filesystem locations, validated, and made available to the model for invocation.
 
 ## Decision
 

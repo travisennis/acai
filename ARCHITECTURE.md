@@ -5,7 +5,7 @@ This document outlines the architecture of the Acai CLI tool, an AI-powered comm
 ## Project Structure
 
 ```
-acai-ts
+acai
 ├── AGENTS.md
 ├── ARCHITECTURE.md
 ├── LICENSE

@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This report documents the current architecture of the acai-ts codebase relevant to implementing a new `install-skill` CLI subcommand. Unlike REPL commands (like `/init-project`), this would be a standalone CLI command invoked as `acai install-skill`.
+This report documents the current architecture of the acai codebase relevant to implementing a new `install-skill` CLI subcommand. Unlike REPL commands (like `/init-project`), this would be a standalone CLI command invoked as `acai install-skill`.
 
 ## Current CLI Architecture
 

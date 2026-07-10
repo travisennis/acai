@@ -7,7 +7,7 @@ decision-makers: Travis Ennis
 
 ## Context
 
-The acai-ts CLI tool needs to handle two distinct modes: interactive REPL mode and non-interactive CLI mode with piped input. These modes have different UX expectations and input handling requirements.
+The acai CLI tool needs to handle two distinct modes: interactive REPL mode and non-interactive CLI mode with piped input. These modes have different UX expectations and input handling requirements.
 
 ## Decision
 

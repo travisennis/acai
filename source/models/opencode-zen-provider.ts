@@ -23,7 +23,7 @@ const messagesClient = createAnthropic({
 //   name: "openrouter",
 //   apiKey: process.env["OPENROUTER_API_KEY"] ?? "",
 //   headers: {
-//     "HTTP-Referer": "https://github.com/travisennis/acai-ts",
+//     "HTTP-Referer": "https://github.com/travisennis/acai",
 //     "X-Title": "acai",
 //   },
 // });
