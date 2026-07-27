@@ -28,6 +28,7 @@ Quick reference for developing and extending acai.
 
 ## Agent Guardrails
 
+- [Agent Instructions](guardrails/agent-instructions.md)
 - [API Stability and Compatibility](guardrails/api-stability-and-compatibility.md)
 - [CLI and User Output](guardrails/cli-and-user-output.md)
 - [Configuration](guardrails/configuration.md)
