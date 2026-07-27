@@ -13,7 +13,8 @@ Compatibility surfaces: CLI flags and commands, REPL/TUI output, prompt and AGEN
 3. Load only the routed docs needed for that request.
 4. Preserve compatibility surfaces unless explicitly changed.
 5. Keep edits surgical and verify according to risk.
-6. State the selected route and loaded docs, then handoff with changes, checks, and remaining risk.
+6. After implementation edits, run a review in a subagent and address findings until none remain, then perform preflight. If a third round reports findings of the same class, stop patching: report the finding class and the suspected design flaw, and escalate to a design decision.
+7. State the selected route and loaded docs, then handoff with changes, checks, and remaining risk.
 
 When this file conflicts with a specialized workflow doc for that workflow, the specialized doc wins.
 Keep AGENTS.md as routing, not as a command catalog or procedure manual.
